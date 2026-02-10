@@ -1,6 +1,7 @@
 """Pydantic models for Nebula MCP."""
 
 # Standard Library
+from datetime import datetime
 from typing import Self
 
 # Third-Party
@@ -365,6 +366,48 @@ class LinkKnowledgeInput(BaseModel):
     relationship_type: str = Field(..., description="about, mentions, created-by")
 
 
+# --- Log Input Models ---
+
+
+class CreateLogInput(BaseModel):
+    """Input payload for creating a log entry."""
+
+    log_type: str = Field(..., description="Log type name")
+    timestamp: datetime | None = Field(default=None, description="Timestamp for log")
+    value: dict = Field(default_factory=dict, description="Log value payload")
+    status: str = Field(default="active", description="Status name")
+    tags: list[str] = Field(default_factory=list, description="Kebab-case tags")
+    metadata: dict = Field(default_factory=dict, description="Additional metadata")
+
+
+class GetLogInput(BaseModel):
+    """Input payload for retrieving a log entry."""
+
+    log_id: str = Field(..., description="Log UUID")
+
+
+class QueryLogsInput(BaseModel):
+    """Input payload for querying log entries."""
+
+    log_type: str | None = Field(default=None, description="Filter by log type")
+    tags: list[str] = Field(default_factory=list, description="Tag filters")
+    status_category: str = Field(default="active", description="active or archived")
+    limit: int = Field(default=50, description="Max results to return")
+    offset: int = Field(default=0, description="Pagination offset")
+
+
+class UpdateLogInput(BaseModel):
+    """Input payload for updating a log entry."""
+
+    id: str = Field(..., description="Log UUID")
+    log_type: str | None = Field(default=None, description="Log type name")
+    timestamp: datetime | None = Field(default=None, description="Timestamp")
+    value: dict | None = Field(default=None, description="Updated value payload")
+    status: str | None = Field(default=None, description="Status name")
+    tags: list[str] | None = Field(default=None, description="Tags")
+    metadata: dict | None = Field(default=None, description="Metadata")
+
+
 # --- Relationship Input Models ---
 
 
@@ -543,6 +586,20 @@ class QueryFilesInput(BaseModel):
     offset: int = Field(default=0, description="Pagination offset")
 
 
+class UpdateFileInput(BaseModel):
+    """Input payload for updating a file record."""
+
+    file_id: str = Field(..., description="File UUID")
+    filename: str | None = Field(default=None, description="File name")
+    file_path: str | None = Field(default=None, description="Absolute or vault-relative path")
+    mime_type: str | None = Field(default=None, description="MIME type")
+    size_bytes: int | None = Field(default=None, description="File size in bytes")
+    checksum: str | None = Field(default=None, description="Checksum hash")
+    status: str | None = Field(default=None, description="Status name")
+    tags: list[str] | None = Field(default=None, description="File tags")
+    metadata: dict | None = Field(default=None, description="Additional metadata")
+
+
 class AttachFileInput(BaseModel):
     """Input payload for attaching a file to another record."""
 
@@ -558,6 +615,38 @@ class GetProtocolInput(BaseModel):
     """Input payload for retrieving a protocol."""
 
     protocol_name: str = Field(..., description="Protocol name (unique identifier)")
+
+
+class CreateProtocolInput(BaseModel):
+    """Input payload for creating a protocol."""
+
+    name: str = Field(..., description="Protocol name (unique identifier)")
+    title: str = Field(..., description="Protocol title")
+    version: str | None = Field(default=None, description="Protocol version")
+    content: str = Field(..., description="Protocol content")
+    protocol_type: str | None = Field(default=None, description="Protocol type")
+    applies_to: list[str] = Field(
+        default_factory=list, description="Applies-to categories"
+    )
+    status: str = Field(default="active", description="Status name")
+    tags: list[str] = Field(default_factory=list, description="Tags")
+    metadata: dict = Field(default_factory=dict, description="Metadata")
+    vault_file_path: str | None = Field(default=None, description="Vault file path")
+
+
+class UpdateProtocolInput(BaseModel):
+    """Input payload for updating a protocol."""
+
+    name: str = Field(..., description="Protocol name (unique identifier)")
+    title: str | None = Field(default=None, description="Protocol title")
+    version: str | None = Field(default=None, description="Protocol version")
+    content: str | None = Field(default=None, description="Protocol content")
+    protocol_type: str | None = Field(default=None, description="Protocol type")
+    applies_to: list[str] | None = Field(default=None, description="Applies-to list")
+    status: str | None = Field(default=None, description="Status name")
+    tags: list[str] | None = Field(default=None, description="Tags")
+    metadata: dict | None = Field(default=None, description="Metadata")
+    vault_file_path: str | None = Field(default=None, description="Vault file path")
 
 
 # --- Agent Input Models ---

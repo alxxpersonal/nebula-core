@@ -138,6 +138,128 @@ type UpdateKnowledgeInput struct {
 	Metadata   map[string]any `json:"metadata,omitempty"`
 }
 
+// --- Protocol ---
+
+// Protocol represents a protocol entry.
+type Protocol struct {
+	ID           string    `json:"id"`
+	Name         string    `json:"name"`
+	Title        string    `json:"title"`
+	Version      *string   `json:"version,omitempty"`
+	Content      *string   `json:"content,omitempty"`
+	ProtocolType *string   `json:"protocol_type,omitempty"`
+	AppliesTo    []string  `json:"applies_to,omitempty"`
+	Status       string    `json:"status,omitempty"`
+	Tags         []string  `json:"tags,omitempty"`
+	Metadata     JSONMap   `json:"metadata"`
+	VaultFile    *string   `json:"vault_file_path,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+// CreateProtocolInput defines the fields required to create a protocol.
+type CreateProtocolInput struct {
+	Name         string         `json:"name"`
+	Title        string         `json:"title"`
+	Version      string         `json:"version,omitempty"`
+	Content      string         `json:"content"`
+	ProtocolType string         `json:"protocol_type,omitempty"`
+	AppliesTo    []string       `json:"applies_to,omitempty"`
+	Status       string         `json:"status,omitempty"`
+	Tags         []string       `json:"tags,omitempty"`
+	Metadata     map[string]any `json:"metadata,omitempty"`
+	VaultFile    *string        `json:"vault_file_path,omitempty"`
+}
+
+// UpdateProtocolInput defines the fields for updating a protocol.
+type UpdateProtocolInput struct {
+	Title        *string        `json:"title,omitempty"`
+	Version      *string        `json:"version,omitempty"`
+	Content      *string        `json:"content,omitempty"`
+	ProtocolType *string        `json:"protocol_type,omitempty"`
+	AppliesTo    *[]string      `json:"applies_to,omitempty"`
+	Status       *string        `json:"status,omitempty"`
+	Tags         *[]string      `json:"tags,omitempty"`
+	Metadata     map[string]any `json:"metadata,omitempty"`
+	VaultFile    *string        `json:"vault_file_path,omitempty"`
+}
+
+// --- Logs ---
+
+// Log represents a log entry.
+type Log struct {
+	ID        string    `json:"id"`
+	LogType   string    `json:"log_type"`
+	Timestamp time.Time `json:"timestamp"`
+	Value     JSONMap   `json:"value"`
+	Status    string    `json:"status,omitempty"`
+	Tags      []string  `json:"tags,omitempty"`
+	Metadata  JSONMap   `json:"metadata"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// CreateLogInput defines fields for creating a log entry.
+type CreateLogInput struct {
+	LogType   string         `json:"log_type"`
+	Timestamp *time.Time     `json:"timestamp,omitempty"`
+	Value     map[string]any `json:"value,omitempty"`
+	Status    string         `json:"status,omitempty"`
+	Tags      []string       `json:"tags,omitempty"`
+	Metadata  map[string]any `json:"metadata,omitempty"`
+}
+
+// UpdateLogInput defines fields for updating a log entry.
+type UpdateLogInput struct {
+	LogType   *string        `json:"log_type,omitempty"`
+	Timestamp *time.Time     `json:"timestamp,omitempty"`
+	Value     map[string]any `json:"value,omitempty"`
+	Status    *string        `json:"status,omitempty"`
+	Tags      *[]string      `json:"tags,omitempty"`
+	Metadata  map[string]any `json:"metadata,omitempty"`
+}
+
+// --- Files ---
+
+// File represents a file metadata record.
+type File struct {
+	ID        string    `json:"id"`
+	Filename  string    `json:"filename"`
+	FilePath  string    `json:"file_path"`
+	MimeType  *string   `json:"mime_type,omitempty"`
+	SizeBytes *int64    `json:"size_bytes,omitempty"`
+	Checksum  *string   `json:"checksum,omitempty"`
+	Status    string    `json:"status,omitempty"`
+	Tags      []string  `json:"tags,omitempty"`
+	Metadata  JSONMap   `json:"metadata"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// CreateFileInput defines fields for creating a file record.
+type CreateFileInput struct {
+	Filename  string         `json:"filename"`
+	FilePath  string         `json:"file_path"`
+	MimeType  string         `json:"mime_type,omitempty"`
+	SizeBytes *int64         `json:"size_bytes,omitempty"`
+	Checksum  string         `json:"checksum,omitempty"`
+	Status    string         `json:"status,omitempty"`
+	Tags      []string       `json:"tags,omitempty"`
+	Metadata  map[string]any `json:"metadata,omitempty"`
+}
+
+// UpdateFileInput defines fields for updating a file record.
+type UpdateFileInput struct {
+	Filename  *string        `json:"filename,omitempty"`
+	FilePath  *string        `json:"file_path,omitempty"`
+	MimeType  *string        `json:"mime_type,omitempty"`
+	SizeBytes *int64         `json:"size_bytes,omitempty"`
+	Checksum  *string        `json:"checksum,omitempty"`
+	Status    *string        `json:"status,omitempty"`
+	Tags      *[]string      `json:"tags,omitempty"`
+	Metadata  map[string]any `json:"metadata,omitempty"`
+}
+
 // --- Relationship ---
 
 // Relationship represents a directed connection between two entities.

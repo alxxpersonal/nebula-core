@@ -79,10 +79,11 @@ var (
 			Padding(0, 1)
 
 	TypeBadgeStyle = lipgloss.NewStyle().
-			Foreground(ColorBackground).
-			Background(lipgloss.Color("#888ba4")).
+			Foreground(ColorMuted).
+			Border(lipgloss.NormalBorder()).
+			BorderForeground(ColorBorder).
 			Bold(true).
-			Padding(0, 3)
+			Padding(0, 1)
 
 	DividerStyle = lipgloss.NewStyle().
 			Foreground(ColorBorder)

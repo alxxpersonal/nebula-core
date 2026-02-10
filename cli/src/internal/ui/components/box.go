@@ -25,6 +25,10 @@ var (
 			Foreground(lipgloss.Color("#7f57b4")).
 			Bold(true)
 
+	diffLabelStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#8fb3ff")).
+			Bold(true)
+
 	boxMutedStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#9ba0bf"))
 
@@ -82,10 +86,14 @@ func ErrorBox(title, message string, width int) string {
 
 // TitledBox renders a box with a header title.
 func TitledBox(title, content string, width int) string {
+	return titledBoxWithStyle(title, content, width, boxBorder, boxHeaderStyle, lipgloss.Color("#273540"))
+}
+
+func titledBoxWithStyle(title, content string, width int, boxStyle, headerStyle lipgloss.Style, borderColor lipgloss.Color) string {
 	if title == "" {
-		return Box(content, width)
+		return boxStyle.Width(boxWidth(width)).Render(content)
 	}
-	boxed := Box(content, width)
+	boxed := boxStyle.Width(boxWidth(width)).Render(content)
 	lines := strings.Split(boxed, "\n")
 	if len(lines) == 0 {
 		return boxed
@@ -96,8 +104,8 @@ func TitledBox(title, content string, width int) string {
 		return boxed
 	}
 
-    border := lipgloss.RoundedBorder()
-    middleLen := lineWidth - 2
+	border := lipgloss.RoundedBorder()
+	middleLen := lineWidth - 2
 	titleText := fmt.Sprintf(" [ %s ] ", title)
 	if lipgloss.Width(titleText) > middleLen {
 		titleText = truncateRunes(titleText, middleLen)
@@ -112,17 +120,11 @@ func TitledBox(title, content string, width int) string {
 	if right < 0 {
 		right = 0
 	}
-	top := strings.Repeat(border.Top, left) + titleText + strings.Repeat(border.Top, right)
-	if w := lipgloss.Width(top); w < middleLen {
-		top = top + strings.Repeat(border.Top, middleLen-w)
-	} else if w > middleLen {
-		top = truncateRunes(top, middleLen)
-	}
 
-	borderStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#273540"))
+	borderStyle := lipgloss.NewStyle().Foreground(borderColor)
 	leftSeg := borderStyle.Render(border.TopLeft + strings.Repeat(border.Top, left))
 	rightSeg := borderStyle.Render(strings.Repeat(border.Top, right) + border.TopRight)
-	line := leftSeg + titleText + rightSeg
+	line := leftSeg + headerStyle.Render(titleText) + rightSeg
 	if w := lipgloss.Width(line); w < lineWidth {
 		line += borderStyle.Render(strings.Repeat(border.Top, lineWidth-w))
 	} else if w > lineWidth {
@@ -233,8 +235,8 @@ func DiffTable(title string, rows []DiffRow, width int) string {
 		return ""
 	}
 
-	removeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#ff5f7a"))
-	addStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#ffcc4d"))
+	removeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#ff6b6b"))
+	addStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#ffd166"))
 	renderValue := func(style lipgloss.Style, prefix string, value string) string {
 		if value == "" {
 			value = "-"
@@ -256,7 +258,7 @@ func DiffTable(title string, rows []DiffRow, width int) string {
 
 	var b strings.Builder
 	for i, r := range rows {
-		b.WriteString(boxLabelStyle.Render(r.Label))
+		b.WriteString(diffLabelStyle.Render(r.Label))
 		b.WriteString("\n")
 		b.WriteString(renderValue(removeStyle, "  - ", r.From))
 		b.WriteString("\n")

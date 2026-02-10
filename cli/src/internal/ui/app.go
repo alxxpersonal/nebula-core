@@ -20,13 +20,16 @@ const (
 	tabRelations = 2
 	tabKnow      = 3
 	tabJobs      = 4
-	tabHistory   = 5
-	tabSearch    = 6
-	tabProfile   = 7
-	tabCount     = 8
+	tabLogs      = 5
+	tabFiles     = 6
+	tabProtocols = 7
+	tabHistory   = 8
+	tabSearch    = 9
+	tabProfile   = 10
+	tabCount     = 11
 )
 
-var tabNames = []string{"Inbox", "Entities", "Relationships", "Knowledge", "Jobs", "History", "Search", "Profile"}
+var tabNames = []string{"Inbox", "Entities", "Relationships", "Knowledge", "Jobs", "Logs", "Files", "Protocols", "History", "Search", "Profile"}
 
 // --- Messages ---
 
@@ -72,6 +75,9 @@ type App struct {
 	rels     RelationshipsModel
 	know     KnowledgeModel
 	jobs     JobsModel
+	logs     LogsModel
+	files    FilesModel
+	protocols ProtocolsModel
 	history  HistoryModel
 	search   SearchModel
 	profile  ProfileModel
@@ -91,6 +97,9 @@ func NewApp(client *api.Client, cfg *config.Config) App {
 		rels:           NewRelationshipsModel(client),
 		know:           NewKnowledgeModel(client),
 		jobs:           NewJobsModel(client),
+		logs:           NewLogsModel(client),
+		files:          NewFilesModel(client),
+		protocols:      NewProtocolsModel(client),
 		history:        NewHistoryModel(client),
 		search:         NewSearchModel(client),
 		profile:        NewProfileModel(client, cfg),
@@ -117,6 +126,12 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.know.height = msg.Height
 		a.jobs.width = msg.Width
 		a.jobs.height = msg.Height
+		a.logs.width = msg.Width
+		a.logs.height = msg.Height
+		a.files.width = msg.Width
+		a.files.height = msg.Height
+		a.protocols.width = msg.Width
+		a.protocols.height = msg.Height
 		a.history.width = msg.Width
 		a.history.height = msg.Height
 		a.search.width = msg.Width
@@ -247,6 +262,12 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.know, cmd = a.know.Update(msg)
 	case tabJobs:
 		a.jobs, cmd = a.jobs.Update(msg)
+	case tabLogs:
+		a.logs, cmd = a.logs.Update(msg)
+	case tabFiles:
+		a.files, cmd = a.files.Update(msg)
+	case tabProtocols:
+		a.protocols, cmd = a.protocols.Update(msg)
 	case tabHistory:
 		a.history, cmd = a.history.Update(msg)
 	case tabSearch:
@@ -273,6 +294,12 @@ func (a App) View() string {
 		content = a.know.View()
 	case tabJobs:
 		content = a.jobs.View()
+	case tabLogs:
+		content = a.logs.View()
+	case tabFiles:
+		content = a.files.View()
+	case tabProtocols:
+		content = a.protocols.View()
 	case tabHistory:
 		content = a.history.View()
 	case tabSearch:
@@ -328,6 +355,10 @@ func (a App) tabWantsArrows() bool {
 		return a.rels.view != relsViewList
 	case tabJobs:
 		return a.jobs.detail != nil || a.jobs.changingSt
+	case tabLogs:
+		return a.logs.view != logsViewList
+	case tabFiles:
+		return a.files.view != filesViewList
 	case tabSearch:
 		return false
 	case tabProfile:
@@ -361,6 +392,12 @@ func (a App) initTab(tab int) tea.Cmd {
 		return a.know.Init()
 	case tabJobs:
 		return a.jobs.Init()
+	case tabLogs:
+		return a.logs.Init()
+	case tabFiles:
+		return a.files.Init()
+	case tabProtocols:
+		return a.protocols.Init()
 	case tabHistory:
 		return a.history.Init()
 	case tabSearch:
@@ -617,6 +654,74 @@ func (a App) statusHintsForTab() []string {
 			components.Hint("enter", "Details"),
 			components.Hint("s", "Status"),
 		)
+	case tabLogs:
+		switch a.logs.view {
+		case logsViewDetail:
+			return append(base,
+				components.Hint("e", "Edit"),
+				components.Hint("v", "Value"),
+				components.Hint("m", "Metadata"),
+				components.Hint("esc", "Back"),
+			)
+		case logsViewAdd, logsViewEdit:
+			return append(base,
+				components.Hint("↑/↓", "Fields"),
+				components.Hint("←/→", "Cycle"),
+				components.Hint("space", "Select"),
+				components.Hint("ctrl+s", "Save"),
+				components.Hint("esc", "Back"),
+			)
+		default:
+			return append(base,
+				components.Hint("↑/↓", "Scroll"),
+				components.Hint("tab", "Complete"),
+				components.Hint("enter", "Details"),
+			)
+		}
+	case tabFiles:
+		switch a.files.view {
+		case filesViewDetail:
+			return append(base,
+				components.Hint("e", "Edit"),
+				components.Hint("m", "Metadata"),
+				components.Hint("esc", "Back"),
+			)
+		case filesViewAdd, filesViewEdit:
+			return append(base,
+				components.Hint("↑/↓", "Fields"),
+				components.Hint("←/→", "Cycle"),
+				components.Hint("space", "Select"),
+				components.Hint("ctrl+s", "Save"),
+				components.Hint("esc", "Back"),
+			)
+		default:
+			return append(base,
+				components.Hint("↑/↓", "Scroll"),
+				components.Hint("tab", "Complete"),
+				components.Hint("enter", "Details"),
+			)
+		}
+	case tabProtocols:
+		switch a.protocols.view {
+		case protocolsViewDetail:
+			return append(base,
+				components.Hint("e", "Edit"),
+				components.Hint("esc", "Back"),
+			)
+		case protocolsViewEdit, protocolsViewAdd:
+			return append(base,
+				components.Hint("↑/↓", "Fields"),
+				components.Hint("←/→", "Cycle"),
+				components.Hint("ctrl+s", "Save"),
+				components.Hint("esc", "Cancel"),
+			)
+		default:
+			return append(base,
+				components.Hint("↑/↓", "Scroll"),
+				components.Hint("n", "New"),
+				components.Hint("enter", "Details"),
+			)
+		}
 	case tabHistory:
 		if a.history.filtering {
 			return append(base,

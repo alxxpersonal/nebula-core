@@ -107,7 +107,9 @@ func (m ProfileModel) Update(msg tea.Msg) (ProfileModel, tea.Cmd) {
 		}
 
 		switch {
-		case isKey(msg, "tab"):
+		case isKey(msg, "left"):
+			m.section = (m.section - 1 + 2) % 2
+		case isKey(msg, "right"):
 			m.section = (m.section + 1) % 2
 		case isDown(msg):
 			m.activeList().Down()

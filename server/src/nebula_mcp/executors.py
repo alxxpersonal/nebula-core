@@ -2,6 +2,7 @@
 
 # Standard Library
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 # Third-Party
@@ -341,6 +342,161 @@ async def execute_create_file(
     return dict(row) if row else {}
 
 
+async def execute_update_file(
+    pool: Pool, enums: EnumRegistry, change_details: dict
+) -> dict:
+    """Execute file metadata update from approved request."""
+
+    from .models import UpdateFileInput
+
+    if isinstance(change_details, str):
+        change_details = json.loads(change_details)
+
+    payload = UpdateFileInput(**change_details)
+
+    status_id = None
+    if payload.status:
+        status_id = require_status(payload.status, enums)
+
+    row = await pool.fetchrow(
+        QUERIES["files/update"],
+        payload.file_id,
+        payload.filename,
+        payload.file_path,
+        payload.mime_type,
+        payload.size_bytes,
+        payload.checksum,
+        status_id,
+        payload.tags,
+        json.dumps(payload.metadata) if payload.metadata is not None else None,
+    )
+
+    return dict(row) if row else {}
+
+
+async def execute_create_protocol(
+    pool: Pool, enums: EnumRegistry, change_details: dict
+) -> dict:
+    """Execute protocol creation from approved request."""
+
+    from .models import CreateProtocolInput
+
+    if isinstance(change_details, str):
+        change_details = json.loads(change_details)
+
+    payload = CreateProtocolInput(**change_details)
+    status_id = require_status(payload.status, enums)
+
+    row = await pool.fetchrow(
+        QUERIES["protocols/create"],
+        payload.name,
+        payload.title,
+        payload.version,
+        payload.content,
+        payload.protocol_type,
+        payload.applies_to,
+        status_id,
+        payload.tags,
+        json.dumps(payload.metadata) if payload.metadata else "{}",
+        payload.vault_file_path,
+    )
+
+    return dict(row) if row else {}
+
+
+async def execute_update_protocol(
+    pool: Pool, enums: EnumRegistry, change_details: dict
+) -> dict:
+    """Execute protocol update from approved request."""
+
+    from .models import UpdateProtocolInput
+
+    if isinstance(change_details, str):
+        change_details = json.loads(change_details)
+
+    payload = UpdateProtocolInput(**change_details)
+    status_id = None
+    if payload.status:
+        status_id = require_status(payload.status, enums)
+
+    row = await pool.fetchrow(
+        QUERIES["protocols/update"],
+        payload.name,
+        payload.title,
+        payload.version,
+        payload.content,
+        payload.protocol_type,
+        payload.applies_to,
+        status_id,
+        payload.tags,
+        json.dumps(payload.metadata) if payload.metadata else None,
+        payload.vault_file_path,
+    )
+
+    return dict(row) if row else {}
+
+async def execute_create_log(
+    pool: Pool, enums: EnumRegistry, change_details: dict
+) -> dict:
+    """Execute log creation from approved request."""
+
+    from .models import CreateLogInput
+    from .enums import require_log_type
+
+    if isinstance(change_details, str):
+        change_details = json.loads(change_details)
+
+    payload = CreateLogInput(**change_details)
+    log_type_id = require_log_type(payload.log_type, enums)
+    status_id = require_status(payload.status, enums)
+    timestamp = payload.timestamp or datetime.now(timezone.utc)
+
+    row = await pool.fetchrow(
+        QUERIES["logs/create"],
+        log_type_id,
+        timestamp,
+        json.dumps(payload.value) if payload.value is not None else "{}",
+        status_id,
+        payload.tags,
+        json.dumps(payload.metadata) if payload.metadata is not None else "{}",
+    )
+
+    return dict(row) if row else {}
+
+
+async def execute_update_log(
+    pool: Pool, enums: EnumRegistry, change_details: dict
+) -> dict:
+    """Execute log update from approved request."""
+
+    from .models import UpdateLogInput
+    from .enums import require_log_type
+
+    if isinstance(change_details, str):
+        change_details = json.loads(change_details)
+
+    payload = UpdateLogInput(**change_details)
+    log_type_id = None
+    if payload.log_type:
+        log_type_id = require_log_type(payload.log_type, enums)
+    status_id = None
+    if payload.status:
+        status_id = require_status(payload.status, enums)
+
+    row = await pool.fetchrow(
+        QUERIES["logs/update"],
+        payload.id,
+        log_type_id,
+        payload.timestamp,
+        json.dumps(payload.value) if payload.value is not None else None,
+        status_id,
+        payload.tags,
+        json.dumps(payload.metadata) if payload.metadata is not None else None,
+    )
+
+    return dict(row) if row else {}
+
+
 async def execute_update_entity(
     pool: Pool, enums: EnumRegistry, change_details: dict
 ) -> dict:
@@ -499,6 +655,11 @@ EXECUTORS = {
     "update_relationship": execute_update_relationship,
     "update_job_status": execute_update_job_status,
     "create_file": execute_create_file,
+    "update_file": execute_update_file,
+    "create_protocol": execute_create_protocol,
+    "update_protocol": execute_update_protocol,
+    "create_log": execute_create_log,
+    "update_log": execute_update_log,
     "update_entity": execute_update_entity,
     "bulk_update_entity_tags": execute_bulk_update_entity_tags,
     "bulk_update_entity_scopes": execute_bulk_update_entity_scopes,

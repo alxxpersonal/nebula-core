@@ -1,0 +1,973 @@
+package ui
+
+import (
+	"fmt"
+	"strings"
+	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/gravitrone/nebula-core/cli/internal/api"
+	"github.com/gravitrone/nebula-core/cli/internal/ui/components"
+)
+
+// --- Messages ---
+
+type logsLoadedMsg struct{ items []api.Log }
+type logCreatedMsg struct{}
+type logUpdatedMsg struct{}
+type logsScopesLoadedMsg struct{ options []string }
+
+type logsView int
+
+const (
+	logsViewAdd logsView = iota
+	logsViewList
+	logsViewDetail
+	logsViewEdit
+)
+
+const (
+	logFieldType = iota
+	logFieldTimestamp
+	logFieldStatus
+	logFieldTags
+	logFieldValue
+	logFieldMeta
+	logFieldCount
+)
+
+const (
+	logEditFieldStatus = iota
+	logEditFieldTags
+	logEditFieldValue
+	logEditFieldMeta
+	logEditFieldCount
+)
+
+var logStatusOptions = []string{"active", "archived"}
+
+// --- Logs Model ---
+
+type LogsModel struct {
+	client    *api.Client
+	items     []api.Log
+	allItems  []api.Log
+	list      *components.List
+	loading   bool
+	view      logsView
+	modeFocus bool
+	searchBuf string
+	searchSuggest string
+	detail    *api.Log
+	errText   string
+	addErr    string
+	valueExpanded bool
+	metaExpanded  bool
+	width     int
+	height    int
+	scopeOptions []string
+
+	// add
+	addFields      []formField
+	addFocus       int
+	addStatusIdx   int
+	addTags        []string
+	addTagBuf      string
+	addType        string
+	addTimestamp   string
+	addValue       MetadataEditor
+	addMeta        MetadataEditor
+	addSaving      bool
+	addSaved       bool
+
+	// edit
+	editFocus     int
+	editStatusIdx int
+	editTags      []string
+	editTagBuf    string
+	editType      string
+	editTimestamp string
+	editValue     MetadataEditor
+	editMeta      MetadataEditor
+	editSaving    bool
+}
+
+func NewLogsModel(client *api.Client) LogsModel {
+	return LogsModel{
+		client: client,
+		list:   components.NewList(12),
+		view:   logsViewList,
+		addFields: []formField{
+			{label: "Type"},
+			{label: "Timestamp"},
+			{label: "Status"},
+			{label: "Tags"},
+			{label: "Value"},
+			{label: "Metadata"},
+		},
+	}
+}
+
+func (m LogsModel) Init() tea.Cmd {
+	m.loading = true
+	m.view = logsViewList
+	m.modeFocus = false
+	m.searchBuf = ""
+	m.searchSuggest = ""
+	m.detail = nil
+	m.errText = ""
+	m.valueExpanded = false
+	m.metaExpanded = false
+	m.addFocus = 0
+	m.addStatusIdx = statusIndex(logStatusOptions, "active")
+	m.addTags = nil
+	m.addTagBuf = ""
+	m.addType = ""
+	m.addTimestamp = ""
+	m.addValue.Reset()
+	m.addMeta.Reset()
+	m.addSaving = false
+	m.addSaved = false
+	m.editFocus = 0
+	m.editStatusIdx = statusIndex(logStatusOptions, "active")
+	m.editTags = nil
+	m.editTagBuf = ""
+	m.editType = ""
+	m.editTimestamp = ""
+	m.editValue.Reset()
+	m.editMeta.Reset()
+	m.editSaving = false
+	return m.loadLogs()
+}
+
+func (m LogsModel) Update(msg tea.Msg) (LogsModel, tea.Cmd) {
+	switch msg := msg.(type) {
+	case logsLoadedMsg:
+		m.loading = false
+		m.allItems = msg.items
+		m.applyLogSearch()
+		return m, m.loadScopeOptions()
+	case logsScopesLoadedMsg:
+		m.scopeOptions = msg.options
+		m.addMeta.SetScopeOptions(m.scopeOptions)
+		m.editMeta.SetScopeOptions(m.scopeOptions)
+		return m, nil
+	case logCreatedMsg:
+		m.addSaving = false
+		m.addSaved = true
+		m.loading = true
+		return m, m.loadLogs()
+	case logUpdatedMsg:
+		m.editSaving = false
+		m.detail = nil
+		m.view = logsViewList
+		m.loading = true
+		return m, m.loadLogs()
+	case errMsg:
+		m.loading = false
+		m.addSaving = false
+		m.editSaving = false
+		m.errText = msg.err.Error()
+		return m, nil
+	case tea.KeyMsg:
+		if m.addValue.Active {
+			m.addValue.HandleKey(msg)
+			return m, nil
+		}
+		if m.addMeta.Active {
+			m.addMeta.HandleKey(msg)
+			return m, nil
+		}
+		if m.editValue.Active {
+			m.editValue.HandleKey(msg)
+			return m, nil
+		}
+		if m.editMeta.Active {
+			m.editMeta.HandleKey(msg)
+			return m, nil
+		}
+		if m.modeFocus {
+			return m.handleModeKeys(msg)
+		}
+		switch m.view {
+		case logsViewAdd:
+			return m.handleAddKeys(msg)
+		case logsViewEdit:
+			return m.handleEditKeys(msg)
+		case logsViewDetail:
+			return m.handleDetailKeys(msg)
+		default:
+			return m.handleListKeys(msg)
+		}
+	}
+	return m, nil
+}
+
+func (m LogsModel) View() string {
+	if m.addValue.Active {
+		return m.addValue.Render(m.width)
+	}
+	if m.addMeta.Active {
+		return m.addMeta.Render(m.width)
+	}
+	if m.editValue.Active {
+		return m.editValue.Render(m.width)
+	}
+	if m.editMeta.Active {
+		return m.editMeta.Render(m.width)
+	}
+	modeLine := m.renderModeLine()
+	var body string
+	switch m.view {
+	case logsViewAdd:
+		body = m.renderAdd()
+	case logsViewEdit:
+		body = m.renderEdit()
+	case logsViewDetail:
+		body = m.renderDetail()
+	default:
+		body = m.renderList()
+	}
+	if modeLine != "" {
+		body = components.CenterLine(modeLine, m.width) + "\n\n" + body
+	}
+	return components.Indent(body, 1)
+}
+
+// --- Mode Line ---
+
+func (m LogsModel) renderModeLine() string {
+	add := TabInactiveStyle.Render("Add")
+	list := TabInactiveStyle.Render("Library")
+	if m.view == logsViewAdd {
+		add = TabActiveStyle.Render("Add")
+	} else {
+		list = TabActiveStyle.Render("Library")
+	}
+	line := add + " " + list
+	if m.modeFocus {
+		return SelectedStyle.Render("› " + line)
+	}
+	return line
+}
+
+func (m LogsModel) handleModeKeys(msg tea.KeyMsg) (LogsModel, tea.Cmd) {
+	switch {
+	case isDown(msg):
+		m.modeFocus = false
+	case isUp(msg):
+		m.modeFocus = false
+	case isKey(msg, "left"), isKey(msg, "right"), isSpace(msg), isEnter(msg):
+		return m.toggleMode()
+	case isBack(msg):
+		m.modeFocus = false
+	}
+	return m, nil
+}
+
+func (m LogsModel) toggleMode() (LogsModel, tea.Cmd) {
+	m.modeFocus = false
+	if m.view == logsViewAdd {
+		m.view = logsViewList
+		return m, nil
+	}
+	m.view = logsViewAdd
+	m.addSaved = false
+	return m, nil
+}
+
+// --- List View ---
+
+func (m LogsModel) renderList() string {
+	if m.loading {
+		return "  " + MutedStyle.Render("Loading logs...")
+	}
+	if len(m.items) == 0 {
+		content := MutedStyle.Render("No logs found.")
+		return components.Box(content, m.width)
+	}
+
+	var rows strings.Builder
+	visible := m.list.Visible()
+	for i, label := range visible {
+		absIdx := m.list.RelToAbs(i)
+		if m.list.IsSelected(absIdx) {
+			rows.WriteString(SelectedStyle.Render("  > " + label))
+		} else {
+			rows.WriteString(NormalStyle.Render("    " + label))
+		}
+		if i < len(visible)-1 {
+			rows.WriteString("\n")
+		}
+	}
+
+	countLine := fmt.Sprintf("%d total", len(m.items))
+	if strings.TrimSpace(m.searchBuf) != "" {
+		countLine = fmt.Sprintf("%s · search: %s", countLine, strings.TrimSpace(m.searchBuf))
+		if m.searchSuggest != "" && !strings.EqualFold(strings.TrimSpace(m.searchBuf), strings.TrimSpace(m.searchSuggest)) {
+			countLine = fmt.Sprintf("%s · next: %s", countLine, strings.TrimSpace(m.searchSuggest))
+		}
+	}
+	content := MutedStyle.Render(countLine) + "\n\n" + rows.String()
+	return components.TitledBox("Logs", content, m.width)
+}
+
+func (m LogsModel) handleListKeys(msg tea.KeyMsg) (LogsModel, tea.Cmd) {
+	switch {
+	case isDown(msg):
+		m.list.Down()
+	case isUp(msg):
+		if m.list.Selected() == 0 {
+			m.modeFocus = true
+		} else {
+			m.list.Up()
+		}
+	case isEnter(msg), isSpace(msg):
+		if idx := m.list.Selected(); idx < len(m.items) {
+			item := m.items[idx]
+			m.detail = &item
+			m.view = logsViewDetail
+		}
+	case isKey(msg, "backspace", "delete"):
+		if len(m.searchBuf) > 0 {
+			m.searchBuf = m.searchBuf[:len(m.searchBuf)-1]
+			m.applyLogSearch()
+		}
+	case isKey(msg, "cmd+backspace", "cmd+delete", "ctrl+u"):
+		if m.searchBuf != "" {
+			m.searchBuf = ""
+			m.searchSuggest = ""
+			m.applyLogSearch()
+		}
+	case isBack(msg):
+		if m.searchBuf != "" {
+			m.searchBuf = ""
+			m.searchSuggest = ""
+			m.applyLogSearch()
+		}
+	case isKey(msg, "tab"):
+		if m.searchSuggest != "" && !strings.EqualFold(strings.TrimSpace(m.searchBuf), strings.TrimSpace(m.searchSuggest)) {
+			m.searchBuf = m.searchSuggest
+			m.applyLogSearch()
+		}
+	default:
+		ch := msg.String()
+		if len(ch) == 1 || ch == " " {
+			if ch == " " && m.searchBuf == "" {
+				return m, nil
+			}
+			m.searchBuf += ch
+			m.applyLogSearch()
+		}
+	}
+	return m, nil
+}
+
+// --- Detail View ---
+
+func (m LogsModel) handleDetailKeys(msg tea.KeyMsg) (LogsModel, tea.Cmd) {
+	switch {
+	case isUp(msg):
+		m.modeFocus = true
+	case isBack(msg):
+		m.detail = nil
+		m.valueExpanded = false
+		m.metaExpanded = false
+		m.view = logsViewList
+	case isKey(msg, "e"):
+		m.startEdit()
+		m.view = logsViewEdit
+	case isKey(msg, "v"):
+		m.valueExpanded = !m.valueExpanded
+	case isKey(msg, "m"):
+		m.metaExpanded = !m.metaExpanded
+	}
+	return m, nil
+}
+
+func (m LogsModel) renderDetail() string {
+	if m.detail == nil {
+		return m.renderList()
+	}
+	l := m.detail
+	rows := []components.TableRow{
+		{Label: "ID", Value: l.ID},
+		{Label: "Type", Value: l.LogType},
+		{Label: "Timestamp", Value: l.Timestamp.Format("2006-01-02 15:04")},
+	}
+	if l.Status != "" {
+		rows = append(rows, components.TableRow{Label: "Status", Value: l.Status})
+	}
+	if len(l.Tags) > 0 {
+		rows = append(rows, components.TableRow{Label: "Tags", Value: strings.Join(l.Tags, ", ")})
+	}
+	rows = append(rows, components.TableRow{Label: "Created", Value: l.CreatedAt.Format("2006-01-02 15:04")})
+	if !l.UpdatedAt.IsZero() {
+		rows = append(rows, components.TableRow{Label: "Updated", Value: l.UpdatedAt.Format("2006-01-02 15:04")})
+	}
+
+	sections := []string{components.Table("Log", rows, m.width)}
+	if len(l.Value) > 0 {
+		sections = append(sections, renderMetadataBlockWithTitle("Value", map[string]any(l.Value), m.width, m.valueExpanded))
+	}
+	if len(l.Metadata) > 0 {
+		sections = append(sections, renderMetadataBlockWithTitle("Metadata", map[string]any(l.Metadata), m.width, m.metaExpanded))
+	}
+	return strings.Join(sections, "\n\n")
+}
+
+// --- Add View ---
+
+func (m LogsModel) handleAddKeys(msg tea.KeyMsg) (LogsModel, tea.Cmd) {
+	if m.addSaving {
+		return m, nil
+	}
+	if m.addSaved {
+		if isBack(msg) {
+			m.resetAddForm()
+		}
+		return m, nil
+	}
+	if m.modeFocus {
+		return m.handleModeKeys(msg)
+	}
+	if m.addFocus == logFieldStatus {
+		switch {
+		case isKey(msg, "left"):
+			m.addStatusIdx = (m.addStatusIdx - 1 + len(logStatusOptions)) % len(logStatusOptions)
+			return m, nil
+		case isKey(msg, "right"), isSpace(msg):
+			m.addStatusIdx = (m.addStatusIdx + 1) % len(logStatusOptions)
+			return m, nil
+		}
+	}
+	switch {
+	case isDown(msg):
+		m.addFocus = (m.addFocus + 1) % logFieldCount
+	case isUp(msg):
+		if m.addFocus == 0 {
+			m.modeFocus = true
+			return m, nil
+		}
+		m.addFocus = (m.addFocus - 1 + logFieldCount) % logFieldCount
+	case isKey(msg, "ctrl+s"):
+		return m.saveAdd()
+	case isBack(msg):
+		m.resetAddForm()
+	case isKey(msg, "backspace", "delete"):
+		switch m.addFocus {
+		case logFieldTags:
+			if len(m.addTagBuf) > 0 {
+				m.addTagBuf = m.addTagBuf[:len(m.addTagBuf)-1]
+			} else if len(m.addTags) > 0 {
+				m.addTags = m.addTags[:len(m.addTags)-1]
+			}
+		case logFieldType:
+			if len(m.addType) > 0 {
+				m.addType = m.addType[:len(m.addType)-1]
+			}
+		case logFieldTimestamp:
+			if len(m.addTimestamp) > 0 {
+				m.addTimestamp = m.addTimestamp[:len(m.addTimestamp)-1]
+			}
+		default:
+			return m, nil
+		}
+	default:
+		switch m.addFocus {
+		case logFieldTags:
+			switch {
+			case isSpace(msg) || isKey(msg, ",") || isEnter(msg):
+				m.commitAddTag()
+			default:
+				ch := msg.String()
+				if len(ch) == 1 && ch != "," {
+					m.addTagBuf += ch
+				}
+			}
+		case logFieldType:
+			ch := msg.String()
+			if len(ch) == 1 || ch == " " {
+				m.addType += ch
+			}
+		case logFieldTimestamp:
+			ch := msg.String()
+			if len(ch) == 1 || ch == " " || ch == ":" || ch == "-" || ch == "T" || ch == "Z" || ch == "+" {
+				m.addTimestamp += ch
+			}
+		case logFieldValue:
+			if isEnter(msg) {
+				m.addValue.Active = true
+			}
+		case logFieldMeta:
+			if isEnter(msg) {
+				m.addMeta.Active = true
+			}
+		}
+	}
+	return m, nil
+}
+
+func (m LogsModel) renderAdd() string {
+	var b strings.Builder
+	for i, f := range m.addFields {
+		label := MutedStyle.Render(f.label + ":")
+		if i == m.addFocus {
+			label = SelectedStyle.Render("> " + f.label + ":")
+		} else {
+			label = "  " + label
+		}
+		b.WriteString(label + "\n")
+
+		switch i {
+		case logFieldType:
+			if m.addType == "" && i != m.addFocus {
+				b.WriteString(NormalStyle.Render("  -"))
+			} else if i == m.addFocus {
+				b.WriteString(NormalStyle.Render("  " + m.addType + AccentStyle.Render("█")))
+			} else {
+				b.WriteString(NormalStyle.Render("  " + m.addType))
+			}
+		case logFieldTimestamp:
+			if m.addTimestamp == "" && i != m.addFocus {
+				b.WriteString(NormalStyle.Render("  -"))
+			} else if i == m.addFocus {
+				b.WriteString(NormalStyle.Render("  " + m.addTimestamp + AccentStyle.Render("█")))
+			} else {
+				b.WriteString(NormalStyle.Render("  " + m.addTimestamp))
+			}
+		case logFieldStatus:
+			status := logStatusOptions[m.addStatusIdx]
+			b.WriteString(NormalStyle.Render("  " + status))
+		case logFieldTags:
+			if i == m.addFocus {
+				b.WriteString(NormalStyle.Render("  " + m.renderAddTags(true)))
+			} else {
+				b.WriteString(NormalStyle.Render("  " + m.renderAddTags(false)))
+			}
+		case logFieldValue:
+			value := renderMetadataInput(m.addValue.Buffer)
+			if value == "" {
+				value = "-"
+			}
+			b.WriteString(NormalStyle.Render("  " + value))
+		case logFieldMeta:
+			meta := renderMetadataInput(m.addMeta.Buffer)
+			if meta == "" {
+				meta = "-"
+			}
+			b.WriteString(NormalStyle.Render("  " + meta))
+		}
+
+		if i < len(m.addFields)-1 {
+			b.WriteString("\n\n")
+		}
+	}
+	if m.addErr != "" {
+		b.WriteString("\n\n" + ErrorStyle.Render(m.addErr))
+	}
+	if m.addSaved {
+		b.WriteString("\n\n" + SuccessStyle.Render("Saved."))
+	}
+	return components.Indent(b.String(), 1)
+}
+
+func (m LogsModel) saveAdd() (LogsModel, tea.Cmd) {
+	logType := strings.TrimSpace(m.addType)
+	if logType == "" {
+		m.addErr = "Type is required"
+		return m, nil
+	}
+	status := logStatusOptions[m.addStatusIdx]
+	timestamp, err := parseLogTimestamp(m.addTimestamp)
+	if err != nil {
+		m.addErr = err.Error()
+		return m, nil
+	}
+	value, err := parseMetadataInput(m.addValue.Buffer)
+	if err != nil {
+		m.addErr = err.Error()
+		return m, nil
+	}
+	meta, err := parseMetadataInput(m.addMeta.Buffer)
+	if err != nil {
+		m.addErr = err.Error()
+		return m, nil
+	}
+	meta = mergeMetadataScopes(meta, m.addMeta.Scopes)
+
+	input := api.CreateLogInput{
+		LogType:   logType,
+		Status:    status,
+		Tags:      m.addTags,
+		Value:     value,
+		Metadata:  meta,
+		Timestamp: timestamp,
+	}
+	m.addSaving = true
+	m.addErr = ""
+	return m, func() tea.Msg {
+		if _, err := m.client.CreateLog(input); err != nil {
+			return errMsg{err}
+		}
+		return logCreatedMsg{}
+	}
+}
+
+func (m *LogsModel) resetAddForm() {
+	m.addSaved = false
+	m.addSaving = false
+	m.addErr = ""
+	m.addFocus = 0
+	m.addStatusIdx = statusIndex(logStatusOptions, "active")
+	m.addTags = nil
+	m.addTagBuf = ""
+	m.addType = ""
+	m.addTimestamp = ""
+	m.addValue.Reset()
+	m.addMeta.Reset()
+}
+
+func (m *LogsModel) commitAddTag() {
+	raw := strings.TrimSpace(m.addTagBuf)
+	if raw == "" {
+		m.addTagBuf = ""
+		return
+	}
+	tag := normalizeTag(raw)
+	if tag == "" {
+		m.addTagBuf = ""
+		return
+	}
+	for _, t := range m.addTags {
+		if t == tag {
+			m.addTagBuf = ""
+			return
+		}
+	}
+	m.addTags = append(m.addTags, tag)
+	m.addTagBuf = ""
+}
+
+func (m LogsModel) renderAddTags(focused bool) string {
+	if len(m.addTags) == 0 && m.addTagBuf == "" && !focused {
+		return "-"
+	}
+	var b strings.Builder
+	for i, t := range m.addTags {
+		if i > 0 {
+			b.WriteString(" ")
+		}
+		b.WriteString(AccentStyle.Render("[" + t + "]"))
+	}
+	if focused {
+		if b.Len() > 0 {
+			b.WriteString(" ")
+		}
+		if m.addTagBuf != "" {
+			b.WriteString(m.addTagBuf)
+		}
+		b.WriteString(AccentStyle.Render("█"))
+	} else if m.addTagBuf != "" {
+		if b.Len() > 0 {
+			b.WriteString(" ")
+		}
+		b.WriteString(MutedStyle.Render(m.addTagBuf))
+	}
+	return b.String()
+}
+
+// --- Edit View ---
+
+func (m LogsModel) startEdit() {
+	if m.detail == nil {
+		return
+	}
+	l := m.detail
+	m.editFocus = 0
+	m.editStatusIdx = statusIndex(logStatusOptions, l.Status)
+	m.editTags = append([]string{}, l.Tags...)
+	m.editTagBuf = ""
+	m.editType = l.LogType
+	m.editTimestamp = l.Timestamp.Format(time.RFC3339)
+	m.editValue.Load(map[string]any(l.Value))
+	m.editMeta.Load(map[string]any(l.Metadata))
+	m.editSaving = false
+}
+
+func (m LogsModel) handleEditKeys(msg tea.KeyMsg) (LogsModel, tea.Cmd) {
+	if m.editSaving {
+		return m, nil
+	}
+	if m.editFocus == logEditFieldStatus {
+		switch {
+		case isKey(msg, "left"):
+			m.editStatusIdx = (m.editStatusIdx - 1 + len(logStatusOptions)) % len(logStatusOptions)
+			return m, nil
+		case isKey(msg, "right"), isSpace(msg):
+			m.editStatusIdx = (m.editStatusIdx + 1) % len(logStatusOptions)
+			return m, nil
+		}
+	}
+	switch {
+	case isDown(msg):
+		m.editFocus = (m.editFocus + 1) % logEditFieldCount
+	case isUp(msg):
+		if m.editFocus > 0 {
+			m.editFocus = (m.editFocus - 1 + logEditFieldCount) % logEditFieldCount
+		}
+	case isBack(msg):
+		m.view = logsViewDetail
+	case isKey(msg, "ctrl+s"):
+		return m.saveEdit()
+	case isKey(msg, "backspace", "delete"):
+		switch m.editFocus {
+		case logEditFieldTags:
+			if len(m.editTagBuf) > 0 {
+				m.editTagBuf = m.editTagBuf[:len(m.editTagBuf)-1]
+			} else if len(m.editTags) > 0 {
+				m.editTags = m.editTags[:len(m.editTags)-1]
+			}
+		}
+	default:
+		switch m.editFocus {
+		case logEditFieldTags:
+			switch {
+			case isSpace(msg) || isKey(msg, ",") || isEnter(msg):
+				m.commitEditTag()
+			default:
+				ch := msg.String()
+				if len(ch) == 1 && ch != "," {
+					m.editTagBuf += ch
+				}
+			}
+		case logEditFieldValue:
+			if isEnter(msg) {
+				m.editValue.Active = true
+			}
+		case logEditFieldMeta:
+			if isEnter(msg) {
+				m.editMeta.Active = true
+			}
+		}
+	}
+	return m, nil
+}
+
+func (m LogsModel) renderEdit() string {
+	var b strings.Builder
+	for i, f := range []string{"Status", "Tags", "Value", "Metadata"} {
+		label := MutedStyle.Render(f + ":")
+		if i == m.editFocus {
+			label = SelectedStyle.Render("> " + f + ":")
+		} else {
+			label = "  " + label
+		}
+		b.WriteString(label + "\n")
+		switch i {
+		case logEditFieldStatus:
+			b.WriteString(NormalStyle.Render("  " + logStatusOptions[m.editStatusIdx]))
+		case logEditFieldTags:
+			if i == m.editFocus {
+				b.WriteString(NormalStyle.Render("  " + m.renderEditTags(true)))
+			} else {
+				b.WriteString(NormalStyle.Render("  " + m.renderEditTags(false)))
+			}
+		case logEditFieldValue:
+			value := renderMetadataInput(m.editValue.Buffer)
+			if value == "" {
+				value = "-"
+			}
+			b.WriteString(NormalStyle.Render("  " + value))
+		case logEditFieldMeta:
+			meta := renderMetadataInput(m.editMeta.Buffer)
+			if meta == "" {
+				meta = "-"
+			}
+			b.WriteString(NormalStyle.Render("  " + meta))
+		}
+		if i < logEditFieldCount-1 {
+			b.WriteString("\n\n")
+		}
+	}
+	return components.Indent(b.String(), 1)
+}
+
+func (m LogsModel) saveEdit() (LogsModel, tea.Cmd) {
+	status := logStatusOptions[m.editStatusIdx]
+	value, err := parseMetadataInput(m.editValue.Buffer)
+	if err != nil {
+		m.errText = err.Error()
+		return m, nil
+	}
+	meta, err := parseMetadataInput(m.editMeta.Buffer)
+	if err != nil {
+		m.errText = err.Error()
+		return m, nil
+	}
+	meta = mergeMetadataScopes(meta, m.editMeta.Scopes)
+
+	input := api.UpdateLogInput{
+		Status:  &status,
+		Tags:    &m.editTags,
+		Value:   value,
+		Metadata: meta,
+	}
+	m.editSaving = true
+	m.errText = ""
+	return m, func() tea.Msg {
+		if _, err := m.client.UpdateLog(m.detail.ID, input); err != nil {
+			return errMsg{err}
+		}
+		return logUpdatedMsg{}
+	}
+}
+
+func (m *LogsModel) commitEditTag() {
+	raw := strings.TrimSpace(m.editTagBuf)
+	if raw == "" {
+		m.editTagBuf = ""
+		return
+	}
+	tag := normalizeTag(raw)
+	if tag == "" {
+		m.editTagBuf = ""
+		return
+	}
+	for _, t := range m.editTags {
+		if t == tag {
+			m.editTagBuf = ""
+			return
+		}
+	}
+	m.editTags = append(m.editTags, tag)
+	m.editTagBuf = ""
+}
+
+func (m LogsModel) renderEditTags(focused bool) string {
+	if len(m.editTags) == 0 && m.editTagBuf == "" && !focused {
+		return "-"
+	}
+	var b strings.Builder
+	for i, t := range m.editTags {
+		if i > 0 {
+			b.WriteString(" ")
+		}
+		b.WriteString(AccentStyle.Render("[" + t + "]"))
+	}
+	if focused {
+		if b.Len() > 0 {
+			b.WriteString(" ")
+		}
+		if m.editTagBuf != "" {
+			b.WriteString(m.editTagBuf)
+		}
+		b.WriteString(AccentStyle.Render("█"))
+	} else if m.editTagBuf != "" {
+		if b.Len() > 0 {
+			b.WriteString(" ")
+		}
+		b.WriteString(MutedStyle.Render(m.editTagBuf))
+	}
+	return b.String()
+}
+
+// --- Data ---
+
+func (m LogsModel) loadLogs() tea.Cmd {
+	return func() tea.Msg {
+		items, err := m.client.QueryLogs(api.QueryParams{"status_category": "active"})
+		if err != nil {
+			return errMsg{err}
+		}
+		return logsLoadedMsg{items}
+	}
+}
+
+func (m LogsModel) loadScopeOptions() tea.Cmd {
+	if m.client == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		scopes, err := m.client.ListAuditScopes()
+		if err != nil {
+			return errMsg{err}
+		}
+		names := map[string]string{}
+		for _, scope := range scopes {
+			names[scope.ID] = scope.Name
+		}
+		return logsScopesLoadedMsg{options: scopeNameList(names)}
+	}
+}
+
+func (m *LogsModel) applyLogSearch() {
+	query := strings.TrimSpace(strings.ToLower(m.searchBuf))
+	if query == "" {
+		m.items = m.allItems
+	} else {
+		filtered := make([]api.Log, 0, len(m.allItems))
+		for _, l := range m.allItems {
+			hay := strings.ToLower(strings.Join([]string{l.LogType, l.ID, l.Status}, " "))
+			if strings.Contains(hay, query) {
+				filtered = append(filtered, l)
+			}
+		}
+		m.items = filtered
+	}
+	labels := make([]string, len(m.items))
+	for i, l := range m.items {
+		labels[i] = formatLogLine(l)
+	}
+	m.list.SetItems(labels)
+	m.updateSearchSuggest()
+}
+
+func (m *LogsModel) updateSearchSuggest() {
+	m.searchSuggest = ""
+	query := strings.ToLower(strings.TrimSpace(m.searchBuf))
+	if query == "" {
+		return
+	}
+	for _, l := range m.allItems {
+		if strings.HasPrefix(strings.ToLower(l.LogType), query) {
+			m.searchSuggest = l.LogType
+			return
+		}
+	}
+}
+
+func formatLogLine(l api.Log) string {
+	label := l.LogType
+	if label == "" {
+		label = "log"
+	}
+	stamp := l.Timestamp.Format("2006-01-02")
+	segments := []string{label, stamp}
+	if l.Status != "" {
+		segments = append(segments, l.Status)
+	}
+	if preview := metadataPreview(map[string]any(l.Metadata), 40); preview != "" {
+		segments = append(segments, preview)
+	}
+	return strings.Join(segments, " · ")
+}
+
+func parseLogTimestamp(input string) (*time.Time, error) {
+	value := strings.TrimSpace(input)
+	if value == "" {
+		return nil, nil
+	}
+	layouts := []string{
+		time.RFC3339,
+		"2006-01-02 15:04",
+		"2006-01-02",
+	}
+	for _, layout := range layouts {
+		if t, err := time.Parse(layout, value); err == nil {
+			return &t, nil
+		}
+	}
+	return nil, fmt.Errorf("timestamp: use YYYY-MM-DD or RFC3339")
+}

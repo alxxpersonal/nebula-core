@@ -26,11 +26,11 @@ func parseMetadataInput(input string) (map[string]any, error) {
 		}
 		spaces := leadingSpaces(line)
 		if spaces%2 != 0 {
-			return nil, fmt.Errorf("line %d: indent must use 2 spaces", lineNum)
+			return nil, fmt.Errorf("line %d: indent must use 2 spaces (tab inserts 2)", lineNum)
 		}
 		level := spaces / 2
 		if level > len(stack)-1 {
-			return nil, fmt.Errorf("line %d: indent has no parent key", lineNum)
+			return nil, fmt.Errorf("line %d: indent has no parent key, add a parent line first", lineNum)
 		}
 		if level < len(stack)-1 {
 			stack = stack[:level+1]
@@ -41,7 +41,7 @@ func parseMetadataInput(input string) (map[string]any, error) {
 		}
 		parts := strings.SplitN(content, ":", 2)
 		if len(parts) != 2 {
-			return nil, fmt.Errorf("line %d: missing ':' separator", lineNum)
+			return nil, fmt.Errorf("line %d: expected 'key: value'", lineNum)
 		}
 		key := strings.TrimSpace(parts[0])
 		if key == "" {
@@ -82,7 +82,7 @@ func parseMetadataValue(raw string, lineNum int) (any, error) {
 		return items, nil
 	}
 	if strings.HasPrefix(raw, "{") && strings.HasSuffix(raw, "}") {
-		return nil, fmt.Errorf("line %d: inline objects not supported yet", lineNum)
+		return nil, fmt.Errorf("line %d: inline objects not supported, use nested keys", lineNum)
 	}
 	return parseMetadataScalar(raw), nil
 }
@@ -259,21 +259,44 @@ func metadataValuePreview(value any, maxLen int) string {
 }
 
 func renderMetadataBlock(data map[string]any, width int, expanded bool) string {
+	return renderMetadataBlockWithTitle("Metadata", data, width, expanded)
+}
+
+func renderMetadataBlockWithTitle(title string, data map[string]any, width int, expanded bool) string {
 	if len(data) == 0 {
 		return ""
 	}
-	if expanded {
-		return components.MetadataTable(data, width)
-	}
-	lines := metadataLines(data, 0)
+	lines := metadataLinesStyled(data, 0)
 	maxLines := 6
-	if len(lines) > maxLines {
+	if !expanded && len(lines) > maxLines {
 		lines = append(lines[:maxLines], MutedStyle.Render("..."))
 	}
-	return components.TitledBox("Metadata", strings.Join(lines, "\n"), width)
+	return components.TitledBox(title, strings.Join(lines, "\n"), width)
 }
 
-func metadataLines(data map[string]any, indent int) []string {
+func metadataLinesStyled(data map[string]any, indent int) []string {
+	keys := make([]string, 0, len(data))
+	for k := range data {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	var lines []string
+	pad := strings.Repeat(" ", indent)
+	for _, k := range keys {
+		switch typed := data[k].(type) {
+		case map[string]any:
+			lines = append(lines, pad+MetaKeyStyle.Render(k)+MetaPunctStyle.Render(":"))
+			lines = append(lines, metadataLinesStyled(typed, indent+2)...)
+		default:
+			value := formatMetadataValue(typed)
+			lines = append(lines, fmt.Sprintf("%s%s%s %s", pad, MetaKeyStyle.Render(k), MetaPunctStyle.Render(":"), MetaValueStyle.Render(value)))
+		}
+	}
+	return lines
+}
+
+func metadataLinesPlain(data map[string]any, indent int) []string {
 	keys := make([]string, 0, len(data))
 	for k := range data {
 		keys = append(keys, k)
@@ -286,10 +309,82 @@ func metadataLines(data map[string]any, indent int) []string {
 		switch typed := data[k].(type) {
 		case map[string]any:
 			lines = append(lines, pad+k+":")
-			lines = append(lines, metadataLines(typed, indent+2)...)
+			lines = append(lines, metadataLinesPlain(typed, indent+2)...)
 		default:
 			lines = append(lines, fmt.Sprintf("%s%s: %s", pad, k, formatMetadataValue(typed)))
 		}
 	}
 	return lines
+}
+
+func extractMetadataScopes(data map[string]any) []string {
+	if data == nil {
+		return nil
+	}
+	raw, ok := data["scopes"]
+	if !ok {
+		return nil
+	}
+	var out []string
+	switch typed := raw.(type) {
+	case []string:
+		out = append(out, typed...)
+	case []any:
+		for _, item := range typed {
+			if item == nil {
+				continue
+			}
+			out = append(out, fmt.Sprintf("%v", item))
+		}
+	case string:
+		if strings.TrimSpace(typed) != "" {
+			out = append(out, typed)
+		}
+	}
+	return normalizeScopeList(out)
+}
+
+func stripMetadataScopes(data map[string]any) map[string]any {
+	if len(data) == 0 {
+		return data
+	}
+	clean := make(map[string]any, len(data))
+	for k, v := range data {
+		if k == "scopes" {
+			continue
+		}
+		clean[k] = v
+	}
+	return clean
+}
+
+func mergeMetadataScopes(data map[string]any, scopes []string) map[string]any {
+	if data == nil {
+		data = map[string]any{}
+	}
+	scopes = normalizeScopeList(scopes)
+	if len(scopes) == 0 {
+		delete(data, "scopes")
+		return data
+	}
+	data["scopes"] = scopes
+	return data
+}
+
+func normalizeScopeList(values []string) []string {
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(values))
+	for _, v := range values {
+		scope := strings.ToLower(strings.TrimSpace(v))
+		scope = strings.TrimPrefix(scope, "#")
+		if scope == "" {
+			continue
+		}
+		if _, ok := seen[scope]; ok {
+			continue
+		}
+		seen[scope] = struct{}{}
+		out = append(out, scope)
+	}
+	return out
 }

@@ -10,6 +10,7 @@ SELECT
     s.name AS status,
     p.tags,
     p.metadata,
+    p.vault_file_path,
     p.created_at,
     p.updated_at
 FROM protocols p

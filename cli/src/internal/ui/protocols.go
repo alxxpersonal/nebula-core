@@ -1,0 +1,798 @@
+package ui
+
+import (
+	"fmt"
+	"strings"
+
+	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/gravitrone/nebula-core/cli/internal/api"
+	"github.com/gravitrone/nebula-core/cli/internal/ui/components"
+)
+
+// --- Messages ---
+
+type protocolsLoadedMsg struct{ items []api.Protocol }
+type protocolCreatedMsg struct{}
+type protocolUpdatedMsg struct{}
+
+type protocolsView int
+
+const (
+	protocolsViewAdd protocolsView = iota
+	protocolsViewList
+	protocolsViewDetail
+	protocolsViewEdit
+)
+
+const (
+	protoFieldName = iota
+	protoFieldTitle
+	protoFieldVersion
+	protoFieldType
+	protoFieldApplies
+	protoFieldStatus
+	protoFieldTags
+	protoFieldContent
+	protoFieldMetadata
+	protoFieldVault
+	protoFieldCount
+)
+
+const (
+	protoEditFieldTitle = iota
+	protoEditFieldVersion
+	protoEditFieldType
+	protoEditFieldApplies
+	protoEditFieldStatus
+	protoEditFieldTags
+	protoEditFieldContent
+	protoEditFieldMetadata
+	protoEditFieldVault
+	protoEditFieldCount
+)
+
+var protocolStatusOptions = []string{"active", "archived"}
+
+// --- Protocols Model ---
+
+type ProtocolsModel struct {
+	client    *api.Client
+	list      *components.List
+	items     []api.Protocol
+	allItems  []api.Protocol
+	loading   bool
+	view      protocolsView
+	detail    *api.Protocol
+	modeFocus bool
+	searchBuf string
+	width     int
+	height    int
+
+	// add
+	addFields    []formField
+	addFocus     int
+	addStatusIdx int
+	addTags      []string
+	addTagBuf    string
+	addApplies   []string
+	addApplyBuf  string
+	addMeta      MetadataEditor
+	addSaving    bool
+	addErr       string
+
+	// edit
+	editFields    []formField
+	editFocus     int
+	editStatusIdx int
+	editTags      []string
+	editTagBuf    string
+	editApplies   []string
+	editApplyBuf  string
+	editMeta      MetadataEditor
+	editSaving    bool
+}
+
+func NewProtocolsModel(client *api.Client) ProtocolsModel {
+	return ProtocolsModel{
+		client: client,
+		list:   components.NewList(12),
+		view:   protocolsViewList,
+		addFields: []formField{
+			{label: "Name"},
+			{label: "Title"},
+			{label: "Version"},
+			{label: "Type"},
+			{label: "Applies To"},
+			{label: "Status"},
+			{label: "Tags"},
+			{label: "Content"},
+			{label: "Metadata"},
+			{label: "Vault Path"},
+		},
+		editFields: []formField{
+			{label: "Title"},
+			{label: "Version"},
+			{label: "Type"},
+			{label: "Applies To"},
+			{label: "Status"},
+			{label: "Tags"},
+			{label: "Content"},
+			{label: "Metadata"},
+			{label: "Vault Path"},
+		},
+	}
+}
+
+func (m ProtocolsModel) Init() tea.Cmd {
+	m.loading = true
+	m.view = protocolsViewList
+	m.detail = nil
+	m.searchBuf = ""
+	m.modeFocus = false
+	m.addFocus = 0
+	m.addStatusIdx = statusIndex(protocolStatusOptions, "active")
+	m.addTags = nil
+	m.addTagBuf = ""
+	m.addApplies = nil
+	m.addApplyBuf = ""
+	m.addMeta.Reset()
+	m.addSaving = false
+	m.addErr = ""
+	m.editFocus = 0
+	m.editStatusIdx = statusIndex(protocolStatusOptions, "active")
+	m.editTags = nil
+	m.editTagBuf = ""
+	m.editApplies = nil
+	m.editApplyBuf = ""
+	m.editMeta.Reset()
+	m.editSaving = false
+	return m.loadProtocols
+}
+
+func (m ProtocolsModel) Update(msg tea.Msg) (ProtocolsModel, tea.Cmd) {
+	switch msg := msg.(type) {
+	case protocolsLoadedMsg:
+		m.loading = false
+		m.allItems = msg.items
+		m.applySearch()
+		return m, nil
+	case protocolCreatedMsg:
+		m.addSaving = false
+		m.addErr = ""
+		m.loading = true
+		return m, m.loadProtocols
+	case protocolUpdatedMsg:
+		m.editSaving = false
+		m.detail = nil
+		m.view = protocolsViewList
+		m.loading = true
+		return m, m.loadProtocols
+	case errMsg:
+		m.loading = false
+		m.addSaving = false
+		m.editSaving = false
+		m.addErr = msg.err.Error()
+		return m, nil
+
+	case tea.KeyMsg:
+		switch m.view {
+		case protocolsViewAdd:
+			return m.handleAddKeys(msg)
+		case protocolsViewDetail:
+			return m.handleDetailKeys(msg)
+		case protocolsViewEdit:
+			return m.handleEditKeys(msg)
+		default:
+			return m.handleListKeys(msg)
+		}
+	}
+	return m, nil
+}
+
+func (m ProtocolsModel) View() string {
+	switch m.view {
+	case protocolsViewAdd:
+		body := m.renderAdd()
+		mode := m.renderModeLine()
+		if mode != "" {
+			body = components.CenterLine(mode, m.width) + "\n\n" + body
+		}
+		return body
+	case protocolsViewDetail:
+		return m.renderDetail()
+	case protocolsViewEdit:
+		body := m.renderEdit()
+		mode := m.renderModeLine()
+		if mode != "" {
+			body = components.CenterLine(mode, m.width) + "\n\n" + body
+		}
+		return body
+	default:
+		body := m.renderList()
+		mode := m.renderModeLine()
+		if mode != "" {
+			body = components.CenterLine(mode, m.width) + "\n\n" + body
+		}
+		return body
+	}
+}
+
+// --- Loading ---
+
+func (m ProtocolsModel) loadProtocols() tea.Msg {
+	items, err := m.client.QueryProtocols(api.QueryParams{"status_category": "active"})
+	if err != nil {
+		return errMsg{err}
+	}
+	return protocolsLoadedMsg{items: items}
+}
+
+func (m *ProtocolsModel) applySearch() {
+	query := strings.TrimSpace(strings.ToLower(m.searchBuf))
+	if query == "" {
+		m.items = append([]api.Protocol{}, m.allItems...)
+	} else {
+		filtered := make([]api.Protocol, 0)
+		for _, item := range m.allItems {
+			name := strings.ToLower(item.Name)
+			title := strings.ToLower(item.Title)
+			if strings.Contains(name, query) || strings.Contains(title, query) {
+				filtered = append(filtered, item)
+			}
+		}
+		m.items = filtered
+	}
+	labels := make([]string, 0, len(m.items))
+	for _, item := range m.items {
+		label := item.Name
+		if strings.TrimSpace(item.Title) != "" {
+			label = fmt.Sprintf("%s · %s", item.Name, item.Title)
+		}
+		labels = append(labels, label)
+	}
+	if m.list != nil {
+		m.list.SetItems(labels)
+	}
+}
+
+// --- Mode Line ---
+
+func (m ProtocolsModel) renderModeLine() string {
+	add := TabInactiveStyle.Render("Add")
+	list := TabInactiveStyle.Render("Library")
+	if m.view == protocolsViewAdd {
+		add = TabActiveStyle.Render("Add")
+	} else {
+		list = TabActiveStyle.Render("Library")
+	}
+	return add + " " + list
+}
+
+// --- List ---
+
+func (m ProtocolsModel) handleListKeys(msg tea.KeyMsg) (ProtocolsModel, tea.Cmd) {
+	switch {
+	case isDown(msg):
+		m.list.Down()
+	case isUp(msg):
+		m.list.Up()
+	case isKey(msg, "n"):
+		m.view = protocolsViewAdd
+		return m, nil
+	case isKey(msg, "tab"):
+		m.view = protocolsViewAdd
+		return m, nil
+	case isEnter(msg):
+		if idx := m.list.Selected(); idx < len(m.items) {
+			m.detail = &m.items[idx]
+			m.view = protocolsViewDetail
+		}
+	case isKey(msg, "backspace", "delete"):
+		if len(m.searchBuf) > 0 {
+			m.searchBuf = m.searchBuf[:len(m.searchBuf)-1]
+			m.applySearch()
+		}
+	default:
+		if len(msg.String()) == 1 {
+			m.searchBuf += msg.String()
+			m.applySearch()
+		}
+	}
+	return m, nil
+}
+
+func (m ProtocolsModel) renderList() string {
+	if m.loading {
+		return components.CenterLine("Loading protocols...", m.width)
+	}
+	if len(m.items) == 0 {
+		content := MutedStyle.Render("No protocols found.")
+		return components.Box(content, m.width)
+	}
+	var rows strings.Builder
+	visible := m.list.Visible()
+	for i, label := range visible {
+		absIdx := m.list.RelToAbs(i)
+		if m.list.IsSelected(absIdx) {
+			rows.WriteString(SelectedStyle.Render("  > " + label))
+		} else {
+			rows.WriteString(NormalStyle.Render("    " + label))
+		}
+		if i < len(visible)-1 {
+			rows.WriteString("\n")
+		}
+	}
+	title := "Protocols"
+	countLine := fmt.Sprintf("%d total", len(m.items))
+	if strings.TrimSpace(m.searchBuf) != "" {
+		countLine = fmt.Sprintf("%s · search: %s", countLine, strings.TrimSpace(m.searchBuf))
+	}
+	countLine = MutedStyle.Render(countLine)
+	content := countLine + "\n\n" + rows.String()
+	return components.TitledBox(title, content, m.width)
+}
+
+// --- Detail ---
+
+func (m ProtocolsModel) handleDetailKeys(msg tea.KeyMsg) (ProtocolsModel, tea.Cmd) {
+	switch {
+	case isBack(msg):
+		m.view = protocolsViewList
+		m.detail = nil
+	case isKey(msg, "e"):
+		m.startEdit()
+		m.view = protocolsViewEdit
+	}
+	return m, nil
+}
+
+func (m ProtocolsModel) renderDetail() string {
+	if m.detail == nil {
+		return m.renderList()
+	}
+	p := m.detail
+	rows := []components.TableRow{
+		{Label: "Name", Value: p.Name},
+		{Label: "Title", Value: p.Title},
+	}
+	if p.Version != nil && *p.Version != "" {
+		rows = append(rows, components.TableRow{Label: "Version", Value: *p.Version})
+	}
+	if p.ProtocolType != nil && *p.ProtocolType != "" {
+		rows = append(rows, components.TableRow{Label: "Type", Value: *p.ProtocolType})
+	}
+	if len(p.AppliesTo) > 0 {
+		rows = append(rows, components.TableRow{Label: "Applies To", Value: strings.Join(p.AppliesTo, ", ")})
+	}
+	if p.Status != "" {
+		rows = append(rows, components.TableRow{Label: "Status", Value: p.Status})
+	}
+	if len(p.Tags) > 0 {
+		rows = append(rows, components.TableRow{Label: "Tags", Value: strings.Join(p.Tags, ", ")})
+	}
+	if p.VaultFile != nil && *p.VaultFile != "" {
+		rows = append(rows, components.TableRow{Label: "Vault Path", Value: *p.VaultFile})
+	}
+	rows = append(rows, components.TableRow{Label: "Created", Value: p.CreatedAt.Format("2006-01-02 15:04")})
+	if !p.UpdatedAt.IsZero() {
+		rows = append(rows, components.TableRow{Label: "Updated", Value: p.UpdatedAt.Format("2006-01-02 15:04")})
+	}
+
+	sections := []string{components.Table("Protocol", rows, m.width)}
+	if p.Content != nil && strings.TrimSpace(*p.Content) != "" {
+		sections = append(sections, components.TitledBox("Content", *p.Content, m.width))
+	}
+	if len(p.Metadata) > 0 {
+		sections = append(sections, renderMetadataBlock(map[string]any(p.Metadata), m.width, true))
+	}
+	return strings.Join(sections, "\n\n")
+}
+
+// --- Add ---
+
+func (m ProtocolsModel) handleAddKeys(msg tea.KeyMsg) (ProtocolsModel, tea.Cmd) {
+	if m.addSaving {
+		return m, nil
+	}
+	switch {
+	case isBack(msg):
+		m.view = protocolsViewList
+	case isDown(msg):
+		m.addFocus = (m.addFocus + 1) % protoFieldCount
+	case isUp(msg):
+		m.addFocus = (m.addFocus - 1 + protoFieldCount) % protoFieldCount
+	case isKey(msg, "ctrl+s"):
+		return m.saveAdd()
+	}
+
+	if m.addFocus == protoFieldTags {
+		return m.handleTagInput(msg, true)
+	}
+	if m.addFocus == protoFieldApplies {
+		return m.handleApplyInput(msg, true)
+	}
+	if m.addFocus == protoFieldMetadata {
+		if m.addMeta.HandleKey(msg) {
+			m.view = protocolsViewList
+		}
+		return m, nil
+	}
+
+	if m.addFocus == protoFieldStatus {
+		if isKey(msg, "left") {
+			m.addStatusIdx = (m.addStatusIdx - 1 + len(protocolStatusOptions)) % len(protocolStatusOptions)
+			return m, nil
+		}
+		if isKey(msg, "right") {
+			m.addStatusIdx = (m.addStatusIdx + 1) % len(protocolStatusOptions)
+			return m, nil
+		}
+	}
+
+	if len(msg.String()) == 1 {
+		m.addFields[m.addFocus].value += msg.String()
+		return m, nil
+	}
+	if isKey(msg, "backspace", "delete") {
+		v := m.addFields[m.addFocus].value
+		if v != "" {
+			m.addFields[m.addFocus].value = v[:len(v)-1]
+		}
+	}
+	return m, nil
+}
+
+func (m ProtocolsModel) renderAdd() string {
+	var b strings.Builder
+	for i, f := range m.addFields {
+		selected := i == m.addFocus
+		if selected {
+			b.WriteString(SelectedStyle.Render("> " + f.label + ":"))
+		} else {
+			b.WriteString(MutedStyle.Render("  " + f.label + ":"))
+		}
+		b.WriteString("\n")
+		switch i {
+		case protoFieldStatus:
+			b.WriteString(NormalStyle.Render("  " + protocolStatusOptions[m.addStatusIdx]))
+		case protoFieldTags:
+			b.WriteString(NormalStyle.Render("  " + m.renderTags(m.addTags, m.addTagBuf)))
+		case protoFieldApplies:
+			b.WriteString(NormalStyle.Render("  " + m.renderApplies(m.addApplies, m.addApplyBuf)))
+		case protoFieldMetadata:
+			b.WriteString(m.addMeta.Render(m.width))
+		default:
+			b.WriteString(NormalStyle.Render("  " + f.value))
+		}
+		b.WriteString("\n\n")
+	}
+	if m.addErr != "" {
+		b.WriteString(ErrorStyle.Render(m.addErr))
+		b.WriteString("\n")
+	}
+	return components.TitledBox("Add Protocol", b.String(), m.width)
+}
+
+func (m ProtocolsModel) saveAdd() (ProtocolsModel, tea.Cmd) {
+	name := strings.TrimSpace(m.addFields[protoFieldName].value)
+	if name == "" {
+		m.addErr = "Name is required"
+		return m, nil
+	}
+	title := strings.TrimSpace(m.addFields[protoFieldTitle].value)
+	if title == "" {
+		m.addErr = "Title is required"
+		return m, nil
+	}
+	content := strings.TrimSpace(m.addFields[protoFieldContent].value)
+	if content == "" {
+		m.addErr = "Content is required"
+		return m, nil
+	}
+
+	m.commitTag(true)
+	m.commitApply(true)
+
+	meta, err := parseMetadataInput(m.addMeta.Buffer)
+	if err != nil {
+		m.addErr = err.Error()
+		return m, nil
+	}
+	meta = mergeMetadataScopes(meta, m.addMeta.Scopes)
+
+	input := api.CreateProtocolInput{
+		Name:         name,
+		Title:        title,
+		Version:      strings.TrimSpace(m.addFields[protoFieldVersion].value),
+		Content:      content,
+		ProtocolType: strings.TrimSpace(m.addFields[protoFieldType].value),
+		AppliesTo:    append([]string{}, m.addApplies...),
+		Status:       protocolStatusOptions[m.addStatusIdx],
+		Tags:         append([]string{}, m.addTags...),
+		Metadata:     meta,
+		VaultFile:    stringPtr(strings.TrimSpace(m.addFields[protoFieldVault].value)),
+	}
+	m.addSaving = true
+	return m, func() tea.Msg {
+		if _, err := m.client.CreateProtocol(input); err != nil {
+			return errMsg{err}
+		}
+		return protocolCreatedMsg{}
+	}
+}
+
+// --- Edit ---
+
+func (m ProtocolsModel) startEdit() {
+	if m.detail == nil {
+		return
+	}
+	p := m.detail
+	for i := range m.editFields {
+		m.editFields[i].value = ""
+	}
+	m.editFields[protoEditFieldTitle].value = p.Title
+	if p.Version != nil {
+		m.editFields[protoEditFieldVersion].value = *p.Version
+	}
+	if p.ProtocolType != nil {
+		m.editFields[protoEditFieldType].value = *p.ProtocolType
+	}
+	m.editApplies = append([]string{}, p.AppliesTo...)
+	m.editTags = append([]string{}, p.Tags...)
+	m.editFields[protoEditFieldContent].value = ""
+	if p.Content != nil {
+		m.editFields[protoEditFieldContent].value = *p.Content
+	}
+	if p.VaultFile != nil {
+		m.editFields[protoEditFieldVault].value = *p.VaultFile
+	}
+	m.editStatusIdx = statusIndex(protocolStatusOptions, p.Status)
+	m.editMeta.Load(map[string]any(p.Metadata))
+	m.editFocus = 0
+	m.editSaving = false
+}
+
+func (m ProtocolsModel) handleEditKeys(msg tea.KeyMsg) (ProtocolsModel, tea.Cmd) {
+	if m.editSaving {
+		return m, nil
+	}
+	switch {
+	case isBack(msg):
+		m.view = protocolsViewDetail
+	case isDown(msg):
+		m.editFocus = (m.editFocus + 1) % protoEditFieldCount
+	case isUp(msg):
+		m.editFocus = (m.editFocus - 1 + protoEditFieldCount) % protoEditFieldCount
+	case isKey(msg, "ctrl+s"):
+		return m.saveEdit()
+	}
+
+	if m.editFocus == protoEditFieldTags {
+		return m.handleTagInput(msg, false)
+	}
+	if m.editFocus == protoEditFieldApplies {
+		return m.handleApplyInput(msg, false)
+	}
+	if m.editFocus == protoEditFieldMetadata {
+		if m.editMeta.HandleKey(msg) {
+			m.view = protocolsViewDetail
+		}
+		return m, nil
+	}
+	if m.editFocus == protoEditFieldStatus {
+		if isKey(msg, "left") {
+			m.editStatusIdx = (m.editStatusIdx - 1 + len(protocolStatusOptions)) % len(protocolStatusOptions)
+			return m, nil
+		}
+		if isKey(msg, "right") {
+			m.editStatusIdx = (m.editStatusIdx + 1) % len(protocolStatusOptions)
+			return m, nil
+		}
+	}
+	if len(msg.String()) == 1 {
+		m.editFields[m.editFocus].value += msg.String()
+		return m, nil
+	}
+	if isKey(msg, "backspace", "delete") {
+		v := m.editFields[m.editFocus].value
+		if v != "" {
+			m.editFields[m.editFocus].value = v[:len(v)-1]
+		}
+	}
+	return m, nil
+}
+
+func (m ProtocolsModel) renderEdit() string {
+	var b strings.Builder
+	for i, f := range m.editFields {
+		selected := i == m.editFocus
+		if selected {
+			b.WriteString(SelectedStyle.Render("> " + f.label + ":"))
+		} else {
+			b.WriteString(MutedStyle.Render("  " + f.label + ":"))
+		}
+		b.WriteString("\n")
+		switch i {
+		case protoEditFieldStatus:
+			b.WriteString(NormalStyle.Render("  " + protocolStatusOptions[m.editStatusIdx]))
+		case protoEditFieldTags:
+			b.WriteString(NormalStyle.Render("  " + m.renderTags(m.editTags, m.editTagBuf)))
+		case protoEditFieldApplies:
+			b.WriteString(NormalStyle.Render("  " + m.renderApplies(m.editApplies, m.editApplyBuf)))
+		case protoEditFieldMetadata:
+			b.WriteString(m.editMeta.Render(m.width))
+		default:
+			b.WriteString(NormalStyle.Render("  " + f.value))
+		}
+		b.WriteString("\n\n")
+	}
+	return components.TitledBox("Edit Protocol", b.String(), m.width)
+}
+
+func (m ProtocolsModel) saveEdit() (ProtocolsModel, tea.Cmd) {
+	if m.detail == nil {
+		return m, nil
+	}
+	m.commitTag(false)
+	m.commitApply(false)
+	meta, err := parseMetadataInput(m.editMeta.Buffer)
+	if err != nil {
+		m.addErr = err.Error()
+		return m, nil
+	}
+	meta = mergeMetadataScopes(meta, m.editMeta.Scopes)
+
+	input := api.UpdateProtocolInput{
+		Title:        stringPtr(strings.TrimSpace(m.editFields[protoEditFieldTitle].value)),
+		Version:      stringPtr(strings.TrimSpace(m.editFields[protoEditFieldVersion].value)),
+		Content:      stringPtr(strings.TrimSpace(m.editFields[protoEditFieldContent].value)),
+		ProtocolType: stringPtr(strings.TrimSpace(m.editFields[protoEditFieldType].value)),
+		AppliesTo:    slicePtr(m.editApplies),
+		Status:       stringPtr(protocolStatusOptions[m.editStatusIdx]),
+		Tags:         slicePtr(m.editTags),
+		Metadata:     meta,
+		VaultFile:    stringPtr(strings.TrimSpace(m.editFields[protoEditFieldVault].value)),
+	}
+
+	m.editSaving = true
+	name := m.detail.Name
+	return m, func() tea.Msg {
+		if _, err := m.client.UpdateProtocol(name, input); err != nil {
+			return errMsg{err}
+		}
+		return protocolUpdatedMsg{}
+	}
+}
+
+// --- Helpers ---
+
+func (m ProtocolsModel) renderTags(tags []string, buf string) string {
+	out := append([]string{}, tags...)
+	if strings.TrimSpace(buf) != "" {
+		out = append(out, buf)
+	}
+	return strings.Join(out, ", ")
+}
+
+func (m ProtocolsModel) renderApplies(items []string, buf string) string {
+	out := append([]string{}, items...)
+	if strings.TrimSpace(buf) != "" {
+		out = append(out, buf)
+	}
+	return strings.Join(out, ", ")
+}
+
+func (m *ProtocolsModel) commitTag(addMode bool) {
+	buf := strings.TrimSpace(m.addTagBuf)
+	if !addMode {
+		buf = strings.TrimSpace(m.editTagBuf)
+	}
+	if buf == "" {
+		return
+	}
+	tag := normalizeTag(buf)
+	if tag == "" {
+		if addMode {
+			m.addTagBuf = ""
+		} else {
+			m.editTagBuf = ""
+		}
+		return
+	}
+	if addMode {
+		m.addTags = append(m.addTags, tag)
+		m.addTagBuf = ""
+	} else {
+		m.editTags = append(m.editTags, tag)
+		m.editTagBuf = ""
+	}
+}
+
+func (m *ProtocolsModel) commitApply(addMode bool) {
+	buf := strings.TrimSpace(m.addApplyBuf)
+	if !addMode {
+		buf = strings.TrimSpace(m.editApplyBuf)
+	}
+	if buf == "" {
+		return
+	}
+	item := strings.TrimSpace(buf)
+	if addMode {
+		m.addApplies = append(m.addApplies, item)
+		m.addApplyBuf = ""
+	} else {
+		m.editApplies = append(m.editApplies, item)
+		m.editApplyBuf = ""
+	}
+}
+
+func (m ProtocolsModel) handleTagInput(msg tea.KeyMsg, addMode bool) (ProtocolsModel, tea.Cmd) {
+	if isKey(msg, "backspace", "delete") {
+		if addMode {
+			if len(m.addTagBuf) > 0 {
+				m.addTagBuf = m.addTagBuf[:len(m.addTagBuf)-1]
+			}
+		} else {
+			if len(m.editTagBuf) > 0 {
+				m.editTagBuf = m.editTagBuf[:len(m.editTagBuf)-1]
+			}
+		}
+		return m, nil
+	}
+	if isKey(msg, "enter", ",", " ") {
+		m.commitTag(addMode)
+		return m, nil
+	}
+	if len(msg.String()) == 1 {
+		if addMode {
+			m.addTagBuf += msg.String()
+		} else {
+			m.editTagBuf += msg.String()
+		}
+	}
+	return m, nil
+}
+
+func (m ProtocolsModel) handleApplyInput(msg tea.KeyMsg, addMode bool) (ProtocolsModel, tea.Cmd) {
+	if isKey(msg, "backspace", "delete") {
+		if addMode {
+			if len(m.addApplyBuf) > 0 {
+				m.addApplyBuf = m.addApplyBuf[:len(m.addApplyBuf)-1]
+			}
+		} else {
+			if len(m.editApplyBuf) > 0 {
+				m.editApplyBuf = m.editApplyBuf[:len(m.editApplyBuf)-1]
+			}
+		}
+		return m, nil
+	}
+	if isKey(msg, "enter", ",", " ") {
+		m.commitApply(addMode)
+		return m, nil
+	}
+	if len(msg.String()) == 1 {
+		if addMode {
+			m.addApplyBuf += msg.String()
+		} else {
+			m.editApplyBuf += msg.String()
+		}
+	}
+	return m, nil
+}
+
+func stringPtr(s string) *string {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	return &s
+}
+
+func slicePtr(items []string) *[]string {
+	if len(items) == 0 {
+		return nil
+	}
+	out := append([]string{}, items...)
+	return &out
+}

@@ -27,6 +27,7 @@ from nebula_mcp.db import get_pool
 from nebula_mcp.enums import (
     load_enums,
     require_entity_type,
+    require_log_type,
     require_scopes,
     require_status,
 )
@@ -35,8 +36,12 @@ from nebula_mcp.executors import (
     execute_create_file,
     execute_create_job,
     execute_create_knowledge,
+    execute_create_log,
     execute_create_relationship,
+    execute_create_protocol,
     execute_update_entity,
+    execute_update_log,
+    execute_update_protocol,
 )
 from nebula_mcp.helpers import (
     bulk_update_entity_scopes as do_bulk_update_entity_scopes,
@@ -76,14 +81,17 @@ from nebula_mcp.models import (
     CreateFileInput,
     CreateJobInput,
     CreateKnowledgeInput,
+    CreateProtocolInput,
     CreateRelationshipInput,
     CreateSubtaskInput,
+    CreateLogInput,
     GetAgentInfoInput,
     GetApprovalDiffInput,
     GetEntityHistoryInput,
     GetEntityInput,
     GetFileInput,
     GetJobInput,
+    GetLogInput,
     GetProtocolInput,
     GetRelationshipsInput,
     GraphNeighborsInput,
@@ -95,11 +103,14 @@ from nebula_mcp.models import (
     QueryFilesInput,
     QueryJobsInput,
     QueryKnowledgeInput,
+    QueryLogsInput,
     QueryRelationshipsInput,
     RevertEntityInput,
     SearchEntitiesByMetadataInput,
     UpdateEntityInput,
     UpdateJobStatusInput,
+    UpdateProtocolInput,
+    UpdateLogInput,
     UpdateRelationshipInput,
 )
 from nebula_mcp.query_loader import QueryLoader
@@ -548,6 +559,64 @@ async def link_knowledge_to_entity(payload: LinkKnowledgeInput, ctx: Context) ->
     return await execute_create_relationship(pool, enums, relationship_payload)
 
 
+# --- Log Tools ---
+
+
+@mcp.tool()
+async def create_log(payload: CreateLogInput, ctx: Context) -> dict:
+    """Create a log entry."""
+
+    pool, enums, agent = await require_context(ctx)
+    if resp := await maybe_require_approval(
+        pool, agent, "create_log", payload.model_dump()
+    ):
+        return resp
+    return await execute_create_log(pool, enums, payload.model_dump())
+
+
+@mcp.tool()
+async def get_log(payload: GetLogInput, ctx: Context) -> dict:
+    """Retrieve a log entry by id."""
+
+    pool, enums, agent = await require_context(ctx)
+    row = await pool.fetchrow(QUERIES["logs/get"], payload.log_id)
+    if not row:
+        raise ValueError(f"Log '{payload.log_id}' not found")
+    return dict(row)
+
+
+@mcp.tool()
+async def query_logs(payload: QueryLogsInput, ctx: Context) -> list[dict]:
+    """Query log entries."""
+
+    pool, enums, agent = await require_context(ctx)
+    log_type_id = None
+    if payload.log_type:
+        log_type_id = require_log_type(payload.log_type, enums)
+    tags = payload.tags if payload.tags else None
+    rows = await pool.fetch(
+        QUERIES["logs/query"],
+        log_type_id,
+        tags,
+        payload.status_category,
+        payload.limit,
+        payload.offset,
+    )
+    return [dict(r) for r in rows]
+
+
+@mcp.tool()
+async def update_log(payload: UpdateLogInput, ctx: Context) -> dict:
+    """Update a log entry."""
+
+    pool, enums, agent = await require_context(ctx)
+    if resp := await maybe_require_approval(
+        pool, agent, "update_log", payload.model_dump()
+    ):
+        return resp
+    return await execute_update_log(pool, enums, payload.model_dump())
+
+
 # --- Relationship Tools ---
 
 
@@ -909,6 +978,30 @@ async def get_protocol(payload: GetProtocolInput, ctx: Context) -> dict:
         raise ValueError(f"Protocol '{payload.protocol_name}' not found")
 
     return dict(row)
+
+
+@mcp.tool()
+async def create_protocol(payload: CreateProtocolInput, ctx: Context) -> dict:
+    """Create a protocol."""
+
+    pool, enums, agent = await require_context(ctx)
+    if resp := await maybe_require_approval(
+        pool, agent, "create_protocol", payload.model_dump()
+    ):
+        return resp
+    return await execute_create_protocol(pool, enums, payload.model_dump())
+
+
+@mcp.tool()
+async def update_protocol(payload: UpdateProtocolInput, ctx: Context) -> dict:
+    """Update a protocol."""
+
+    pool, enums, agent = await require_context(ctx)
+    if resp := await maybe_require_approval(
+        pool, agent, "update_protocol", payload.model_dump()
+    ):
+        return resp
+    return await execute_update_protocol(pool, enums, payload.model_dump())
 
 
 @mcp.tool()

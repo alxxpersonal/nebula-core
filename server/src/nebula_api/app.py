@@ -14,10 +14,13 @@ from nebula_api.routes import (
     audit,
     entities,
     exports,
+    files,
     imports,
     jobs,
     keys,
     knowledge,
+    logs,
+    protocols,
     relationships,
 )
 
@@ -61,8 +64,11 @@ app.include_router(
     relationships.router, prefix="/api/relationships", tags=["Relationships"]
 )
 app.include_router(jobs.router, prefix="/api/jobs", tags=["Jobs"])
+app.include_router(files.router, prefix="/api/files", tags=["Files"])
+app.include_router(logs.router, prefix="/api/logs", tags=["Logs"])
 app.include_router(imports.router, prefix="/api/import", tags=["Import"])
 app.include_router(exports.router, prefix="/api/export", tags=["Export"])
+app.include_router(protocols.router, prefix="/api/protocols", tags=["Protocols"])
 app.include_router(approvals.router, prefix="/api/approvals", tags=["Approvals"])
 app.include_router(agents.router, prefix="/api/agents", tags=["Agents"])
 app.include_router(keys.router, prefix="/api/keys", tags=["Keys"])

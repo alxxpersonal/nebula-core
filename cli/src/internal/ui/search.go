@@ -253,7 +253,9 @@ func filterEntitiesByQuery(items []api.Entity, query string) []api.Entity {
 	}
 	out := make([]api.Entity, 0, len(items))
 	for _, e := range items {
-		if strings.Contains(strings.ToLower(e.Name), q) || strings.Contains(strings.ToLower(e.ID), q) {
+		name, typ := normalizeEntityNameType(e.Name, e.Type)
+		haystack := strings.ToLower(strings.Join([]string{name, typ, e.ID}, " "))
+		if strings.Contains(haystack, q) {
 			out = append(out, e)
 		}
 	}

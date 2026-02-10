@@ -16,6 +16,7 @@ type jobsLoadedMsg struct{ items []api.Job }
 type jobStatusUpdatedMsg struct{}
 type subtaskCreatedMsg struct{}
 type jobCreatedMsg struct{}
+type jobsScopesLoadedMsg struct{ options []string }
 
 type jobsView int
 
@@ -56,6 +57,7 @@ type JobsModel struct {
 	loading         bool
 	detail          *api.Job
 	searchBuf       string
+	searchSuggest   string
 	view            jobsView
 	modeFocus       bool
 	changingSt      bool
@@ -65,6 +67,7 @@ type JobsModel struct {
 	metaExpanded    bool
 	width           int
 	height          int
+	scopeOptions    []string
 
 	// add
 	addFields      []formField
@@ -113,6 +116,7 @@ func (m JobsModel) Init() tea.Cmd {
 	m.addSaved = false
 	m.addErr = ""
 	m.searchBuf = ""
+	m.searchSuggest = ""
 	return m.loadJobs
 }
 
@@ -122,6 +126,11 @@ func (m JobsModel) Update(msg tea.Msg) (JobsModel, tea.Cmd) {
 		m.loading = false
 		m.allItems = msg.items
 		m.applyJobSearch()
+		return m, m.loadScopeOptions()
+	case jobsScopesLoadedMsg:
+		m.scopeOptions = msg.options
+		m.addMeta.SetScopeOptions(m.scopeOptions)
+		m.editMeta.SetScopeOptions(m.scopeOptions)
 		return m, nil
 
 	case jobStatusUpdatedMsg:
@@ -231,9 +240,9 @@ func (m JobsModel) renderModeLine() string {
 
 func (m JobsModel) handleModeKeys(msg tea.KeyMsg) (JobsModel, tea.Cmd) {
 	switch {
-	case isKey(msg, "tab"), isDown(msg):
+	case isDown(msg):
 		m.modeFocus = false
-	case isKey(msg, "shift+tab"), isUp(msg):
+	case isUp(msg):
 		m.modeFocus = false
 	case isKey(msg, "left"), isKey(msg, "right"), isSpace(msg), isEnter(msg):
 		return m.toggleMode()
@@ -283,6 +292,9 @@ func (m JobsModel) renderList() string {
 	countLine := fmt.Sprintf("%d total", len(m.items))
 	if strings.TrimSpace(m.searchBuf) != "" {
 		countLine = fmt.Sprintf("%s · search: %s", countLine, strings.TrimSpace(m.searchBuf))
+		if m.searchSuggest != "" && !strings.EqualFold(strings.TrimSpace(m.searchBuf), strings.TrimSpace(m.searchSuggest)) {
+			countLine = fmt.Sprintf("%s · next: %s", countLine, strings.TrimSpace(m.searchSuggest))
+		}
 	}
 	countLine = MutedStyle.Render(countLine)
 	content := countLine + "\n\n" + rows.String()
@@ -291,13 +303,14 @@ func (m JobsModel) renderList() string {
 
 func (m JobsModel) handleListKeys(msg tea.KeyMsg) (JobsModel, tea.Cmd) {
 	switch {
-	case isKey(msg, "shift+tab"):
-		m.modeFocus = true
-		return m, nil
 	case isDown(msg):
 		m.list.Down()
 	case isUp(msg):
-		m.list.Up()
+		if m.list.Selected() == 0 {
+			m.modeFocus = true
+		} else {
+			m.list.Up()
+		}
 	case isEnter(msg), isSpace(msg):
 		if idx := m.list.Selected(); idx < len(m.items) {
 			item := m.items[idx]
@@ -312,11 +325,18 @@ func (m JobsModel) handleListKeys(msg tea.KeyMsg) (JobsModel, tea.Cmd) {
 	case isKey(msg, "cmd+backspace", "cmd+delete", "ctrl+u"):
 		if m.searchBuf != "" {
 			m.searchBuf = ""
+			m.searchSuggest = ""
 			m.applyJobSearch()
 		}
 	case isBack(msg):
 		if m.searchBuf != "" {
 			m.searchBuf = ""
+			m.searchSuggest = ""
+			m.applyJobSearch()
+		}
+	case isKey(msg, "tab"):
+		if m.searchSuggest != "" && !strings.EqualFold(strings.TrimSpace(m.searchBuf), strings.TrimSpace(m.searchSuggest)) {
+			m.searchBuf = m.searchSuggest
 			m.applyJobSearch()
 		}
 	case isKey(msg, "s"):
@@ -347,9 +367,9 @@ func (m JobsModel) handleAddKeys(msg tea.KeyMsg) (JobsModel, tea.Cmd) {
 		return m, nil
 	}
 	switch {
-	case isKey(msg, "tab"), isDown(msg):
+	case isDown(msg):
 		m.addFocus = (m.addFocus + 1) % jobFieldCount
-	case isKey(msg, "shift+tab"), isUp(msg):
+	case isUp(msg):
 		if m.addFocus == 0 {
 			m.modeFocus = true
 			return m, nil
@@ -489,6 +509,7 @@ func (m JobsModel) saveAdd() (JobsModel, tea.Cmd) {
 		m.addErr = err.Error()
 		return m, nil
 	}
+	meta = mergeMetadataScopes(meta, m.addMeta.Scopes)
 
 	input := api.CreateJobInput{
 		Title:       title,
@@ -531,7 +552,7 @@ func (m *JobsModel) startEdit() {
 	m.editPriorityIdx = statusIndex(jobPriorityOptions, valueOrEmpty(m.detail.Priority))
 	m.editDesc = valueOrEmpty(m.detail.Description)
 	m.editMeta.Reset()
-	m.editMeta.Buffer = metadataToInput(map[string]any(m.detail.Metadata))
+	m.editMeta.Load(map[string]any(m.detail.Metadata))
 	m.editSaving = false
 }
 
@@ -540,10 +561,12 @@ func (m JobsModel) handleEditKeys(msg tea.KeyMsg) (JobsModel, tea.Cmd) {
 		return m, nil
 	}
 	switch {
-	case isKey(msg, "tab"), isDown(msg):
+	case isDown(msg):
 		m.editFocus = (m.editFocus + 1) % jobEditFieldCount
-	case isKey(msg, "shift+tab"), isUp(msg):
-		m.editFocus = (m.editFocus - 1 + jobEditFieldCount) % jobEditFieldCount
+	case isUp(msg):
+		if m.editFocus > 0 {
+			m.editFocus = (m.editFocus - 1 + jobEditFieldCount) % jobEditFieldCount
+		}
 	case isBack(msg):
 		m.view = jobsViewDetail
 	case isKey(msg, "ctrl+s"):
@@ -664,6 +687,7 @@ func (m JobsModel) saveEdit() (JobsModel, tea.Cmd) {
 		m.addErr = err.Error()
 		return m, nil
 	}
+	meta = mergeMetadataScopes(meta, m.editMeta.Scopes)
 
 	input := api.UpdateJobInput{
 		Status:      &status,
@@ -698,6 +722,23 @@ func (m JobsModel) loadJobs() tea.Msg {
 	return jobsLoadedMsg{items}
 }
 
+func (m JobsModel) loadScopeOptions() tea.Cmd {
+	if m.client == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		scopes, err := m.client.ListAuditScopes()
+		if err != nil {
+			return errMsg{err}
+		}
+		names := map[string]string{}
+		for _, scope := range scopes {
+			names[scope.ID] = scope.Name
+		}
+		return jobsScopesLoadedMsg{options: scopeNameList(names)}
+	}
+}
+
 func (m *JobsModel) applyJobSearch() {
 	query := strings.TrimSpace(strings.ToLower(m.searchBuf))
 	if query == "" {
@@ -717,13 +758,28 @@ func (m *JobsModel) applyJobSearch() {
 		labels[i] = formatJobLine(j)
 	}
 	m.list.SetItems(labels)
+	m.updateSearchSuggest()
+}
+
+func (m *JobsModel) updateSearchSuggest() {
+	m.searchSuggest = ""
+	query := strings.ToLower(strings.TrimSpace(m.searchBuf))
+	if query == "" {
+		return
+	}
+	for _, j := range m.allItems {
+		name := strings.ToLower(strings.TrimSpace(j.Title))
+		if strings.HasPrefix(name, query) {
+			m.searchSuggest = j.Title
+			return
+		}
+	}
 }
 
 func (m JobsModel) handleDetailKeys(msg tea.KeyMsg) (JobsModel, tea.Cmd) {
 	switch {
-	case isKey(msg, "shift+tab"):
+	case isUp(msg):
 		m.modeFocus = true
-		return m, nil
 	case isBack(msg):
 		m.detail = nil
 		m.metaExpanded = false

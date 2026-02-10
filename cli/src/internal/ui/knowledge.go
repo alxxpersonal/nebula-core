@@ -246,6 +246,8 @@ func (m KnowledgeModel) Update(msg tea.Msg) (KnowledgeModel, tea.Cmd) {
 			m.scopeNames[id] = name
 		}
 		m.scopeOptions = scopeNameList(m.scopeNames)
+		m.metaEditor.SetScopeOptions(m.scopeOptions)
+		m.editMeta.SetScopeOptions(m.scopeOptions)
 		return m, nil
 	case knowledgeDetailLoadedMsg:
 		m.detail = &msg.item
@@ -324,21 +326,17 @@ func (m KnowledgeModel) Update(msg tea.Msg) (KnowledgeModel, tea.Cmd) {
 		}
 
 		switch {
-		case isKey(msg, "tab"), isDown(msg):
+		case isDown(msg):
 			m.typeSelecting = false
 			m.scopeSelecting = false
 			m.focus = (m.focus + 1) % fieldCount
-		case isKey(msg, "shift+tab"):
+		case isUp(msg):
 			if m.focus == 0 {
 				m.typeSelecting = false
 				m.scopeSelecting = false
 				m.modeFocus = true
 				return m, nil
 			}
-			m.typeSelecting = false
-			m.scopeSelecting = false
-			m.focus = (m.focus - 1 + fieldCount) % fieldCount
-		case isUp(msg):
 			m.typeSelecting = false
 			m.scopeSelecting = false
 			m.focus = (m.focus - 1 + fieldCount) % fieldCount
@@ -391,7 +389,7 @@ func (m KnowledgeModel) Update(msg tea.Msg) (KnowledgeModel, tea.Cmd) {
 				}
 			} else if m.focus == fieldMeta {
 				if isEnter(msg) {
-					m.metaEditor.Open(nil)
+					m.metaEditor.Active = true
 				}
 			} else if m.focus != fieldType {
 				ch := msg.String()
@@ -672,20 +670,15 @@ func (m KnowledgeModel) renderModeLine() string {
 
 func (m KnowledgeModel) handleModeKeys(msg tea.KeyMsg) (KnowledgeModel, tea.Cmd) {
 	switch {
-	case isKey(msg, "tab"), isDown(msg):
+	case isDown(msg):
 		m.modeFocus = false
 		if m.view == knowledgeViewEdit {
 			m.editFocus = 0
 		} else {
 			m.focus = 0
 		}
-	case isKey(msg, "shift+tab"), isUp(msg):
+	case isUp(msg):
 		m.modeFocus = false
-		if m.view == knowledgeViewEdit {
-			m.editFocus = knowledgeEditFieldCount - 1
-		} else {
-			m.focus = fieldCount - 1
-		}
 	case isKey(msg, "left"), isKey(msg, "right"), isSpace(msg), isEnter(msg):
 		return m.toggleMode()
 	case isBack(msg):
@@ -723,7 +716,11 @@ func (m KnowledgeModel) handleListKeys(msg tea.KeyMsg) (KnowledgeModel, tea.Cmd)
 	case isDown(msg):
 		m.list.Down()
 	case isUp(msg):
-		m.list.Up()
+		if m.list.Selected() == 0 {
+			m.modeFocus = true
+		} else {
+			m.list.Up()
+		}
 	case isEnter(msg):
 		if idx := m.list.Selected(); idx < len(m.items) {
 			item := m.items[idx]
@@ -733,14 +730,14 @@ func (m KnowledgeModel) handleListKeys(msg tea.KeyMsg) (KnowledgeModel, tea.Cmd)
 		}
 	case isBack(msg):
 		m.view = knowledgeViewAdd
-	case isKey(msg, "tab"):
-		return m.toggleMode()
 	}
 	return m, nil
 }
 
 func (m KnowledgeModel) handleDetailKeys(msg tea.KeyMsg) (KnowledgeModel, tea.Cmd) {
 	switch {
+	case isUp(msg):
+		m.modeFocus = true
 	case isBack(msg):
 		m.detail = nil
 		m.metaExpanded = false
@@ -756,12 +753,6 @@ func (m KnowledgeModel) handleDetailKeys(msg tea.KeyMsg) (KnowledgeModel, tea.Cm
 		m.contentExpanded = !m.contentExpanded
 	case isKey(msg, "v"):
 		m.vaultExpanded = !m.vaultExpanded
-	case isKey(msg, "tab"):
-		m.detail = nil
-		m.metaExpanded = false
-		m.contentExpanded = false
-		m.vaultExpanded = false
-		return m.toggleMode()
 	}
 	return m, nil
 }
@@ -826,11 +817,11 @@ func (m KnowledgeModel) handleEditKeys(msg tea.KeyMsg) (KnowledgeModel, tea.Cmd)
 	}
 
 	switch {
-	case isKey(msg, "tab"), isDown(msg):
+	case isDown(msg):
 		m.editTypeSelecting = false
 		m.editScopeSelecting = false
 		m.editFocus = (m.editFocus + 1) % knowledgeEditFieldCount
-	case isKey(msg, "shift+tab"), isUp(msg):
+	case isUp(msg):
 		m.editTypeSelecting = false
 		m.editScopeSelecting = false
 		if m.editFocus == 0 {
@@ -999,7 +990,7 @@ func (m *KnowledgeModel) startEdit() {
 	m.editScopeBuf = ""
 	m.editScopeSelecting = false
 	m.scopeIdx = 0
-	m.editMeta.Buffer = metadataToInput(map[string]any(k.Metadata))
+	m.editMeta.Load(map[string]any(k.Metadata))
 	m.editMeta.Active = false
 	m.editSaving = false
 	m.editFocus = 0
@@ -1022,6 +1013,7 @@ func (m KnowledgeModel) saveEdit() (KnowledgeModel, tea.Cmd) {
 		m.errText = err.Error()
 		return m, nil
 	}
+	meta = mergeMetadataScopes(meta, m.editMeta.Scopes)
 
 	input := api.UpdateKnowledgeInput{
 		Title:      &title,
@@ -1195,6 +1187,7 @@ func (m KnowledgeModel) save() (KnowledgeModel, tea.Cmd) {
 		m.errText = err.Error()
 		return m, nil
 	}
+	meta = mergeMetadataScopes(meta, m.metaEditor.Scopes)
 
 	scopes := normalizeBulkScopes(m.scopes)
 	if len(scopes) == 0 {

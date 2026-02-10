@@ -330,10 +330,15 @@ func (m InboxModel) renderDetail() string {
 				if changesMap, ok := v.(map[string]any); ok {
 					for field, diff := range changesMap {
 						if diffObj, ok := diff.(map[string]any); ok {
+							from := formatAny(diffObj["from"])
+							to := formatAny(diffObj["to"])
+							if from == to {
+								continue
+							}
 							diffRows = append(diffRows, components.DiffRow{
 								Label: field,
-								From:  formatAny(diffObj["from"]),
-								To:    formatAny(diffObj["to"]),
+								From:  from,
+								To:    to,
 							})
 						}
 					}
@@ -395,7 +400,7 @@ func (m InboxModel) renderDetail() string {
 func formatAny(v any) string {
 	switch val := v.(type) {
 	case map[string]any:
-		lines := metadataLines(val, 0)
+		lines := metadataLinesPlain(val, 0)
 		return strings.Join(lines, "\n")
 	case []any:
 		parts := make([]string, len(val))

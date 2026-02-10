@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/gravitrone/nebula-core/cli/internal/api"
 	"github.com/gravitrone/nebula-core/cli/internal/ui/components"
@@ -88,6 +89,7 @@ type bulkInput struct {
 type EntitiesModel struct {
 	client        *api.Client
 	items         []api.Entity
+	allItems      []api.Entity
 	list          *components.List
 	loading       bool
 	view          entitiesView
@@ -221,6 +223,9 @@ func (m EntitiesModel) Update(msg tea.Msg) (EntitiesModel, tea.Cmd) {
 	case entitiesLoadedMsg:
 		m.loading = false
 		m.items = msg.items
+		if strings.TrimSpace(m.searchBuf) == "" {
+			m.allItems = msg.items
+		}
 		labels := make([]string, len(msg.items))
 		for i, e := range msg.items {
 			labels[i] = formatEntityLine(e)
@@ -301,6 +306,8 @@ func (m EntitiesModel) Update(msg tea.Msg) (EntitiesModel, tea.Cmd) {
 			m.scopeNames[id] = name
 		}
 		m.scopeOptions = scopeNameList(m.scopeNames)
+		m.addMeta.SetScopeOptions(m.scopeOptions)
+		m.editMeta.SetScopeOptions(m.scopeOptions)
 		return m, nil
 
 	case errMsg:
@@ -415,13 +422,14 @@ func (m EntitiesModel) handleListKeys(msg tea.KeyMsg) (EntitiesModel, tea.Cmd) {
 		return m.handleModeKeys(msg)
 	}
 	switch {
-	case isKey(msg, "shift+tab"):
-		m.modeFocus = true
-		return m, nil
 	case isDown(msg):
 		m.list.Down()
 	case isUp(msg):
-		m.list.Up()
+		if m.list.Selected() == 0 {
+			m.modeFocus = true
+		} else {
+			m.list.Up()
+		}
 	case isSpace(msg):
 		if m.searchBuf == "" {
 			m.toggleBulkSelection(m.list.Selected())
@@ -514,12 +522,12 @@ func (m EntitiesModel) renderModeLine() string {
 
 func (m EntitiesModel) handleModeKeys(msg tea.KeyMsg) (EntitiesModel, tea.Cmd) {
 	switch {
-	case isKey(msg, "tab"), isDown(msg):
+	case isDown(msg):
 		m.modeFocus = false
 		if m.view == entitiesViewAdd {
 			m.addFocus = 0
 		}
-	case isKey(msg, "shift+tab"), isUp(msg):
+	case isUp(msg):
 		m.modeFocus = false
 	case isKey(msg, "left"), isKey(msg, "right"), isSpace(msg), isEnter(msg):
 		return m.toggleMode()
@@ -591,18 +599,15 @@ func (m EntitiesModel) handleAddKeys(msg tea.KeyMsg) (EntitiesModel, tea.Cmd) {
 	}
 
 	switch {
-	case isKey(msg, "tab"), isDown(msg):
+	case isDown(msg):
 		m.addScopeSelecting = false
 		m.addFocus = (m.addFocus + 1) % addFieldCount
-	case isKey(msg, "shift+tab"):
+	case isUp(msg):
 		if m.addFocus == 0 {
 			m.addScopeSelecting = false
 			m.modeFocus = true
 			return m, nil
 		}
-		m.addScopeSelecting = false
-		m.addFocus = (m.addFocus - 1 + addFieldCount) % addFieldCount
-	case isUp(msg):
 		m.addScopeSelecting = false
 		m.addFocus = (m.addFocus - 1 + addFieldCount) % addFieldCount
 	case isKey(msg, "ctrl+s"):
@@ -760,9 +765,10 @@ func (m EntitiesModel) saveAdd() (EntitiesModel, tea.Cmd) {
 		m.errText = err.Error()
 		return m, nil
 	}
+	meta = mergeMetadataScopes(meta, m.addMeta.Scopes)
 
 	status := entityStatusOptions[m.addStatusIdx]
-	scopes := m.addScopes
+	scopes := normalizeScopeList(m.addScopes)
 	if len(scopes) == 0 {
 		scopes = []string{"personal"}
 	}
@@ -929,7 +935,11 @@ func (m *EntitiesModel) updateSearchSuggest() {
 	if query == "" {
 		return
 	}
-	for _, e := range m.items {
+	pool := m.items
+	if len(m.allItems) > 0 {
+		pool = m.allItems
+	}
+	for _, e := range pool {
 		name, _ := normalizeEntityNameType(e.Name, e.Type)
 		if strings.HasPrefix(strings.ToLower(name), query) {
 			m.searchSuggest = name
@@ -1258,7 +1268,7 @@ func (m *EntitiesModel) startEdit() {
 	m.editScopeIdx = 0
 	m.editScopeSelecting = false
 	m.editMeta.Reset()
-	m.editMeta.Buffer = metadataToInput(map[string]any(m.detail.Metadata))
+	m.editMeta.Load(map[string]any(m.detail.Metadata))
 	m.editScopesDirty = false
 	m.editSaving = false
 }
@@ -1292,12 +1302,14 @@ func (m EntitiesModel) handleEditKeys(msg tea.KeyMsg) (EntitiesModel, tea.Cmd) {
 		}
 	}
 	switch {
-	case isKey(msg, "tab"), isDown(msg):
+	case isDown(msg):
 		m.editScopeSelecting = false
 		m.editFocus = (m.editFocus + 1) % editFieldCount
-	case isKey(msg, "shift+tab"), isUp(msg):
+	case isUp(msg):
 		m.editScopeSelecting = false
-		m.editFocus = (m.editFocus - 1 + editFieldCount) % editFieldCount
+		if m.editFocus > 0 {
+			m.editFocus = (m.editFocus - 1 + editFieldCount) % editFieldCount
+		}
 	case isKey(msg, "ctrl+s"):
 		return m.saveEdit()
 	case isBack(msg):
@@ -1435,6 +1447,7 @@ func (m EntitiesModel) saveEdit() (EntitiesModel, tea.Cmd) {
 	if metaBuf == "" {
 		meta = map[string]any{}
 	}
+	meta = mergeMetadataScopes(meta, m.editMeta.Scopes)
 	input := api.UpdateEntityInput{
 		Status:   &status,
 		Tags:     &tags,
@@ -1669,7 +1682,7 @@ func (m EntitiesModel) renderRelationships() string {
 
 	sections := []string{components.Table("Relationship", rows, m.width)}
 	if len(rel.Properties) > 0 {
-		props := components.MetadataTable(map[string]any(rel.Properties), m.width)
+		props := renderMetadataBlock(map[string]any(rel.Properties), m.width, true)
 		if props != "" {
 			sections = append(sections, props)
 		}
@@ -1802,10 +1815,12 @@ func (m *EntitiesModel) startRelEdit() {
 
 func (m EntitiesModel) handleRelEditKeys(msg tea.KeyMsg) (EntitiesModel, tea.Cmd) {
 	switch {
-	case isKey(msg, "tab"), isDown(msg):
+	case isDown(msg):
 		m.relEditFocus = (m.relEditFocus + 1) % relEditFieldCount
-	case isKey(msg, "shift+tab"), isUp(msg):
-		m.relEditFocus = (m.relEditFocus - 1 + relEditFieldCount) % relEditFieldCount
+	case isUp(msg):
+		if m.relEditFocus > 0 {
+			m.relEditFocus = (m.relEditFocus - 1 + relEditFieldCount) % relEditFieldCount
+		}
 	case isBack(msg):
 		m.view = entitiesViewRelationships
 	case isKey(msg, "ctrl+s"):
@@ -1968,12 +1983,12 @@ func (m EntitiesModel) selectedRelationship() *api.Relationship {
 
 func (m EntitiesModel) relationshipDirection(rel api.Relationship) (string, string) {
 	if m.detail == nil {
-		return "", ""
+		return "", relationshipLabel(rel.TargetID, rel.TargetName)
 	}
 	if rel.SourceID == m.detail.ID {
-		return "outgoing", shortID(rel.TargetID)
+		return "outgoing", relationshipLabel(rel.TargetID, rel.TargetName)
 	}
-	return "incoming", shortID(rel.SourceID)
+	return "incoming", relationshipLabel(rel.SourceID, rel.SourceName)
 }
 
 func (m EntitiesModel) formatRelationshipLine(rel api.Relationship) string {
@@ -2058,21 +2073,18 @@ func formatEntityLine(e api.Entity) string {
 	if t == "" {
 		t = "?"
 	}
-	name = truncateString(name, maxEntityNameLen)
-	line := name
-	if strings.TrimSpace(t) != "" {
-		line = fmt.Sprintf("%s · %s", line, strings.ToLower(t))
-	}
+	header := formatEntityHeader(name, strings.ToLower(t), maxEntityLineLen)
+	segments := []string{header}
 	if status := strings.TrimSpace(e.Status); status != "" {
-		line = fmt.Sprintf("%s · %s", line, status)
+		segments = append(segments, status)
 	}
 	if tagPreview := previewTags(e.Tags, 2); tagPreview != "" {
-		line = fmt.Sprintf("%s · %s", line, tagPreview)
+		segments = append(segments, tagPreview)
 	}
 	if preview := metadataPreview(map[string]any(e.Metadata), 40); preview != "" {
-		line = fmt.Sprintf("%s · %s", line, preview)
+		segments = append(segments, preview)
 	}
-	return truncateString(line, maxEntityLineLen)
+	return joinEntitySegments(segments, maxEntityLineLen)
 }
 
 func previewTags(tags []string, max int) string {
@@ -2098,6 +2110,47 @@ func formatHistoryLine(entry api.AuditEntry) string {
 		fields = fmt.Sprintf(" (%d fields)", fieldCount)
 	}
 	return fmt.Sprintf("%s %s%s", when, action, fields)
+}
+
+func relationshipLabel(id, name string) string {
+	if strings.TrimSpace(name) != "" {
+		return name
+	}
+	return shortID(id)
+}
+
+func formatEntityHeader(name string, typ string, maxWidth int) string {
+	name = truncateString(name, maxEntityNameLen)
+	if strings.TrimSpace(typ) == "" {
+		typ = "?"
+	}
+	badge := TypeBadgeStyle.Render(typ)
+	header := fmt.Sprintf("%s %s", name, badge)
+	if maxWidth <= 0 || lipgloss.Width(header) <= maxWidth {
+		return header
+	}
+	badgeWidth := lipgloss.Width(" " + badge)
+	available := maxWidth - badgeWidth
+	if available < 4 {
+		available = 4
+	}
+	trimmed := truncateString(name, available)
+	return fmt.Sprintf("%s %s", trimmed, badge)
+}
+
+func joinEntitySegments(segments []string, maxWidth int) string {
+	if len(segments) == 0 {
+		return ""
+	}
+	line := strings.Join(segments, " · ")
+	if maxWidth <= 0 || lipgloss.Width(line) <= maxWidth {
+		return line
+	}
+	for len(segments) > 1 && lipgloss.Width(line) > maxWidth {
+		segments = segments[:len(segments)-1]
+		line = strings.Join(segments, " · ")
+	}
+	return line
 }
 
 func normalizeEntityNameType(name, typ string) (string, string) {
@@ -2206,7 +2259,7 @@ func normalizeBulkScopes(values []string) []string {
 }
 
 const maxEntityNameLen = 80
-const maxEntityLineLen = 72
+const maxEntityLineLen = 128
 
 func truncateString(s string, max int) string {
 	if max <= 0 {

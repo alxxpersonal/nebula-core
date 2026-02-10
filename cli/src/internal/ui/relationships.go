@@ -15,6 +15,8 @@ import (
 type relTabLoadedMsg struct{ items []api.Relationship }
 type relTabNamesLoadedMsg struct{ names map[string]string }
 type relTabSavedMsg struct{}
+type relTabScopesLoadedMsg struct{ options []string }
+type relTabEntityCacheLoadedMsg struct{ items []api.Entity }
 
 type relTabResultsMsg struct {
 	query string
@@ -57,7 +59,9 @@ type RelationshipsModel struct {
 	width     int
 	height    int
 
-	names map[string]string
+	names        map[string]string
+	scopeOptions []string
+	entityCache  []api.Entity
 
 	detail        *api.Relationship
 	metaExpanded  bool
@@ -100,7 +104,7 @@ func (m RelationshipsModel) Init() tea.Cmd {
 	m.modeFocus = false
 	m.metaExpanded = false
 	m.editMeta.Reset()
-	return m.loadRelationships()
+	return tea.Batch(m.loadRelationships(), m.loadScopeOptions(), m.loadEntityCache())
 }
 
 func (m RelationshipsModel) Update(msg tea.Msg) (RelationshipsModel, tea.Cmd) {
@@ -120,6 +124,13 @@ func (m RelationshipsModel) Update(msg tea.Msg) (RelationshipsModel, tea.Cmd) {
 			m.names[id] = name
 		}
 		m.list.SetItems(m.buildListLabels())
+		return m, nil
+	case relTabScopesLoadedMsg:
+		m.scopeOptions = msg.options
+		m.editMeta.SetScopeOptions(m.scopeOptions)
+		return m, nil
+	case relTabEntityCacheLoadedMsg:
+		m.entityCache = msg.items
 		return m, nil
 
 	case relTabResultsMsg:
@@ -200,13 +211,14 @@ func (m RelationshipsModel) View() string {
 
 func (m RelationshipsModel) handleListKeys(msg tea.KeyMsg) (RelationshipsModel, tea.Cmd) {
 	switch {
-	case isKey(msg, "shift+tab"):
-		m.modeFocus = true
-		return m, nil
 	case isDown(msg):
 		m.list.Down()
 	case isUp(msg):
-		m.list.Up()
+		if m.list.Selected() == 0 {
+			m.modeFocus = true
+		} else {
+			m.list.Up()
+		}
 	case isEnter(msg), isSpace(msg):
 		if rel := m.selectedRelationship(); rel != nil {
 			m.detail = rel
@@ -238,9 +250,9 @@ func (m RelationshipsModel) renderModeLine() string {
 
 func (m RelationshipsModel) handleModeKeys(msg tea.KeyMsg) (RelationshipsModel, tea.Cmd) {
 	switch {
-	case isKey(msg, "tab"), isDown(msg):
+	case isDown(msg):
 		m.modeFocus = false
-	case isKey(msg, "shift+tab"), isUp(msg):
+	case isUp(msg):
 		m.modeFocus = false
 	case isKey(msg, "left"), isKey(msg, "right"), isSpace(msg), isEnter(msg):
 		return m.toggleMode()
@@ -304,9 +316,8 @@ func (m RelationshipsModel) renderList() string {
 
 func (m RelationshipsModel) handleDetailKeys(msg tea.KeyMsg) (RelationshipsModel, tea.Cmd) {
 	switch {
-	case isKey(msg, "shift+tab"):
+	case isUp(msg):
 		m.modeFocus = true
-		return m, nil
 	case isBack(msg):
 		m.detail = nil
 		m.metaExpanded = false
@@ -357,7 +368,7 @@ func (m *RelationshipsModel) startEdit() {
 	m.editFocus = relsEditFieldStatus
 	m.editStatusIdx = statusIndex(relsStatusOptions, m.detail.Status)
 	m.editMeta.Reset()
-	m.editMeta.Buffer = metadataToInput(map[string]any(m.detail.Properties))
+	m.editMeta.Load(map[string]any(m.detail.Properties))
 	m.editSaving = false
 }
 
@@ -366,10 +377,12 @@ func (m RelationshipsModel) handleEditKeys(msg tea.KeyMsg) (RelationshipsModel, 
 		return m, nil
 	}
 	switch {
-	case isKey(msg, "tab"), isDown(msg):
+	case isDown(msg):
 		m.editFocus = (m.editFocus + 1) % relsEditFieldCount
-	case isKey(msg, "shift+tab"), isUp(msg):
-		m.editFocus = (m.editFocus - 1 + relsEditFieldCount) % relsEditFieldCount
+	case isUp(msg):
+		if m.editFocus > 0 {
+			m.editFocus = (m.editFocus - 1 + relsEditFieldCount) % relsEditFieldCount
+		}
 	case isBack(msg):
 		m.view = relsViewDetail
 	case isKey(msg, "ctrl+s"):
@@ -410,9 +423,9 @@ func (m RelationshipsModel) renderEdit() string {
 	b.WriteString("\n\n")
 
 	if m.editFocus == relsEditFieldProperties {
-		b.WriteString(SelectedStyle.Render("> Properties (YAML):"))
+		b.WriteString(SelectedStyle.Render("> Properties:"))
 	} else {
-		b.WriteString(MutedStyle.Render("  Properties (YAML):"))
+		b.WriteString(MutedStyle.Render("  Properties:"))
 	}
 	b.WriteString("\n")
 	props := renderMetadataInput(m.editMeta.Buffer)
@@ -435,6 +448,7 @@ func (m RelationshipsModel) saveEdit() (RelationshipsModel, tea.Cmd) {
 	if err != nil {
 		return m, nil
 	}
+	props = mergeMetadataScopes(props, m.editMeta.Scopes)
 	if len(props) > 0 {
 		input.Properties = props
 	}
@@ -491,10 +505,6 @@ func (m *RelationshipsModel) startCreate() {
 }
 
 func (m RelationshipsModel) handleCreateKeys(msg tea.KeyMsg) (RelationshipsModel, tea.Cmd) {
-	if isKey(msg, "shift+tab") {
-		m.modeFocus = true
-		return m, nil
-	}
 	switch m.view {
 	case relsViewCreateSourceSearch:
 		switch {
@@ -882,6 +892,16 @@ func (m *RelationshipsModel) updateCreateSearch() tea.Cmd {
 		m.createList.SetItems(nil)
 		return nil
 	}
+	if len(m.entityCache) > 0 {
+		m.createLoading = false
+		m.createResults = filterEntitiesByQuery(m.entityCache, query)
+		labels := make([]string, len(m.createResults))
+		for i, e := range m.createResults {
+			labels[i] = formatEntityLine(e)
+		}
+		m.createList.SetItems(labels)
+		return nil
+	}
 	m.createLoading = true
 	return m.searchEntities(query)
 }
@@ -895,6 +915,36 @@ func (m *RelationshipsModel) resetTypeSuggestions() {
 func (m *RelationshipsModel) updateTypeSuggestions() {
 	m.createTypeResults = filterRelationshipTypes(m.typeOptions, m.createType)
 	m.createTypeList.SetItems(m.createTypeResults)
+}
+
+func (m RelationshipsModel) loadScopeOptions() tea.Cmd {
+	if m.client == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		scopes, err := m.client.ListAuditScopes()
+		if err != nil {
+			return errMsg{err}
+		}
+		names := map[string]string{}
+		for _, scope := range scopes {
+			names[scope.ID] = scope.Name
+		}
+		return relTabScopesLoadedMsg{options: scopeNameList(names)}
+	}
+}
+
+func (m RelationshipsModel) loadEntityCache() tea.Cmd {
+	if m.client == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		items, err := m.client.QueryEntities(api.QueryParams{})
+		if err != nil {
+			return errMsg{err}
+		}
+		return relTabEntityCacheLoadedMsg{items: items}
+	}
 }
 
 func uniqueRelationshipTypes(items []api.Relationship) []string {
