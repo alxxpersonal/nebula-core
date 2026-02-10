@@ -2,6 +2,8 @@
 
 Just as developers need GitHub to collaborate on code, agents need Nebula to collaborate on context. It's the shared layer where swarms of agents build, track, and modify your life's state together without overwriting each other.
 
+![Nebula CLI](assets/cli.png)
+
 ## What it is
 
 - Shared memory for agents backed by Postgres, not prompts
