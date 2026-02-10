@@ -7,7 +7,7 @@ import pytest
 
 from nebula_mcp.query_loader import QueryLoader
 
-QUERIES = QueryLoader(Path(__file__).resolve().parents[3] / "src" / "queries")
+QUERIES = QueryLoader(Path(__file__).resolve().parents[2] / "src" / "queries")
 
 
 @pytest.mark.asyncio
@@ -48,24 +48,24 @@ async def test_graph_cycle_neighbors(db_pool, enums):
     await db_pool.execute(
         "INSERT INTO relationships (source_type, source_id, target_type, target_id, type_id, status_id, properties)"
         " VALUES ('entity', $1, 'entity', $2, $3, $4, '{}'::jsonb)",
-        a,
-        b,
+        str(a),
+        str(b),
         rel_type_id,
         status_id,
     )
     await db_pool.execute(
         "INSERT INTO relationships (source_type, source_id, target_type, target_id, type_id, status_id, properties)"
         " VALUES ('entity', $1, 'entity', $2, $3, $4, '{}'::jsonb)",
-        b,
-        c,
+        str(b),
+        str(c),
         rel_type_id,
         status_id,
     )
     await db_pool.execute(
         "INSERT INTO relationships (source_type, source_id, target_type, target_id, type_id, status_id, properties)"
         " VALUES ('entity', $1, 'entity', $2, $3, $4, '{}'::jsonb)",
-        c,
-        a,
+        str(c),
+        str(a),
         rel_type_id,
         status_id,
     )
@@ -121,24 +121,24 @@ async def test_graph_shortest_path_cycle(db_pool, enums):
     await db_pool.execute(
         "INSERT INTO relationships (source_type, source_id, target_type, target_id, type_id, status_id, properties)"
         " VALUES ('entity', $1, 'entity', $2, $3, $4, '{}'::jsonb)",
-        n1,
-        n2,
+        str(n1),
+        str(n2),
         rel_type_id,
         status_id,
     )
     await db_pool.execute(
         "INSERT INTO relationships (source_type, source_id, target_type, target_id, type_id, status_id, properties)"
         " VALUES ('entity', $1, 'entity', $2, $3, $4, '{}'::jsonb)",
-        n2,
-        n3,
+        str(n2),
+        str(n3),
         rel_type_id,
         status_id,
     )
     await db_pool.execute(
         "INSERT INTO relationships (source_type, source_id, target_type, target_id, type_id, status_id, properties)"
         " VALUES ('entity', $1, 'entity', $2, $3, $4, '{}'::jsonb)",
-        n3,
-        n1,
+        str(n3),
+        str(n1),
         rel_type_id,
         status_id,
     )

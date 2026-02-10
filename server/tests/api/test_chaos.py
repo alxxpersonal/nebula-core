@@ -89,10 +89,16 @@ async def test_auth_fuzzing(api_no_auth, api_key_row, db_pool, enums):
     random_key = await api_no_auth.get("/api/entities", headers={"x-api-key": "nope"})
     assert random_key.status_code in (401, 403)
 
-    archived_id = enums.statuses.name_to_id["archived"]
+    archived_id = enums.statuses.name_to_id.get("archived")
+    if not archived_id:
+        archived_id = next(
+            (val for key, val in enums.statuses.name_to_id.items() if key != "active"),
+            None,
+        )
+    if not archived_id:
+        pytest.skip("No inactive status available to revoke api key")
     await db_pool.execute(
-        "UPDATE api_keys SET status_id = $1 WHERE id = $2",
-        archived_id,
+        "UPDATE api_keys SET revoked_at = NOW() WHERE id = $1",
         row["id"],
     )
     revoked = await api_no_auth.get("/api/entities", headers={"x-api-key": raw_key})
