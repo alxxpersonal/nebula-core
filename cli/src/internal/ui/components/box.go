@@ -69,6 +69,20 @@ func Box(content string, width int) string {
 	return boxBorder.Width(boxWidth(width)).Render(content)
 }
 
+// BoxContentWidth returns the inner content width excluding border and padding.
+func BoxContentWidth(width int) int {
+	w := boxWidth(width)
+	if w <= 0 {
+		return 0
+	}
+	// Border adds 2, padding adds 4 (left+right).
+	inner := w - 6
+	if inner < 0 {
+		return 0
+	}
+	return inner
+}
+
 // ActiveBox renders content inside a highlighted bordered box.
 func ActiveBox(content string, width int) string {
 	return boxBorderActive.Width(boxWidth(width)).Render(content)

@@ -896,11 +896,18 @@ func (m EntitiesModel) renderList() string {
 
 	var rows strings.Builder
 	visible := m.list.Visible()
+	contentWidth := components.BoxContentWidth(m.width)
 	for i, label := range visible {
 		absIdx := m.list.RelToAbs(i)
 		prefix := "    "
 		if m.isBulkSelected(absIdx) {
 			prefix = "  ✓ "
+		}
+		if contentWidth > 0 {
+			maxWidth := contentWidth - lipgloss.Width(prefix)
+			if maxWidth > 0 {
+				label = lipgloss.NewStyle().Width(maxWidth).Render(label)
+			}
 		}
 		if m.list.IsSelected(absIdx) {
 			rows.WriteString(SelectedStyle.Render(prefix + label))
