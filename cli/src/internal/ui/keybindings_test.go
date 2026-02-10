@@ -40,16 +40,6 @@ func TestIsUp(t *testing.T) {
 	assert.False(t, isUp(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}}))
 }
 
-func TestIsTab(t *testing.T) {
-	assert.True(t, isTab(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'1'}}, 1))
-	assert.True(t, isTab(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}}, 2))
-	assert.True(t, isTab(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'5'}}, 5))
-	assert.True(t, isTab(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'6'}}, 6))
-	assert.True(t, isTab(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'7'}}, 7))
-	assert.True(t, isTab(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'8'}}, 8))
-	assert.False(t, isTab(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'1'}}, 2))
-}
-
 func TestIsKey(t *testing.T) {
 	assert.True(t, isKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}}, "s"))
 	assert.True(t, isKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}}, "a"))

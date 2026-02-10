@@ -39,25 +39,3 @@ func isEnter(msg tea.KeyMsg) bool {
 func isSpace(msg tea.KeyMsg) bool {
 	return isKey(msg, " ")
 }
-
-func isTab(msg tea.KeyMsg, n int) bool {
-	switch n {
-	case 1:
-		return isKey(msg, "1")
-	case 2:
-		return isKey(msg, "2")
-	case 3:
-		return isKey(msg, "3")
-	case 4:
-		return isKey(msg, "4")
-	case 5:
-		return isKey(msg, "5")
-	case 6:
-		return isKey(msg, "6")
-	case 7:
-		return isKey(msg, "7")
-	case 8:
-		return isKey(msg, "8")
-	}
-	return false
-}

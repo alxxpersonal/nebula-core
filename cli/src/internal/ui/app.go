@@ -207,15 +207,6 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, nil
 		}
 
-		// Tab switching: 1-8
-		for i := range tabNames {
-			if isTab(msg, i+1) {
-				a.tabNav = true
-				app, cmd := a.switchTab(i)
-				return app, cmd
-			}
-		}
-
 		// Arrow tab navigation until user enters content with Down
 		if a.tabNav {
 			if isKey(msg, "left") {
@@ -397,10 +388,9 @@ func (a App) statusHints() []string {
 
 func (a App) statusHintsForTab() []string {
 	base := []string{
-		components.Hint("1-8", "Tabs"),
+		components.Hint("←/→", "Tabs"),
 		components.Hint("/", "Command"),
 		components.Hint("?", "Help"),
-		components.Hint("</>", "Navigate"),
 		components.Hint("q", "Quit"),
 	}
 
@@ -453,8 +443,9 @@ func (a App) statusHintsForTab() []string {
 			)
 		case entitiesViewEdit:
 			return append(base,
-				components.Hint("tab", "Next Field"),
-				components.Hint("space", "Cycle"),
+				components.Hint("↑/↓", "Fields"),
+				components.Hint("←/→", "Cycle"),
+				components.Hint("space", "Select"),
 				components.Hint("ctrl+s", "Save"),
 				components.Hint("esc", "Cancel"),
 			)
@@ -484,10 +475,19 @@ func (a App) statusHintsForTab() []string {
 			)
 		case entitiesViewRelEdit:
 			return append(base,
-				components.Hint("tab", "Next Field"),
-				components.Hint("space", "Cycle"),
+				components.Hint("↑/↓", "Fields"),
+				components.Hint("←/→", "Cycle"),
+				components.Hint("space", "Select"),
 				components.Hint("ctrl+s", "Save"),
 				components.Hint("esc", "Cancel"),
+			)
+		case entitiesViewAdd:
+			return append(base,
+				components.Hint("↑/↓", "Fields"),
+				components.Hint("←/→", "Cycle"),
+				components.Hint("space", "Select"),
+				components.Hint("ctrl+s", "Save"),
+				components.Hint("esc", "Back"),
 			)
 		case entitiesViewHistory:
 			return append(base,
@@ -533,8 +533,9 @@ func (a App) statusHintsForTab() []string {
 			)
 		case relsViewEdit:
 			return append(base,
-				components.Hint("tab", "Next Field"),
-				components.Hint("space", "Cycle"),
+				components.Hint("↑/↓", "Fields"),
+				components.Hint("←/→", "Cycle"),
+				components.Hint("space", "Select"),
 				components.Hint("ctrl+s", "Save"),
 				components.Hint("esc", "Cancel"),
 			)
@@ -579,18 +580,30 @@ func (a App) statusHintsForTab() []string {
 			)
 		case knowledgeViewDetail:
 			return append(base,
+				components.Hint("m", "Metadata"),
+				components.Hint("c", "Content"),
+				components.Hint("v", "Vault"),
 				components.Hint("esc", "Back"),
 			)
 		default:
 			return append(base,
-				components.Hint("tab", "Next Field"),
-				components.Hint("shift+tab", "Mode"),
-				components.Hint("space", "Select/Done"),
+				components.Hint("↑/↓", "Fields"),
+				components.Hint("←/→", "Cycle"),
+				components.Hint("space", "Select"),
 				components.Hint("ctrl+s", "Save"),
 				components.Hint("esc", "Cancel"),
 			)
 		}
 	case tabJobs:
+		if a.jobs.view == jobsViewAdd || a.jobs.view == jobsViewEdit {
+			return append(base,
+				components.Hint("↑/↓", "Fields"),
+				components.Hint("←/→", "Cycle"),
+				components.Hint("space", "Select"),
+				components.Hint("ctrl+s", "Save"),
+				components.Hint("esc", "Cancel"),
+			)
+		}
 		if a.jobs.detail != nil {
 			return append(base,
 				components.Hint("s", "Status"),
@@ -600,6 +613,8 @@ func (a App) statusHintsForTab() []string {
 		}
 		return append(base,
 			components.Hint("↑/↓", "Scroll"),
+			components.Hint("tab", "Complete"),
+			components.Hint("enter", "Details"),
 			components.Hint("s", "Status"),
 		)
 	case tabHistory:
@@ -642,7 +657,7 @@ func (a App) statusHintsForTab() []string {
 		}
 		hints := []string{
 			components.Hint("↑/↓", "Scroll"),
-			components.Hint("tab", "Section"),
+			components.Hint("←/→", "Section"),
 		}
 		if a.profile.section == 0 {
 			hints = append(hints,
