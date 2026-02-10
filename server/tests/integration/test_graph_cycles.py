@@ -1,0 +1,158 @@
+"""Graph cycle stress tests for traversal queries."""
+
+from pathlib import Path
+
+import asyncio
+import pytest
+
+from nebula_mcp.query_loader import QueryLoader
+
+QUERIES = QueryLoader(Path(__file__).resolve().parents[3] / "src" / "queries")
+
+
+@pytest.mark.asyncio
+async def test_graph_cycle_neighbors(db_pool, enums):
+    status_id = enums.statuses.name_to_id["active"]
+    type_id = enums.entity_types.name_to_id["person"]
+    scope_ids = [enums.scopes.name_to_id["public"]]
+    rel_type_id = next(iter(enums.relationship_types.name_to_id.values()))
+
+    a = await db_pool.fetchval(
+        "INSERT INTO entities (name, type_id, status_id, privacy_scope_ids, tags, metadata)"
+        " VALUES ($1, $2, $3, $4, $5, '{}'::jsonb) RETURNING id",
+        "node-a",
+        type_id,
+        status_id,
+        scope_ids,
+        [],
+    )
+    b = await db_pool.fetchval(
+        "INSERT INTO entities (name, type_id, status_id, privacy_scope_ids, tags, metadata)"
+        " VALUES ($1, $2, $3, $4, $5, '{}'::jsonb) RETURNING id",
+        "node-b",
+        type_id,
+        status_id,
+        scope_ids,
+        [],
+    )
+    c = await db_pool.fetchval(
+        "INSERT INTO entities (name, type_id, status_id, privacy_scope_ids, tags, metadata)"
+        " VALUES ($1, $2, $3, $4, $5, '{}'::jsonb) RETURNING id",
+        "node-c",
+        type_id,
+        status_id,
+        scope_ids,
+        [],
+    )
+
+    await db_pool.execute(
+        "INSERT INTO relationships (source_type, source_id, target_type, target_id, type_id, status_id, properties)"
+        " VALUES ('entity', $1, 'entity', $2, $3, $4, '{}'::jsonb)",
+        a,
+        b,
+        rel_type_id,
+        status_id,
+    )
+    await db_pool.execute(
+        "INSERT INTO relationships (source_type, source_id, target_type, target_id, type_id, status_id, properties)"
+        " VALUES ('entity', $1, 'entity', $2, $3, $4, '{}'::jsonb)",
+        b,
+        c,
+        rel_type_id,
+        status_id,
+    )
+    await db_pool.execute(
+        "INSERT INTO relationships (source_type, source_id, target_type, target_id, type_id, status_id, properties)"
+        " VALUES ('entity', $1, 'entity', $2, $3, $4, '{}'::jsonb)",
+        c,
+        a,
+        rel_type_id,
+        status_id,
+    )
+
+    async def run_neighbors():
+        return await db_pool.fetch(
+            QUERIES["graph/neighbors"],
+            "entity",
+            str(a),
+            3,
+            25,
+        )
+
+    rows = await asyncio.wait_for(run_neighbors(), timeout=3)
+    assert len(rows) >= 2
+
+
+@pytest.mark.asyncio
+async def test_graph_shortest_path_cycle(db_pool, enums):
+    status_id = enums.statuses.name_to_id["active"]
+    type_id = enums.entity_types.name_to_id["person"]
+    scope_ids = [enums.scopes.name_to_id["public"]]
+    rel_type_id = next(iter(enums.relationship_types.name_to_id.values()))
+
+    n1 = await db_pool.fetchval(
+        "INSERT INTO entities (name, type_id, status_id, privacy_scope_ids, tags, metadata)"
+        " VALUES ($1, $2, $3, $4, $5, '{}'::jsonb) RETURNING id",
+        "path-1",
+        type_id,
+        status_id,
+        scope_ids,
+        [],
+    )
+    n2 = await db_pool.fetchval(
+        "INSERT INTO entities (name, type_id, status_id, privacy_scope_ids, tags, metadata)"
+        " VALUES ($1, $2, $3, $4, $5, '{}'::jsonb) RETURNING id",
+        "path-2",
+        type_id,
+        status_id,
+        scope_ids,
+        [],
+    )
+    n3 = await db_pool.fetchval(
+        "INSERT INTO entities (name, type_id, status_id, privacy_scope_ids, tags, metadata)"
+        " VALUES ($1, $2, $3, $4, $5, '{}'::jsonb) RETURNING id",
+        "path-3",
+        type_id,
+        status_id,
+        scope_ids,
+        [],
+    )
+
+    await db_pool.execute(
+        "INSERT INTO relationships (source_type, source_id, target_type, target_id, type_id, status_id, properties)"
+        " VALUES ('entity', $1, 'entity', $2, $3, $4, '{}'::jsonb)",
+        n1,
+        n2,
+        rel_type_id,
+        status_id,
+    )
+    await db_pool.execute(
+        "INSERT INTO relationships (source_type, source_id, target_type, target_id, type_id, status_id, properties)"
+        " VALUES ('entity', $1, 'entity', $2, $3, $4, '{}'::jsonb)",
+        n2,
+        n3,
+        rel_type_id,
+        status_id,
+    )
+    await db_pool.execute(
+        "INSERT INTO relationships (source_type, source_id, target_type, target_id, type_id, status_id, properties)"
+        " VALUES ('entity', $1, 'entity', $2, $3, $4, '{}'::jsonb)",
+        n3,
+        n1,
+        rel_type_id,
+        status_id,
+    )
+
+    async def run_path():
+        return await db_pool.fetchrow(
+            QUERIES["graph/shortest_path"],
+            "entity",
+            str(n1),
+            "entity",
+            str(n3),
+            6,
+        )
+
+    row = await asyncio.wait_for(run_path(), timeout=3)
+    assert row is not None
+    assert row["depth"] >= 1

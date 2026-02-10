@@ -38,14 +38,33 @@ func TestRelationshipsInitLoadsNames(t *testing.T) {
 	})
 
 	model := NewRelationshipsModel(client)
-	cmd := model.Init()
-	msg := cmd()
-	model, cmd = model.Update(msg)
-	msg = cmd()
-	model, _ = model.Update(msg)
+	cmds := []tea.Cmd{
+		model.loadRelationships(),
+		model.loadScopeOptions(),
+		model.loadEntityCache(),
+	}
+	for _, cmd := range cmds {
+		if cmd == nil {
+			continue
+		}
+		model = applyMsg(model, cmd())
+	}
 
 	require.Len(t, model.list.Items, 1)
 	assert.Contains(t, model.list.Items[0], "uses · Nebula -> Postgres")
+}
+
+func applyMsg(model RelationshipsModel, msg tea.Msg) RelationshipsModel {
+	var cmd tea.Cmd
+	model, cmd = model.Update(msg)
+	if cmd == nil {
+		return model
+	}
+	next := cmd()
+	if next == nil {
+		return model
+	}
+	return applyMsg(model, next)
 }
 
 func TestRelationshipsCreateSubmitCallsAPI(t *testing.T) {

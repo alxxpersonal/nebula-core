@@ -16,7 +16,6 @@ import (
 
 func TestFormatEntityLineTruncatesLongNames(t *testing.T) {
 	longName := strings.Repeat("a", maxEntityNameLen+10)
-	expectedName := strings.Repeat("a", maxEntityNameLen) + "..."
 
 	line := formatEntityLine(api.Entity{
 		Name: longName,
@@ -24,7 +23,8 @@ func TestFormatEntityLineTruncatesLongNames(t *testing.T) {
 	})
 
 	stripped := stripANSI(line)
-	assert.Contains(t, stripped, expectedName)
+	assert.LessOrEqual(t, len([]rune(stripped)), maxEntityLineLen)
+	assert.Contains(t, stripped, "...")
 	assert.Contains(t, stripped, "person")
 }
 
