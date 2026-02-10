@@ -14,7 +14,7 @@ func TestParseMetadataInput(t *testing.T) {
 
 	profile, ok := got["profile"].(map[string]any)
 	assert.True(t, ok)
-	assert.Equal(t, 17, profile["age"])
+	assert.Equal(t, "17", profile["age"])
 
 	tags, ok := profile["tags"].([]any)
 	assert.True(t, ok)

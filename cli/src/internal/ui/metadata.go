@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/gravitrone/nebula-core/cli/internal/ui/components"
@@ -90,21 +89,6 @@ func parseMetadataValue(raw string, lineNum int) (any, error) {
 func parseMetadataScalar(raw string) any {
 	if raw == "" {
 		return ""
-	}
-	lower := strings.ToLower(raw)
-	switch lower {
-	case "true":
-		return true
-	case "false":
-		return false
-	case "null", "nil":
-		return nil
-	}
-	if i, err := strconv.Atoi(raw); err == nil {
-		return i
-	}
-	if f, err := strconv.ParseFloat(raw, 64); err == nil {
-		return f
 	}
 	if (strings.HasPrefix(raw, "\"") && strings.HasSuffix(raw, "\"")) ||
 		(strings.HasPrefix(raw, "'") && strings.HasSuffix(raw, "'")) {
