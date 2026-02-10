@@ -26,7 +26,7 @@ var (
 			Bold(true)
 
 	diffLabelStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#8fb3ff")).
+			Foreground(lipgloss.Color("#a9c4ff")).
 			Bold(true)
 
 	boxMutedStyle = lipgloss.NewStyle().
@@ -249,8 +249,8 @@ func DiffTable(title string, rows []DiffRow, width int) string {
 		return ""
 	}
 
-	removeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#ff6b6b"))
-	addStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#ffd166"))
+	removeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#ff4d6d"))
+	addStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#ffbf3f"))
 	renderValue := func(style lipgloss.Style, prefix string, value string) string {
 		if value == "" {
 			value = "-"
