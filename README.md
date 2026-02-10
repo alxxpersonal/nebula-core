@@ -127,4 +127,4 @@ The MCP server exposes tools across entities, knowledge, relationships, jobs, fi
 
 ## License
 
-MIT
+[MIT](LICENSE)
