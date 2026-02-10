@@ -1,0 +1,206 @@
+"""API key management and login routes."""
+
+# Standard Library
+from pathlib import Path
+from typing import Any
+
+# Third-Party
+from fastapi import APIRouter, Depends, Request
+from pydantic import BaseModel
+
+# Local
+from nebula_api.auth import generate_api_key, require_auth
+from nebula_api.response import api_error, success
+from nebula_mcp.enums import require_entity_type, require_scopes, require_status
+from nebula_mcp.query_loader import QueryLoader
+
+QUERIES = QueryLoader(Path(__file__).resolve().parents[2] / "queries")
+
+router = APIRouter()
+
+
+class LoginInput(BaseModel):
+    """Login payload used to create or fetch a user entity.
+
+    Attributes:
+        username: Human-readable username for the entity.
+    """
+
+    username: str
+
+
+class CreateKeyInput(BaseModel):
+    """Payload for creating a named API key.
+
+    Attributes:
+        name: Friendly name for the API key.
+    """
+
+    name: str
+
+
+@router.post("/login")
+async def login(payload: LoginInput, request: Request) -> dict[str, Any]:
+    """First-run login: find or create user entity, generate API key.
+
+    Args:
+        payload: Login payload.
+        request: FastAPI request.
+
+    Returns:
+        API response with generated API key and entity info.
+    """
+
+    pool = request.app.state.pool
+    enums = request.app.state.enums
+
+    # Find existing entity by name + type person
+    entity = await pool.fetchrow(
+        QUERIES["entities/find_by_name_type"],
+        payload.username,
+        require_entity_type("person", enums),
+    )
+
+    if not entity:
+        status_id = require_status("active", enums)
+        scope_ids = require_scopes(["public", "personal", "code"], enums)
+        entity = await pool.fetchrow(
+            QUERIES["entities/create"],
+            scope_ids,
+            payload.username,
+            require_entity_type("person", enums),
+            status_id,
+            [],
+            "{}",
+            None,
+        )
+
+    entity_id = entity["id"]
+    raw_key, prefix, key_hash = generate_api_key()
+
+    await pool.execute(
+        QUERIES["api_keys/create_for_entity"],
+        entity_id,
+        key_hash,
+        prefix,
+        "default",
+    )
+
+    return success(
+        {
+            "api_key": raw_key,
+            "entity_id": str(entity_id),
+            "username": payload.username,
+        }
+    )
+
+
+@router.post("/")
+async def create_key(
+    payload: CreateKeyInput,
+    request: Request,
+    auth: dict = Depends(require_auth),
+) -> dict[str, Any]:
+    """Generate a new API key for the authenticated user.
+
+    Args:
+        payload: API key creation payload.
+        request: FastAPI request.
+        auth: Auth context.
+
+    Returns:
+        API response with newly created API key.
+    """
+
+    pool = request.app.state.pool
+
+    raw_key, prefix, key_hash = generate_api_key()
+
+    row = await pool.fetchrow(
+        QUERIES["api_keys/create_with_returning"],
+        auth["entity_id"],
+        key_hash,
+        prefix,
+        payload.name,
+    )
+
+    return success(
+        {
+            "api_key": raw_key,
+            "key_id": str(row["id"]),
+            "prefix": row["key_prefix"],
+            "name": row["name"],
+        }
+    )
+
+
+@router.get("/all")
+async def list_all_keys(
+    request: Request, auth: dict = Depends(require_auth)
+) -> dict[str, Any]:
+    """List all active API keys with owner info.
+
+    Args:
+        request: FastAPI request.
+        auth: Auth context.
+
+    Returns:
+        API response with API key list.
+    """
+
+    pool = request.app.state.pool
+
+    rows = await pool.fetch(QUERIES["api_keys/list_all"])
+    return success([dict(r) for r in rows])
+
+
+@router.get("/")
+async def list_keys(
+    request: Request, auth: dict = Depends(require_auth)
+) -> dict[str, Any]:
+    """List all active API keys for the authenticated user.
+
+    Args:
+        request: FastAPI request.
+        auth: Auth context.
+
+    Returns:
+        API response with API key list.
+    """
+
+    pool = request.app.state.pool
+
+    rows = await pool.fetch(QUERIES["api_keys/list_by_entity"], auth["entity_id"])
+
+    return success([dict(r) for r in rows])
+
+
+@router.delete("/{key_id}")
+async def revoke_key(
+    key_id: str,
+    request: Request,
+    auth: dict = Depends(require_auth),
+) -> dict[str, Any]:
+    """Revoke an API key.
+
+    Args:
+        key_id: API key id.
+        request: FastAPI request.
+        auth: Auth context.
+
+    Returns:
+        API response with revocation result.
+    """
+
+    pool = request.app.state.pool
+
+    result = await pool.execute(
+        QUERIES["api_keys/revoke"],
+        key_id,
+        auth["entity_id"],
+    )
+
+    if result == "UPDATE 0":
+        api_error("NOT_FOUND", "Key not found or already revoked", 404)
+
+    return success({"revoked": True})

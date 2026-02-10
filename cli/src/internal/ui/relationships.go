@@ -1,0 +1,933 @@
+package ui
+
+import (
+	"fmt"
+	"strings"
+
+	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/gravitrone/nebula-core/cli/internal/api"
+	"github.com/gravitrone/nebula-core/cli/internal/ui/components"
+)
+
+// --- Messages ---
+
+type relTabLoadedMsg struct{ items []api.Relationship }
+type relTabNamesLoadedMsg struct{ names map[string]string }
+type relTabSavedMsg struct{}
+
+type relTabResultsMsg struct {
+	query string
+	items []api.Entity
+}
+
+// --- View States ---
+
+type relationshipsView int
+
+const (
+	relsViewList relationshipsView = iota
+	relsViewDetail
+	relsViewEdit
+	relsViewConfirm
+	relsViewCreateSourceSearch
+	relsViewCreateSourceSelect
+	relsViewCreateTargetSearch
+	relsViewCreateTargetSelect
+	relsViewCreateType
+)
+
+const (
+	relsEditFieldStatus = iota
+	relsEditFieldProperties
+	relsEditFieldCount
+)
+
+var relsStatusOptions = []string{"active", "archived"}
+
+// --- Relationships Model ---
+
+type RelationshipsModel struct {
+	client    *api.Client
+	items     []api.Relationship
+	list      *components.List
+	loading   bool
+	view      relationshipsView
+	modeFocus bool
+	width     int
+	height    int
+
+	names map[string]string
+
+	detail        *api.Relationship
+	metaExpanded  bool
+	editFocus     int
+	editStatusIdx int
+	editMeta      MetadataEditor
+	editSaving    bool
+
+	confirmKind string
+
+	// create flow
+	createQuery       string
+	createResults     []api.Entity
+	createList        *components.List
+	createSource      *api.Entity
+	createTarget      *api.Entity
+	createType        string
+	createTypeResults []string
+	createTypeList    *components.List
+	createTypeNav     bool
+	createLoading     bool
+
+	typeOptions []string
+}
+
+func NewRelationshipsModel(client *api.Client) RelationshipsModel {
+	return RelationshipsModel{
+		client:         client,
+		list:           components.NewList(12),
+		createList:     components.NewList(8),
+		createTypeList: components.NewList(6),
+		view:           relsViewList,
+		names:          map[string]string{},
+	}
+}
+
+func (m RelationshipsModel) Init() tea.Cmd {
+	m.view = relsViewList
+	m.loading = true
+	m.modeFocus = false
+	m.metaExpanded = false
+	m.editMeta.Reset()
+	return m.loadRelationships()
+}
+
+func (m RelationshipsModel) Update(msg tea.Msg) (RelationshipsModel, tea.Cmd) {
+	switch msg := msg.(type) {
+	case relTabLoadedMsg:
+		m.loading = false
+		m.items = msg.items
+		m.list.SetItems(m.buildListLabels())
+		m.typeOptions = uniqueRelationshipTypes(msg.items)
+		return m, m.loadRelationshipNames(msg.items)
+
+	case relTabNamesLoadedMsg:
+		if m.names == nil {
+			m.names = map[string]string{}
+		}
+		for id, name := range msg.names {
+			m.names[id] = name
+		}
+		m.list.SetItems(m.buildListLabels())
+		return m, nil
+
+	case relTabResultsMsg:
+		if strings.TrimSpace(msg.query) != strings.TrimSpace(m.createQuery) {
+			return m, nil
+		}
+		m.createLoading = false
+		m.createResults = msg.items
+		labels := make([]string, len(msg.items))
+		for i, e := range msg.items {
+			labels[i] = formatEntityLine(e)
+		}
+		m.createList.SetItems(labels)
+		return m, nil
+
+	case relTabSavedMsg:
+		m.editSaving = false
+		m.loading = true
+		m.view = relsViewList
+		return m, m.loadRelationships()
+
+	case errMsg:
+		m.loading = false
+		m.editSaving = false
+		m.createLoading = false
+		return m, nil
+
+	case tea.KeyMsg:
+		if m.editMeta.Active {
+			m.editMeta.HandleKey(msg)
+			return m, nil
+		}
+		if m.modeFocus {
+			return m.handleModeKeys(msg)
+		}
+		switch m.view {
+		case relsViewDetail:
+			return m.handleDetailKeys(msg)
+		case relsViewEdit:
+			return m.handleEditKeys(msg)
+		case relsViewConfirm:
+			return m.handleConfirmKeys(msg)
+		case relsViewCreateSourceSearch, relsViewCreateSourceSelect, relsViewCreateTargetSearch, relsViewCreateTargetSelect, relsViewCreateType:
+			return m.handleCreateKeys(msg)
+		default:
+			return m.handleListKeys(msg)
+		}
+	}
+	return m, nil
+}
+
+func (m RelationshipsModel) View() string {
+	if m.editMeta.Active {
+		return m.editMeta.Render(m.width)
+	}
+
+	modeLine := m.renderModeLine()
+	var body string
+	switch m.view {
+	case relsViewDetail:
+		body = m.renderDetail()
+	case relsViewEdit:
+		body = m.renderEdit()
+	case relsViewConfirm:
+		body = m.renderConfirm()
+	case relsViewCreateSourceSearch, relsViewCreateSourceSelect, relsViewCreateTargetSearch, relsViewCreateTargetSelect, relsViewCreateType:
+		body = m.renderCreate()
+	default:
+		body = m.renderList()
+	}
+	if modeLine != "" {
+		body = components.CenterLine(modeLine, m.width) + "\n\n" + body
+	}
+	return components.Indent(body, 1)
+}
+
+// --- List ---
+
+func (m RelationshipsModel) handleListKeys(msg tea.KeyMsg) (RelationshipsModel, tea.Cmd) {
+	switch {
+	case isKey(msg, "shift+tab"):
+		m.modeFocus = true
+		return m, nil
+	case isDown(msg):
+		m.list.Down()
+	case isUp(msg):
+		m.list.Up()
+	case isEnter(msg), isSpace(msg):
+		if rel := m.selectedRelationship(); rel != nil {
+			m.detail = rel
+			m.view = relsViewDetail
+		}
+	case isKey(msg, "n"):
+		m.startCreate()
+		m.view = relsViewCreateSourceSearch
+	}
+	return m, nil
+}
+
+// --- Mode Line ---
+
+func (m RelationshipsModel) renderModeLine() string {
+	add := TabInactiveStyle.Render("Add")
+	list := TabInactiveStyle.Render("Library")
+	if m.isAddView() {
+		add = TabActiveStyle.Render("Add")
+	} else {
+		list = TabActiveStyle.Render("Library")
+	}
+	line := add + " " + list
+	if m.modeFocus {
+		return SelectedStyle.Render("› " + line)
+	}
+	return line
+}
+
+func (m RelationshipsModel) handleModeKeys(msg tea.KeyMsg) (RelationshipsModel, tea.Cmd) {
+	switch {
+	case isKey(msg, "tab"), isDown(msg):
+		m.modeFocus = false
+	case isKey(msg, "shift+tab"), isUp(msg):
+		m.modeFocus = false
+	case isKey(msg, "left"), isKey(msg, "right"), isSpace(msg), isEnter(msg):
+		return m.toggleMode()
+	case isBack(msg):
+		m.modeFocus = false
+	}
+	return m, nil
+}
+
+func (m RelationshipsModel) toggleMode() (RelationshipsModel, tea.Cmd) {
+	m.modeFocus = false
+	if m.isAddView() {
+		m.view = relsViewList
+		return m, nil
+	}
+	m.startCreate()
+	m.view = relsViewCreateSourceSearch
+	return m, nil
+}
+
+func (m RelationshipsModel) isAddView() bool {
+	switch m.view {
+	case relsViewCreateSourceSearch, relsViewCreateSourceSelect, relsViewCreateTargetSearch, relsViewCreateTargetSelect, relsViewCreateType:
+		return true
+	default:
+		return false
+	}
+}
+
+func (m RelationshipsModel) renderList() string {
+	if m.loading {
+		return "  " + MutedStyle.Render("Loading relationships...")
+	}
+
+	if len(m.items) == 0 {
+		content := MutedStyle.Render("No relationships found.")
+		return components.Box(content, m.width)
+	}
+
+	var rows strings.Builder
+	visible := m.list.Visible()
+	for i, label := range visible {
+		absIdx := m.list.RelToAbs(i)
+		if m.list.IsSelected(absIdx) {
+			rows.WriteString(SelectedStyle.Render("  > " + label))
+		} else {
+			rows.WriteString(NormalStyle.Render("    " + label))
+		}
+		if i < len(visible)-1 {
+			rows.WriteString("\n")
+		}
+	}
+
+	title := "Relationships"
+	countLine := MutedStyle.Render(fmt.Sprintf("%d total", len(m.items)))
+	content := countLine + "\n\n" + rows.String()
+	return components.TitledBox(title, content, m.width)
+}
+
+// --- Detail ---
+
+func (m RelationshipsModel) handleDetailKeys(msg tea.KeyMsg) (RelationshipsModel, tea.Cmd) {
+	switch {
+	case isKey(msg, "shift+tab"):
+		m.modeFocus = true
+		return m, nil
+	case isBack(msg):
+		m.detail = nil
+		m.metaExpanded = false
+		m.view = relsViewList
+	case isKey(msg, "e"):
+		m.startEdit()
+		m.view = relsViewEdit
+	case isKey(msg, "d"):
+		m.confirmKind = "archive"
+		m.view = relsViewConfirm
+	case isKey(msg, "m"):
+		m.metaExpanded = !m.metaExpanded
+	}
+	return m, nil
+}
+
+func (m RelationshipsModel) renderDetail() string {
+	if m.detail == nil {
+		return m.renderList()
+	}
+	rel := m.detail
+	rows := []components.TableRow{
+		{Label: "ID", Value: rel.ID},
+		{Label: "Type", Value: rel.Type},
+		{Label: "Status", Value: rel.Status},
+		{Label: "Source", Value: m.displayNode(rel.SourceID, rel.SourceType, rel.SourceName)},
+		{Label: "Target", Value: m.displayNode(rel.TargetID, rel.TargetType, rel.TargetName)},
+		{Label: "Created", Value: rel.CreatedAt.Format("2006-01-02 15:04")},
+	}
+
+	sections := []string{components.Table("Relationship", rows, m.width)}
+	if len(rel.Properties) > 0 {
+		props := renderMetadataBlock(map[string]any(rel.Properties), m.width, m.metaExpanded)
+		if props != "" {
+			sections = append(sections, props)
+		}
+	}
+
+	return strings.Join(sections, "\n\n")
+}
+
+// --- Edit ---
+
+func (m *RelationshipsModel) startEdit() {
+	if m.detail == nil {
+		return
+	}
+	m.editFocus = relsEditFieldStatus
+	m.editStatusIdx = statusIndex(relsStatusOptions, m.detail.Status)
+	m.editMeta.Reset()
+	m.editMeta.Buffer = metadataToInput(map[string]any(m.detail.Properties))
+	m.editSaving = false
+}
+
+func (m RelationshipsModel) handleEditKeys(msg tea.KeyMsg) (RelationshipsModel, tea.Cmd) {
+	if m.editSaving {
+		return m, nil
+	}
+	switch {
+	case isKey(msg, "tab"), isDown(msg):
+		m.editFocus = (m.editFocus + 1) % relsEditFieldCount
+	case isKey(msg, "shift+tab"), isUp(msg):
+		m.editFocus = (m.editFocus - 1 + relsEditFieldCount) % relsEditFieldCount
+	case isBack(msg):
+		m.view = relsViewDetail
+	case isKey(msg, "ctrl+s"):
+		return m.saveEdit()
+	case isKey(msg, "backspace"):
+		return m, nil
+	default:
+		if m.editFocus == relsEditFieldStatus {
+			switch {
+			case isKey(msg, "left"):
+				m.editStatusIdx = (m.editStatusIdx - 1 + len(relsStatusOptions)) % len(relsStatusOptions)
+			case isKey(msg, "right"), isSpace(msg):
+				m.editStatusIdx = (m.editStatusIdx + 1) % len(relsStatusOptions)
+			}
+		} else if m.editFocus == relsEditFieldProperties {
+			if isEnter(msg) {
+				m.editMeta.Active = true
+			}
+		}
+	}
+	return m, nil
+}
+
+func (m RelationshipsModel) renderEdit() string {
+	status := relsStatusOptions[m.editStatusIdx]
+	var b strings.Builder
+
+	if m.editFocus == relsEditFieldStatus {
+		b.WriteString(SelectedStyle.Render("> Status:"))
+		b.WriteString("\n")
+		b.WriteString(NormalStyle.Render("  " + status))
+	} else {
+		b.WriteString(MutedStyle.Render("  Status:"))
+		b.WriteString("\n")
+		b.WriteString(NormalStyle.Render("  " + status))
+	}
+
+	b.WriteString("\n\n")
+
+	if m.editFocus == relsEditFieldProperties {
+		b.WriteString(SelectedStyle.Render("> Properties (YAML):"))
+	} else {
+		b.WriteString(MutedStyle.Render("  Properties (YAML):"))
+	}
+	b.WriteString("\n")
+	props := renderMetadataInput(m.editMeta.Buffer)
+	b.WriteString(NormalStyle.Render("  " + props))
+
+	if m.editSaving {
+		b.WriteString("\n\n" + MutedStyle.Render("Saving..."))
+	}
+
+	return components.TitledBox("Edit Relationship", b.String(), m.width)
+}
+
+func (m RelationshipsModel) saveEdit() (RelationshipsModel, tea.Cmd) {
+	if m.detail == nil {
+		return m, nil
+	}
+	status := relsStatusOptions[m.editStatusIdx]
+	input := api.UpdateRelationshipInput{Status: &status}
+	props, err := parseMetadataInput(m.editMeta.Buffer)
+	if err != nil {
+		return m, nil
+	}
+	if len(props) > 0 {
+		input.Properties = props
+	}
+
+	m.editSaving = true
+	return m, func() tea.Msg {
+		_, err := m.client.UpdateRelationship(m.detail.ID, input)
+		if err != nil {
+			return errMsg{err}
+		}
+		return relTabSavedMsg{}
+	}
+}
+
+// --- Confirm ---
+
+func (m RelationshipsModel) handleConfirmKeys(msg tea.KeyMsg) (RelationshipsModel, tea.Cmd) {
+	switch {
+	case isKey(msg, "y"):
+		status := "archived"
+		input := api.UpdateRelationshipInput{Status: &status}
+		m.view = relsViewDetail
+		return m, func() tea.Msg {
+			_, err := m.client.UpdateRelationship(m.detail.ID, input)
+			if err != nil {
+				return errMsg{err}
+			}
+			return relTabSavedMsg{}
+		}
+	case isKey(msg, "n"), isBack(msg):
+		m.view = relsViewDetail
+	}
+	return m, nil
+}
+
+func (m RelationshipsModel) renderConfirm() string {
+	msg := "Archive this relationship?"
+	return components.ConfirmDialog("Confirm", msg)
+}
+
+// --- Create ---
+
+func (m *RelationshipsModel) startCreate() {
+	m.createQuery = ""
+	m.createResults = nil
+	m.createList.SetItems(nil)
+	m.createSource = nil
+	m.createTarget = nil
+	m.createType = ""
+	m.createTypeResults = nil
+	m.createTypeList.SetItems(nil)
+	m.createTypeNav = false
+	m.createLoading = false
+}
+
+func (m RelationshipsModel) handleCreateKeys(msg tea.KeyMsg) (RelationshipsModel, tea.Cmd) {
+	if isKey(msg, "shift+tab") {
+		m.modeFocus = true
+		return m, nil
+	}
+	switch m.view {
+	case relsViewCreateSourceSearch:
+		switch {
+		case isBack(msg):
+			if m.createQuery != "" {
+				m.createQuery = ""
+				m.createResults = nil
+				m.createList.SetItems(nil)
+				m.createLoading = false
+				return m, nil
+			}
+			m.view = relsViewList
+		case isKey(msg, "cmd+backspace", "cmd+delete", "ctrl+u"):
+			if m.createQuery != "" {
+				m.createQuery = ""
+				m.createResults = nil
+				m.createList.SetItems(nil)
+				m.createLoading = false
+				return m, nil
+			}
+			m.view = relsViewList
+		case isDown(msg):
+			m.createList.Down()
+		case isUp(msg):
+			m.createList.Up()
+		case isEnter(msg):
+			if idx := m.createList.Selected(); idx < len(m.createResults) {
+				item := m.createResults[idx]
+				m.createSource = &item
+				m.createQuery = ""
+				m.createResults = nil
+				m.createList.SetItems(nil)
+				m.view = relsViewCreateTargetSearch
+			}
+		case isKey(msg, "backspace", "delete"):
+			if len(m.createQuery) > 0 {
+				m.createQuery = m.createQuery[:len(m.createQuery)-1]
+				return m, m.updateCreateSearch()
+			}
+		default:
+			ch := msg.String()
+			if len(ch) == 1 || ch == " " {
+				if ch == " " && m.createQuery == "" {
+					return m, nil
+				}
+				m.createQuery += ch
+				return m, m.updateCreateSearch()
+			}
+		}
+	case relsViewCreateSourceSelect:
+		switch {
+		case isBack(msg):
+			m.view = relsViewCreateSourceSearch
+		case isDown(msg):
+			m.createList.Down()
+		case isUp(msg):
+			m.createList.Up()
+		case isEnter(msg):
+			if idx := m.createList.Selected(); idx < len(m.createResults) {
+				item := m.createResults[idx]
+				m.createSource = &item
+				m.createQuery = ""
+				m.createResults = nil
+				m.createList.SetItems(nil)
+				m.view = relsViewCreateTargetSearch
+			}
+		}
+	case relsViewCreateTargetSearch:
+		switch {
+		case isBack(msg):
+			if m.createQuery != "" {
+				m.createQuery = ""
+				m.createResults = nil
+				m.createList.SetItems(nil)
+				m.createLoading = false
+				return m, nil
+			}
+			m.view = relsViewCreateSourceSearch
+		case isKey(msg, "cmd+backspace", "cmd+delete", "ctrl+u"):
+			if m.createQuery != "" {
+				m.createQuery = ""
+				m.createResults = nil
+				m.createList.SetItems(nil)
+				m.createLoading = false
+				return m, nil
+			}
+			m.view = relsViewCreateSourceSearch
+		case isDown(msg):
+			m.createList.Down()
+		case isUp(msg):
+			m.createList.Up()
+		case isEnter(msg):
+			if idx := m.createList.Selected(); idx < len(m.createResults) {
+				item := m.createResults[idx]
+				m.createTarget = &item
+				m.createQuery = ""
+				m.createResults = nil
+				m.createList.SetItems(nil)
+				m.view = relsViewCreateType
+				m.resetTypeSuggestions()
+			}
+		case isKey(msg, "backspace", "delete"):
+			if len(m.createQuery) > 0 {
+				m.createQuery = m.createQuery[:len(m.createQuery)-1]
+				return m, m.updateCreateSearch()
+			}
+		default:
+			ch := msg.String()
+			if len(ch) == 1 || ch == " " {
+				if ch == " " && m.createQuery == "" {
+					return m, nil
+				}
+				m.createQuery += ch
+				return m, m.updateCreateSearch()
+			}
+		}
+	case relsViewCreateTargetSelect:
+		switch {
+		case isBack(msg):
+			m.view = relsViewCreateTargetSearch
+		case isDown(msg):
+			m.createList.Down()
+		case isUp(msg):
+			m.createList.Up()
+		case isEnter(msg):
+			if idx := m.createList.Selected(); idx < len(m.createResults) {
+				item := m.createResults[idx]
+				m.createTarget = &item
+				m.createQuery = ""
+				m.createResults = nil
+				m.createList.SetItems(nil)
+				m.view = relsViewCreateType
+				m.resetTypeSuggestions()
+			}
+		}
+	case relsViewCreateType:
+		switch {
+		case isBack(msg):
+			m.view = relsViewCreateTargetSearch
+		case isDown(msg):
+			if len(m.createTypeResults) > 0 {
+				m.createTypeNav = true
+				m.createTypeList.Down()
+			}
+		case isUp(msg):
+			if len(m.createTypeResults) > 0 {
+				m.createTypeNav = true
+				m.createTypeList.Up()
+			}
+		case isEnter(msg):
+			kind := strings.TrimSpace(m.createType)
+			if m.createTypeNav && len(m.createTypeResults) > 0 {
+				if idx := m.createTypeList.Selected(); idx < len(m.createTypeResults) {
+					kind = m.createTypeResults[idx]
+				}
+			}
+			if kind == "" || m.createSource == nil || m.createTarget == nil {
+				return m, nil
+			}
+			m.view = relsViewList
+			m.loading = true
+			return m, m.createRelationship(*m.createSource, *m.createTarget, kind)
+		case isKey(msg, "backspace", "delete"):
+			if len(m.createType) > 0 {
+				m.createType = m.createType[:len(m.createType)-1]
+				m.createTypeNav = false
+				m.updateTypeSuggestions()
+			}
+		case isKey(msg, "cmd+backspace", "cmd+delete", "ctrl+u"):
+			if m.createType != "" {
+				m.createType = ""
+				m.createTypeNav = false
+				m.updateTypeSuggestions()
+				return m, nil
+			}
+			m.view = relsViewCreateTargetSearch
+		default:
+			ch := msg.String()
+			if len(ch) == 1 || ch == " " {
+				if ch == " " && m.createType == "" {
+					return m, nil
+				}
+				m.createType += ch
+				m.createTypeNav = false
+				m.updateTypeSuggestions()
+			}
+		}
+	}
+	return m, nil
+}
+
+func (m RelationshipsModel) renderCreate() string {
+	switch m.view {
+	case relsViewCreateSourceSearch, relsViewCreateSourceSelect:
+		return m.renderCreateSearch("Source Entity")
+	case relsViewCreateTargetSearch, relsViewCreateTargetSelect:
+		return m.renderCreateSearch("Target Entity")
+	case relsViewCreateType:
+		return m.renderCreateType()
+	}
+	return ""
+}
+
+func (m RelationshipsModel) renderCreateSearch(title string) string {
+	var b strings.Builder
+	b.WriteString("  > " + m.createQuery)
+	b.WriteString(AccentStyle.Render("█"))
+	b.WriteString("\n\n")
+
+	if m.createLoading {
+		b.WriteString(MutedStyle.Render("Searching..."))
+	} else if strings.TrimSpace(m.createQuery) == "" {
+		b.WriteString(MutedStyle.Render("Type to search."))
+	} else if len(m.createResults) == 0 {
+		b.WriteString(MutedStyle.Render("No matches."))
+	} else {
+		visible := m.createList.Visible()
+		for i, label := range visible {
+			absIdx := m.createList.RelToAbs(i)
+			if m.createList.IsSelected(absIdx) {
+				b.WriteString(SelectedStyle.Render("  > " + label))
+			} else {
+				b.WriteString(NormalStyle.Render("    " + label))
+			}
+			if i < len(visible)-1 {
+				b.WriteString("\n")
+			}
+		}
+	}
+
+	return components.TitledBox(title, b.String(), m.width)
+}
+
+func (m RelationshipsModel) renderCreateType() string {
+	var b strings.Builder
+	b.WriteString("  > " + m.createType)
+	b.WriteString(AccentStyle.Render("█"))
+	b.WriteString("\n\n")
+
+	if strings.TrimSpace(m.createType) == "" && len(m.typeOptions) == 0 {
+		b.WriteString(MutedStyle.Render("Type a relationship type."))
+	} else if len(m.createTypeResults) == 0 {
+		b.WriteString(MutedStyle.Render("No suggestions."))
+	} else {
+		visible := m.createTypeList.Visible()
+		for i, label := range visible {
+			absIdx := m.createTypeList.RelToAbs(i)
+			if m.createTypeList.IsSelected(absIdx) {
+				b.WriteString(SelectedStyle.Render("  > " + label))
+			} else {
+				b.WriteString(NormalStyle.Render("    " + label))
+			}
+			if i < len(visible)-1 {
+				b.WriteString("\n")
+			}
+		}
+	}
+
+	return components.TitledBox("Relationship Type", b.String(), m.width)
+}
+
+// --- Helpers ---
+
+func (m RelationshipsModel) loadRelationships() tea.Cmd {
+	return func() tea.Msg {
+		items, err := m.client.QueryRelationships(api.QueryParams{
+			"status_category": "active",
+			"limit":           "50",
+		})
+		if err != nil {
+			return errMsg{err}
+		}
+		return relTabLoadedMsg{items: items}
+	}
+}
+
+func (m RelationshipsModel) loadRelationshipNames(items []api.Relationship) tea.Cmd {
+	if m.client == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		names := map[string]string{}
+		ids := map[string]string{}
+		for _, rel := range items {
+			if strings.TrimSpace(rel.SourceName) != "" {
+				names[rel.SourceID] = rel.SourceName
+			} else if rel.SourceID != "" {
+				ids[rel.SourceID] = strings.TrimSpace(rel.SourceType)
+			}
+			if strings.TrimSpace(rel.TargetName) != "" {
+				names[rel.TargetID] = rel.TargetName
+			} else if rel.TargetID != "" {
+				ids[rel.TargetID] = strings.TrimSpace(rel.TargetType)
+			}
+		}
+		for id, typ := range ids {
+			if _, ok := names[id]; ok {
+				continue
+			}
+			switch typ {
+			case "", "entity":
+				ent, err := m.client.GetEntity(id)
+				if err == nil && ent != nil && ent.Name != "" {
+					names[id] = ent.Name
+				}
+			case "knowledge":
+				ki, err := m.client.GetKnowledge(id)
+				if err == nil && ki != nil && ki.Name != "" {
+					names[id] = ki.Name
+				}
+			case "job":
+				job, err := m.client.GetJob(id)
+				if err == nil && job != nil && job.Title != "" {
+					names[id] = job.Title
+				}
+			}
+		}
+		return relTabNamesLoadedMsg{names: names}
+	}
+}
+
+func (m RelationshipsModel) buildListLabels() []string {
+	labels := make([]string, len(m.items))
+	for i, rel := range m.items {
+		source := m.displayNode(rel.SourceID, rel.SourceType, rel.SourceName)
+		target := m.displayNode(rel.TargetID, rel.TargetType, rel.TargetName)
+		labels[i] = fmt.Sprintf("%s · %s -> %s", rel.Type, source, target)
+	}
+	return labels
+}
+
+func (m RelationshipsModel) displayNode(id, typ, name string) string {
+	if strings.TrimSpace(name) != "" {
+		return name
+	}
+	if label, ok := m.names[id]; ok && label != "" {
+		return label
+	}
+	return shortID(id)
+}
+
+func (m RelationshipsModel) selectedRelationship() *api.Relationship {
+	if len(m.items) == 0 {
+		return nil
+	}
+	idx := m.list.Selected()
+	if idx < 0 || idx >= len(m.items) {
+		return nil
+	}
+	return &m.items[idx]
+}
+
+func (m RelationshipsModel) searchEntities(query string) tea.Cmd {
+	return func() tea.Msg {
+		items, err := m.client.QueryEntities(api.QueryParams{"search_text": query})
+		if err != nil {
+			return errMsg{err}
+		}
+		return relTabResultsMsg{query: query, items: items}
+	}
+}
+
+func (m RelationshipsModel) createRelationship(source api.Entity, target api.Entity, relType string) tea.Cmd {
+	return func() tea.Msg {
+		input := api.CreateRelationshipInput{
+			SourceType: "entity",
+			SourceID:   source.ID,
+			TargetType: "entity",
+			TargetID:   target.ID,
+			Type:       relType,
+		}
+		_, err := m.client.CreateRelationship(input)
+		if err != nil {
+			return errMsg{err}
+		}
+		return relTabSavedMsg{}
+	}
+}
+
+func (m *RelationshipsModel) updateCreateSearch() tea.Cmd {
+	query := strings.TrimSpace(m.createQuery)
+	if query == "" {
+		m.createLoading = false
+		m.createResults = nil
+		m.createList.SetItems(nil)
+		return nil
+	}
+	m.createLoading = true
+	return m.searchEntities(query)
+}
+
+func (m *RelationshipsModel) resetTypeSuggestions() {
+	m.createTypeResults = filterRelationshipTypes(m.typeOptions, "")
+	m.createTypeList.SetItems(m.createTypeResults)
+	m.createTypeNav = false
+}
+
+func (m *RelationshipsModel) updateTypeSuggestions() {
+	m.createTypeResults = filterRelationshipTypes(m.typeOptions, m.createType)
+	m.createTypeList.SetItems(m.createTypeResults)
+}
+
+func uniqueRelationshipTypes(items []api.Relationship) []string {
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(items))
+	for _, rel := range items {
+		typ := strings.TrimSpace(rel.Type)
+		if typ == "" {
+			continue
+		}
+		lower := strings.ToLower(typ)
+		if _, ok := seen[lower]; ok {
+			continue
+		}
+		seen[lower] = struct{}{}
+		out = append(out, lower)
+	}
+	return out
+}
+
+func filterRelationshipTypes(options []string, query string) []string {
+	if len(options) == 0 {
+		return nil
+	}
+	q := strings.ToLower(strings.TrimSpace(query))
+	if q == "" {
+		return append([]string{}, options...)
+	}
+	out := make([]string, 0, len(options))
+	for _, opt := range options {
+		if strings.Contains(strings.ToLower(opt), q) {
+			out = append(out, opt)
+		}
+	}
+	return out
+}

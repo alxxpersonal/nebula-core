@@ -1,0 +1,340 @@
+"""Export API routes."""
+
+# Standard Library
+import csv
+import io
+import json
+from pathlib import Path
+from typing import Any
+
+# Third-Party
+from fastapi import APIRouter, Depends, Query, Request
+
+# Local
+from nebula_api.auth import require_auth
+from nebula_api.response import api_error, success
+from nebula_mcp.enums import require_entity_type, require_scopes
+from nebula_mcp.query_loader import QueryLoader
+
+QUERIES = QueryLoader(Path(__file__).resolve().parents[2] / "queries")
+
+router = APIRouter()
+
+
+def _flatten_value(value: Any) -> str:
+    """Flatten complex values for CSV export.
+
+    Args:
+        value: Value to serialize.
+
+    Returns:
+        String representation for CSV output.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, list):
+        return ",".join(str(v) for v in value)
+    if isinstance(value, dict):
+        return json.dumps(value)
+    return str(value)
+
+
+def _to_csv(rows: list[dict[str, Any]], field_order: list[str] | None = None) -> str:
+    """Convert rows to CSV string.
+
+    Args:
+        rows: List of row dictionaries.
+        field_order: Optional list of field names for column order.
+
+    Returns:
+        CSV string content.
+    """
+    if not rows:
+        return ""
+    if not field_order:
+        field_order = list(rows[0].keys())
+    buffer = io.StringIO()
+    writer = csv.DictWriter(buffer, fieldnames=field_order)
+    writer.writeheader()
+    for row in rows:
+        writer.writerow({k: _flatten_value(row.get(k)) for k in field_order})
+    return buffer.getvalue()
+
+
+def _export_response(rows: list[dict[str, Any]], fmt: str) -> dict[str, Any]:
+    """Build a standardized export response.
+
+    Args:
+        rows: List of row dictionaries.
+        fmt: Export format, json or csv.
+
+    Returns:
+        API response payload.
+    """
+    fmt = (fmt or "json").lower()
+    if fmt not in {"json", "csv"}:
+        api_error("VALIDATION_ERROR", "Format must be json or csv", 400)
+    if fmt == "csv":
+        return success({"format": "csv", "content": _to_csv(rows), "count": len(rows)})
+    return success({"format": "json", "items": rows, "count": len(rows)})
+
+
+@router.get("/entities")
+async def export_entities(
+    request: Request,
+    auth: dict = Depends(require_auth),
+    format: str = "json",
+    type: str | None = None,
+    tags: list[str] = Query(default_factory=list),
+    search_text: str | None = None,
+    status_category: str = "active",
+    scopes: list[str] = Query(default_factory=list),
+    limit: int = Query(500, le=2000),
+    offset: int = 0,
+) -> dict[str, Any]:
+    """Export entities as JSON or CSV.
+
+    Args:
+        request: FastAPI request.
+        auth: Auth context.
+        format: Response format.
+        type: Entity type filter.
+        tags: Tag filters.
+        search_text: Full-text search filter.
+        status_category: Status category filter.
+        scopes: Privacy scope filters.
+        limit: Max rows.
+        offset: Offset for pagination.
+
+    Returns:
+        Export response payload.
+    """
+    pool = request.app.state.pool
+    enums = request.app.state.enums
+
+    type_id = require_entity_type(type, enums) if type else None
+    scope_ids = require_scopes(scopes, enums) if scopes else auth.get("scopes")
+
+    rows = await pool.fetch(
+        QUERIES["entities/query"],
+        type_id,
+        tags or None,
+        search_text,
+        status_category,
+        scope_ids,
+        limit,
+        offset,
+    )
+    return _export_response([dict(r) for r in rows], format)
+
+
+@router.get("/knowledge")
+async def export_knowledge(
+    request: Request,
+    auth: dict = Depends(require_auth),
+    format: str = "json",
+    source_type: str | None = None,
+    tags: list[str] = Query(default_factory=list),
+    search_text: str | None = None,
+    scopes: list[str] = Query(default_factory=list),
+    limit: int = Query(500, le=2000),
+    offset: int = 0,
+) -> dict[str, Any]:
+    """Export knowledge items as JSON or CSV.
+
+    Args:
+        request: FastAPI request.
+        auth: Auth context.
+        format: Response format.
+        source_type: Knowledge source type filter.
+        tags: Tag filters.
+        search_text: Full-text search filter.
+        scopes: Privacy scope filters.
+        limit: Max rows.
+        offset: Offset for pagination.
+
+    Returns:
+        Export response payload.
+    """
+    pool = request.app.state.pool
+    enums = request.app.state.enums
+
+    scope_ids = require_scopes(scopes, enums) if scopes else auth.get("scopes")
+
+    rows = await pool.fetch(
+        QUERIES["knowledge/query"],
+        source_type,
+        tags or None,
+        search_text,
+        scope_ids,
+        limit,
+        offset,
+    )
+    return _export_response([dict(r) for r in rows], format)
+
+
+@router.get("/relationships")
+async def export_relationships(
+    request: Request,
+    auth: dict = Depends(require_auth),
+    format: str = "json",
+    source_type: str | None = None,
+    target_type: str | None = None,
+    relationship_types: list[str] = Query(default_factory=list),
+    status_category: str = "active",
+    limit: int = Query(500, le=2000),
+) -> dict[str, Any]:
+    """Export relationships as JSON or CSV.
+
+    Args:
+        request: FastAPI request.
+        auth: Auth context.
+        format: Response format.
+        source_type: Source node type filter.
+        target_type: Target node type filter.
+        relationship_types: Relationship type filters.
+        status_category: Status category filter.
+        limit: Max rows.
+
+    Returns:
+        Export response payload.
+    """
+    pool = request.app.state.pool
+
+    rows = await pool.fetch(
+        QUERIES["relationships/query"],
+        source_type,
+        target_type,
+        relationship_types or None,
+        status_category,
+        limit,
+    )
+    return _export_response([dict(r) for r in rows], format)
+
+
+@router.get("/jobs")
+async def export_jobs(
+    request: Request,
+    auth: dict = Depends(require_auth),
+    format: str = "json",
+    status_names: list[str] = Query(default_factory=list),
+    assigned_to: str | None = None,
+    agent_id: str | None = None,
+    priority: str | None = None,
+    due_before: str | None = None,
+    due_after: str | None = None,
+    overdue: bool = False,
+    parent_job_id: str | None = None,
+    limit: int = Query(500, le=2000),
+) -> dict[str, Any]:
+    """Export jobs as JSON or CSV.
+
+    Args:
+        request: FastAPI request.
+        auth: Auth context.
+        format: Response format.
+        status_names: Status filters.
+        assigned_to: Assignee filter.
+        agent_id: Agent filter.
+        priority: Priority filter.
+        due_before: Due date upper bound.
+        due_after: Due date lower bound.
+        overdue: Overdue filter.
+        parent_job_id: Parent job filter.
+        limit: Max rows.
+
+    Returns:
+        Export response payload.
+    """
+    pool = request.app.state.pool
+
+    rows = await pool.fetch(
+        QUERIES["jobs/query"],
+        status_names or None,
+        assigned_to,
+        agent_id,
+        priority,
+        due_before,
+        due_after,
+        overdue,
+        parent_job_id,
+        limit,
+    )
+    return _export_response([dict(r) for r in rows], format)
+
+
+@router.get("/context")
+async def export_context(
+    request: Request,
+    auth: dict = Depends(require_auth),
+    format: str = "json",
+    limit: int = Query(500, le=2000),
+    offset: int = 0,
+) -> dict[str, Any]:
+    """Export a full context snapshot as JSON only.
+
+    Args:
+        request: FastAPI request.
+        auth: Auth context.
+        format: Response format, json only.
+        limit: Max rows per table.
+        offset: Offset for pagination.
+
+    Returns:
+        Export response payload.
+    """
+    if format.lower() != "json":
+        api_error("VALIDATION_ERROR", "Context export supports json only", 400)
+
+    pool = request.app.state.pool
+    scope_ids = auth.get("scopes")
+
+    entities_rows = await pool.fetch(
+        QUERIES["entities/query"],
+        None,
+        None,
+        None,
+        "active",
+        scope_ids,
+        limit,
+        offset,
+    )
+    knowledge_rows = await pool.fetch(
+        QUERIES["knowledge/query"],
+        None,
+        None,
+        None,
+        scope_ids,
+        limit,
+        offset,
+    )
+    relationships_rows = await pool.fetch(
+        QUERIES["relationships/query"],
+        None,
+        None,
+        None,
+        "active",
+        limit,
+    )
+    jobs_rows = await pool.fetch(
+        QUERIES["jobs/query"],
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        False,
+        None,
+        limit,
+    )
+
+    return success(
+        {
+            "format": "json",
+            "entities": [dict(r) for r in entities_rows],
+            "knowledge": [dict(r) for r in knowledge_rows],
+            "relationships": [dict(r) for r in relationships_rows],
+            "jobs": [dict(r) for r in jobs_rows],
+        }
+    )

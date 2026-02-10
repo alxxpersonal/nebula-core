@@ -1,0 +1,633 @@
+package ui
+
+import (
+	"fmt"
+	"strings"
+	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/gravitrone/nebula-core/cli/internal/api"
+	"github.com/gravitrone/nebula-core/cli/internal/ui/components"
+)
+
+// --- Messages ---
+
+type approvalsLoadedMsg struct{ items []api.Approval }
+type approvalDoneMsg struct{ id string }
+type approvalDiffLoadedMsg struct {
+	id      string
+	changes map[string]any
+}
+
+// --- Inbox Model ---
+
+// InboxModel shows pending approval requests from agents.
+type InboxModel struct {
+	client        *api.Client
+	items         []api.Approval
+	list          *components.List
+	loading       bool
+	detail        *api.Approval
+	filtering     bool
+	filterBuf     string
+	filtered      []int
+	selected      map[string]bool
+	rejecting     bool
+	rejectBuf     string
+	bulkRejectIDs []string
+	width         int
+	height        int
+}
+
+func NewInboxModel(client *api.Client) InboxModel {
+	return InboxModel{
+		client:   client,
+		list:     components.NewList(15),
+		selected: make(map[string]bool),
+	}
+}
+
+func (m InboxModel) Init() tea.Cmd {
+	m.loading = true
+	return m.loadApprovals
+}
+
+func (m InboxModel) Update(msg tea.Msg) (InboxModel, tea.Cmd) {
+	switch msg := msg.(type) {
+	case approvalsLoadedMsg:
+		m.loading = false
+		m.items = msg.items
+		m.applyFilter(true)
+		return m, nil
+
+	case approvalDoneMsg:
+		m.detail = nil
+		m.rejecting = false
+		m.rejectBuf = ""
+		m.bulkRejectIDs = nil
+		m.selected = make(map[string]bool)
+		return m, m.loadApprovals
+
+	case approvalDiffLoadedMsg:
+		if m.detail != nil && m.detail.ID == msg.id {
+			if m.detail.ChangeDetails == nil {
+				m.detail.ChangeDetails = api.JSONMap{}
+			}
+			m.detail.ChangeDetails["changes"] = msg.changes
+		}
+		return m, nil
+
+	case tea.KeyMsg:
+		if m.filtering {
+			return m.handleFilterInput(msg)
+		}
+		// Reject input mode
+		if m.rejecting {
+			return m.handleRejectInput(msg)
+		}
+
+		// Detail view
+		if m.detail != nil {
+			return m.handleDetailKeys(msg)
+		}
+
+		// List view
+		switch {
+		case isDown(msg):
+			m.list.Down()
+		case isUp(msg):
+			m.list.Up()
+		case isSpace(msg):
+			m.toggleSelected()
+		case isEnter(msg):
+			if item, ok := m.selectedItem(); ok {
+				m.detail = &item
+				return m, m.loadApprovalDiff(item.ID)
+			}
+		case isKey(msg, "a"):
+			return m.approveSelected()
+		case isKey(msg, "A"):
+			if m.selectedCount() == 0 {
+				m.selectAllFiltered()
+			}
+			return m.approveSelected()
+		case isKey(msg, "r"):
+			return m.startReject()
+		case isKey(msg, "f"):
+			m.filtering = true
+		case isKey(msg, "b"):
+			m.toggleSelectAll()
+		case isBack(msg):
+			if len(m.selected) > 0 {
+				m.selected = make(map[string]bool)
+			}
+		}
+	}
+	return m, nil
+}
+
+func (m InboxModel) View() string {
+	if m.loading {
+		return "  " + MutedStyle.Render("Loading approvals...")
+	}
+
+	if m.rejecting && m.detail != nil {
+		return components.Indent(components.InputDialog("Reject: Enter Review Notes", m.rejectBuf), 1)
+	}
+
+	if m.filtering {
+		return components.Indent(components.InputDialog("Filter Approvals", m.filterBuf), 1)
+	}
+
+	if m.detail != nil {
+		return m.renderDetail()
+	}
+
+	if len(m.items) == 0 {
+		content := MutedStyle.Render("No pending approvals.")
+		return components.Indent(components.Box(content, m.width), 1)
+	}
+
+	if len(m.filtered) == 0 {
+		content := MutedStyle.Render("No approvals match the filter.")
+		return components.Indent(components.Box(content, m.width), 1)
+	}
+
+	var rows strings.Builder
+	visible := m.list.Visible()
+	for i, label := range visible {
+		absIdx := m.list.RelToAbs(i)
+		item, ok := m.itemAtFilteredIndex(absIdx)
+		if !ok {
+			continue
+		}
+		prefix := "  - "
+		if m.selected[item.ID] {
+			prefix = "  * "
+		}
+		if m.list.IsSelected(absIdx) {
+			rows.WriteString(SelectedStyle.Render(prefix + "> " + label))
+		} else {
+			rows.WriteString(NormalStyle.Render(prefix + "  " + label))
+		}
+		if i < len(visible)-1 {
+			rows.WriteString("\n")
+		}
+	}
+
+	title := "Inbox"
+	countLine := fmt.Sprintf("%d pending", len(m.items))
+	if m.filterBuf != "" {
+		countLine = fmt.Sprintf("%s · filter: %s", countLine, m.filterBuf)
+	}
+	if count := m.selectedCount(); count > 0 {
+		countLine = fmt.Sprintf("%s · selected: %d", countLine, count)
+	}
+	countLine = MutedStyle.Render(countLine)
+	content := countLine + "\n\n" + rows.String()
+	return components.Indent(components.TitledBox(title, content, m.width), 1)
+}
+
+// --- Helpers ---
+
+func (m InboxModel) loadApprovals() tea.Msg {
+	items, err := m.client.GetPendingApprovals()
+	if err != nil {
+		return errMsg{err}
+	}
+	return approvalsLoadedMsg{items}
+}
+
+func (m InboxModel) loadApprovalDiff(id string) tea.Cmd {
+	return func() tea.Msg {
+		diff, err := m.client.GetApprovalDiff(id)
+		if err != nil {
+			return errMsg{err}
+		}
+		return approvalDiffLoadedMsg{id: id, changes: diff.Changes}
+	}
+}
+
+func (m InboxModel) approveSelected() (InboxModel, tea.Cmd) {
+	ids := m.selectedIDs()
+	if len(ids) == 0 {
+		if item, ok := m.selectedItem(); ok {
+			ids = append(ids, item.ID)
+		}
+	}
+	if len(ids) == 0 {
+		return m, nil
+	}
+	return m, func() tea.Msg {
+		for _, id := range ids {
+			_, err := m.client.ApproveRequest(id)
+			if err != nil {
+				return errMsg{err}
+			}
+		}
+		return approvalDoneMsg{""}
+	}
+}
+
+func (m InboxModel) handleDetailKeys(msg tea.KeyMsg) (InboxModel, tea.Cmd) {
+	switch {
+	case isBack(msg):
+		m.detail = nil
+	case isKey(msg, "a"):
+		id := m.detail.ID
+		m.detail = nil
+		return m, func() tea.Msg {
+			_, err := m.client.ApproveRequest(id)
+			if err != nil {
+				return errMsg{err}
+			}
+			return approvalDoneMsg{id}
+		}
+	case isKey(msg, "r"):
+		m.rejecting = true
+		m.rejectBuf = ""
+	}
+	return m, nil
+}
+
+func (m InboxModel) handleRejectInput(msg tea.KeyMsg) (InboxModel, tea.Cmd) {
+	if m.detail == nil {
+		m.rejecting = false
+		m.rejectBuf = ""
+		m.bulkRejectIDs = nil
+		return m, nil
+	}
+	switch {
+	case isBack(msg):
+		if len(m.bulkRejectIDs) > 0 {
+			m.detail = nil
+		}
+		m.rejecting = false
+		m.rejectBuf = ""
+		m.bulkRejectIDs = nil
+	case isEnter(msg):
+		ids := m.bulkRejectIDs
+		if len(ids) == 0 {
+			ids = []string{m.detail.ID}
+		}
+		notes := m.rejectBuf
+		m.rejecting = false
+		m.rejectBuf = ""
+		m.detail = nil
+		m.bulkRejectIDs = nil
+		return m, func() tea.Msg {
+			for _, id := range ids {
+				_, err := m.client.RejectRequest(id, notes)
+				if err != nil {
+					return errMsg{err}
+				}
+			}
+			return approvalDoneMsg{""}
+		}
+	case isKey(msg, "backspace"):
+		if len(m.rejectBuf) > 0 {
+			m.rejectBuf = m.rejectBuf[:len(m.rejectBuf)-1]
+		}
+	default:
+		if len(msg.String()) == 1 || msg.String() == " " {
+			m.rejectBuf += msg.String()
+		}
+	}
+	return m, nil
+}
+
+func (m InboxModel) renderDetail() string {
+	a := m.detail
+	var sections []string
+
+	// Approval info table
+	rows := []components.TableRow{
+		{Label: "ID", Value: a.ID},
+		{Label: "Type", Value: a.RequestType},
+		{Label: "Status", Value: a.Status},
+		{Label: "Agent", Value: a.AgentName},
+		{Label: "Requested By", Value: a.RequestedBy},
+		{Label: "Created", Value: a.CreatedAt.Format("2006-01-02 15:04")},
+	}
+	if a.JobID != nil {
+		rows = append(rows, components.TableRow{Label: "Job ID", Value: *a.JobID})
+	}
+	if a.Notes != nil && *a.Notes != "" {
+		rows = append(rows, components.TableRow{Label: "Review Notes", Value: *a.Notes})
+	}
+	sections = append(sections, components.Table("Approval Request", rows, m.width))
+
+	// Change details
+	if len(a.ChangeDetails) > 0 {
+		var summaryRows []components.TableRow
+		var diffRows []components.DiffRow
+		nested := make(map[string]any)
+
+		for k, v := range a.ChangeDetails {
+			if k == "changes" {
+				// Diff object with from/to pairs
+				if changesMap, ok := v.(map[string]any); ok {
+					for field, diff := range changesMap {
+						if diffObj, ok := diff.(map[string]any); ok {
+							diffRows = append(diffRows, components.DiffRow{
+								Label: field,
+								From:  formatAny(diffObj["from"]),
+								To:    formatAny(diffObj["to"]),
+							})
+						}
+					}
+				}
+				continue
+			}
+			switch val := v.(type) {
+			case map[string]any:
+				nested[k] = val
+			case []any:
+				parts := make([]string, len(val))
+				for i, item := range val {
+					parts[i] = fmt.Sprintf("%v", item)
+				}
+				summaryRows = append(summaryRows, components.TableRow{Label: k, Value: strings.Join(parts, ", ")})
+			default:
+				summaryRows = append(summaryRows, components.TableRow{Label: k, Value: fmt.Sprintf("%v", v)})
+			}
+		}
+
+		if len(summaryRows) > 0 {
+			sections = append(sections, components.Table("Change Details", summaryRows, m.width))
+		}
+
+		// Diff table for update requests
+		if len(diffRows) > 0 {
+			sections = append(sections, components.DiffTable("Changes", diffRows, m.width))
+		}
+
+		// Render each nested object as its own titled table
+		for k, v := range nested {
+			if obj, ok := v.(map[string]any); ok {
+				var nestedRows []components.TableRow
+				for sk, sv := range obj {
+					switch sval := sv.(type) {
+					case []any:
+						parts := make([]string, len(sval))
+						for i, item := range sval {
+							parts[i] = fmt.Sprintf("%v", item)
+						}
+						nestedRows = append(nestedRows, components.TableRow{Label: sk, Value: strings.Join(parts, ", ")})
+					default:
+						nestedRows = append(nestedRows, components.TableRow{Label: sk, Value: fmt.Sprintf("%v", sv)})
+					}
+				}
+				if len(nestedRows) > 0 {
+					sections = append(sections, components.Table(k, nestedRows, m.width))
+				}
+			}
+		}
+	}
+
+	// Hint
+	sections = append(sections, "  "+MutedStyle.Render("a approve  |  r reject  |  esc back"))
+
+	return components.Indent(strings.Join(sections, "\n\n"), 1)
+}
+
+func formatAny(v any) string {
+	switch val := v.(type) {
+	case map[string]any:
+		lines := metadataLines(val, 0)
+		return strings.Join(lines, "\n")
+	case []any:
+		parts := make([]string, len(val))
+		for i, item := range val {
+			parts[i] = fmt.Sprintf("%v", item)
+		}
+		return strings.Join(parts, ", ")
+	case nil:
+		return "-"
+	default:
+		return fmt.Sprintf("%v", v)
+	}
+}
+
+func formatApprovalLine(a api.Approval) string {
+	name := ""
+	if n, ok := a.ChangeDetails["name"]; ok {
+		name = fmt.Sprintf(": %q", n)
+	}
+	return fmt.Sprintf("[%s] %s%s", a.RequestType, a.Status, name)
+}
+
+func (m *InboxModel) applyFilter(resetSelection bool) {
+	if resetSelection {
+		m.selected = make(map[string]bool)
+	}
+	m.filtered = m.filtered[:0]
+	labels := make([]string, 0, len(m.items))
+	filter := parseApprovalFilter(m.filterBuf)
+	for i, a := range m.items {
+		if matchesApprovalFilter(a, filter) {
+			m.filtered = append(m.filtered, i)
+			labels = append(labels, formatApprovalLine(a))
+		}
+	}
+	m.list.SetItems(labels)
+}
+
+func (m *InboxModel) selectedItem() (api.Approval, bool) {
+	idx := m.list.Selected()
+	return m.itemAtFilteredIndex(idx)
+}
+
+func (m *InboxModel) selectAllFiltered() {
+	for _, itemIdx := range m.filtered {
+		if itemIdx < 0 || itemIdx >= len(m.items) {
+			continue
+		}
+		m.selected[m.items[itemIdx].ID] = true
+	}
+}
+
+func (m *InboxModel) toggleSelectAll() {
+	if len(m.filtered) == 0 {
+		return
+	}
+	allSelected := true
+	for _, itemIdx := range m.filtered {
+		if itemIdx < 0 || itemIdx >= len(m.items) {
+			continue
+		}
+		if !m.selected[m.items[itemIdx].ID] {
+			allSelected = false
+			break
+		}
+	}
+	if allSelected {
+		m.selected = make(map[string]bool)
+		return
+	}
+	m.selectAllFiltered()
+}
+
+func (m *InboxModel) itemAtFilteredIndex(filteredIdx int) (api.Approval, bool) {
+	if filteredIdx < 0 || filteredIdx >= len(m.filtered) {
+		return api.Approval{}, false
+	}
+	itemIdx := m.filtered[filteredIdx]
+	if itemIdx < 0 || itemIdx >= len(m.items) {
+		return api.Approval{}, false
+	}
+	return m.items[itemIdx], true
+}
+
+func (m *InboxModel) toggleSelected() {
+	item, ok := m.selectedItem()
+	if !ok {
+		return
+	}
+	if m.selected[item.ID] {
+		delete(m.selected, item.ID)
+		return
+	}
+	m.selected[item.ID] = true
+}
+
+func (m *InboxModel) selectedIDs() []string {
+	if len(m.selected) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(m.selected))
+	for _, item := range m.items {
+		if m.selected[item.ID] {
+			ids = append(ids, item.ID)
+		}
+	}
+	return ids
+}
+
+func (m *InboxModel) selectedCount() int {
+	return len(m.selectedIDs())
+}
+
+func (m *InboxModel) startReject() (InboxModel, tea.Cmd) {
+	ids := m.selectedIDs()
+	if len(ids) > 0 {
+		m.bulkRejectIDs = ids
+		m.rejecting = true
+		m.rejectBuf = ""
+		m.detail = &api.Approval{ID: ids[0]}
+		return *m, nil
+	}
+	if item, ok := m.selectedItem(); ok {
+		m.detail = &item
+		m.rejecting = true
+		m.rejectBuf = ""
+		return *m, nil
+	}
+	return *m, nil
+}
+
+func (m InboxModel) handleFilterInput(msg tea.KeyMsg) (InboxModel, tea.Cmd) {
+	switch {
+	case isBack(msg):
+		m.filtering = false
+		m.filterBuf = ""
+		m.applyFilter(true)
+	case isEnter(msg):
+		m.filtering = false
+		m.applyFilter(true)
+	case isKey(msg, "backspace"):
+		if len(m.filterBuf) > 0 {
+			m.filterBuf = m.filterBuf[:len(m.filterBuf)-1]
+			m.applyFilter(true)
+		}
+	default:
+		if len(msg.String()) == 1 || msg.String() == " " {
+			m.filterBuf += msg.String()
+			m.applyFilter(true)
+		}
+	}
+	return m, nil
+}
+
+type approvalFilter struct {
+	agent string
+	req   string
+	since *time.Time
+	terms []string
+}
+
+func parseApprovalFilter(raw string) approvalFilter {
+	filter := approvalFilter{}
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return filter
+	}
+	for _, token := range strings.Fields(raw) {
+		switch {
+		case strings.HasPrefix(token, "agent:"):
+			filter.agent = strings.ToLower(strings.TrimPrefix(token, "agent:"))
+		case strings.HasPrefix(token, "type:"):
+			filter.req = strings.ToLower(strings.TrimPrefix(token, "type:"))
+		case strings.HasPrefix(token, "since:"):
+			val := strings.TrimPrefix(token, "since:")
+			if t := parseFilterTime(val); t != nil {
+				filter.since = t
+			}
+		default:
+			filter.terms = append(filter.terms, strings.ToLower(token))
+		}
+	}
+	return filter
+}
+
+func parseFilterTime(value string) *time.Time {
+	value = strings.TrimSpace(strings.ToLower(value))
+	now := time.Now()
+	switch value {
+	case "today":
+		start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+		return &start
+	case "yesterday":
+		start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()).Add(-24 * time.Hour)
+		return &start
+	}
+	if strings.HasSuffix(value, "h") {
+		if dur, err := time.ParseDuration(value); err == nil {
+			t := now.Add(-dur)
+			return &t
+		}
+	}
+	if strings.HasSuffix(value, "d") {
+		days := strings.TrimSuffix(value, "d")
+		if n, err := time.ParseDuration(days + "h"); err == nil {
+			t := now.Add(-24 * n)
+			return &t
+		}
+	}
+	if t, err := time.ParseInLocation("2006-01-02", value, now.Location()); err == nil {
+		return &t
+	}
+	return nil
+}
+
+func matchesApprovalFilter(a api.Approval, filter approvalFilter) bool {
+	if filter.agent != "" && !strings.Contains(strings.ToLower(a.AgentName), filter.agent) {
+		return false
+	}
+	if filter.req != "" && !strings.Contains(strings.ToLower(a.RequestType), filter.req) {
+		return false
+	}
+	if filter.since != nil && a.CreatedAt.Before(*filter.since) {
+		return false
+	}
+	if len(filter.terms) > 0 {
+		search := strings.ToLower(formatApprovalLine(a))
+		for _, term := range filter.terms {
+			if !strings.Contains(search, term) {
+				return false
+			}
+		}
+	}
+	return true
+}

@@ -1,0 +1,852 @@
+package ui
+
+import (
+	"fmt"
+	"strings"
+
+	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/gravitrone/nebula-core/cli/internal/api"
+	"github.com/gravitrone/nebula-core/cli/internal/ui/components"
+)
+
+// --- Messages ---
+
+type jobsLoadedMsg struct{ items []api.Job }
+type jobStatusUpdatedMsg struct{}
+type subtaskCreatedMsg struct{}
+type jobCreatedMsg struct{}
+
+type jobsView int
+
+const (
+	jobsViewAdd jobsView = iota
+	jobsViewList
+	jobsViewDetail
+	jobsViewEdit
+)
+
+const (
+	jobFieldTitle = iota
+	jobFieldDescription
+	jobFieldStatus
+	jobFieldPriority
+	jobFieldMetadata
+	jobFieldCount
+)
+
+const (
+	jobEditFieldStatus = iota
+	jobEditFieldDescription
+	jobEditFieldPriority
+	jobEditFieldMetadata
+	jobEditFieldCount
+)
+
+var jobStatusOptions = []string{"pending", "active", "completed", "failed"}
+var jobPriorityOptions = []string{"", "low", "medium", "high"}
+
+// --- Jobs Model ---
+
+type JobsModel struct {
+	client          *api.Client
+	allItems        []api.Job
+	items           []api.Job
+	list            *components.List
+	loading         bool
+	detail          *api.Job
+	searchBuf       string
+	view            jobsView
+	modeFocus       bool
+	changingSt      bool
+	statusBuf       string
+	creatingSubtask bool
+	subtaskBuf      string
+	metaExpanded    bool
+	width           int
+	height          int
+
+	// add
+	addFields      []formField
+	addFocus       int
+	addStatusIdx   int
+	addPriorityIdx int
+	addMeta        MetadataEditor
+	addSaving      bool
+	addSaved       bool
+	addErr         string
+
+	// edit
+	editFocus       int
+	editStatusIdx   int
+	editPriorityIdx int
+	editDesc        string
+	editMeta        MetadataEditor
+	editSaving      bool
+}
+
+func NewJobsModel(client *api.Client) JobsModel {
+	return JobsModel{
+		client: client,
+		list:   components.NewList(15),
+		view:   jobsViewList,
+		addFields: []formField{
+			{label: "Title"},
+			{label: "Description"},
+			{label: "Status"},
+			{label: "Priority"},
+			{label: "Metadata"},
+		},
+	}
+}
+
+func (m JobsModel) Init() tea.Cmd {
+	m.loading = true
+	m.view = jobsViewList
+	m.modeFocus = false
+	m.metaExpanded = false
+	m.addFocus = 0
+	m.addStatusIdx = statusIndex(jobStatusOptions, "pending")
+	m.addPriorityIdx = statusIndex(jobPriorityOptions, "")
+	m.addMeta.Reset()
+	m.addSaving = false
+	m.addSaved = false
+	m.addErr = ""
+	m.searchBuf = ""
+	return m.loadJobs
+}
+
+func (m JobsModel) Update(msg tea.Msg) (JobsModel, tea.Cmd) {
+	switch msg := msg.(type) {
+	case jobsLoadedMsg:
+		m.loading = false
+		m.allItems = msg.items
+		m.applyJobSearch()
+		return m, nil
+
+	case jobStatusUpdatedMsg:
+		m.detail = nil
+		m.changingSt = false
+		m.statusBuf = ""
+		return m, m.loadJobs
+	case subtaskCreatedMsg:
+		m.detail = nil
+		m.creatingSubtask = false
+		m.subtaskBuf = ""
+		return m, m.loadJobs
+	case jobCreatedMsg:
+		m.addSaving = false
+		m.addSaved = true
+		m.loading = true
+		return m, m.loadJobs
+	case errMsg:
+		m.loading = false
+		m.addSaving = false
+		m.editSaving = false
+		m.changingSt = false
+		m.creatingSubtask = false
+		m.addErr = msg.err.Error()
+		return m, nil
+
+	case tea.KeyMsg:
+		if m.addMeta.Active {
+			m.addMeta.HandleKey(msg)
+			return m, nil
+		}
+		if m.editMeta.Active {
+			m.editMeta.HandleKey(msg)
+			return m, nil
+		}
+		if m.creatingSubtask {
+			return m.handleSubtaskInput(msg)
+		}
+		if m.changingSt {
+			return m.handleStatusInput(msg)
+		}
+		if m.modeFocus {
+			return m.handleModeKeys(msg)
+		}
+		switch m.view {
+		case jobsViewAdd:
+			return m.handleAddKeys(msg)
+		case jobsViewEdit:
+			return m.handleEditKeys(msg)
+		case jobsViewDetail:
+			return m.handleDetailKeys(msg)
+		default:
+			return m.handleListKeys(msg)
+		}
+	}
+	return m, nil
+}
+
+func (m JobsModel) View() string {
+	if m.addMeta.Active {
+		return m.addMeta.Render(m.width)
+	}
+	if m.editMeta.Active {
+		return m.editMeta.Render(m.width)
+	}
+	if m.creatingSubtask && m.detail != nil {
+		return components.Indent(components.InputDialog("New Subtask Title", m.subtaskBuf), 1)
+	}
+
+	if m.changingSt && m.detail != nil {
+		return components.Indent(components.InputDialog("New Status (pending/active/completed/failed)", m.statusBuf), 1)
+	}
+	modeLine := m.renderModeLine()
+	var body string
+	switch m.view {
+	case jobsViewAdd:
+		body = m.renderAdd()
+	case jobsViewEdit:
+		body = m.renderEdit()
+	case jobsViewDetail:
+		body = m.renderDetail()
+	default:
+		body = m.renderList()
+	}
+	if modeLine != "" {
+		body = components.CenterLine(modeLine, m.width) + "\n\n" + body
+	}
+	return components.Indent(body, 1)
+}
+
+// --- Mode Line ---
+
+func (m JobsModel) renderModeLine() string {
+	add := TabInactiveStyle.Render("Add")
+	list := TabInactiveStyle.Render("List")
+	if m.view == jobsViewAdd {
+		add = TabActiveStyle.Render("Add")
+	} else {
+		list = TabActiveStyle.Render("List")
+	}
+	line := add + " " + list
+	if m.modeFocus {
+		return SelectedStyle.Render("› " + line)
+	}
+	return line
+}
+
+func (m JobsModel) handleModeKeys(msg tea.KeyMsg) (JobsModel, tea.Cmd) {
+	switch {
+	case isKey(msg, "tab"), isDown(msg):
+		m.modeFocus = false
+	case isKey(msg, "shift+tab"), isUp(msg):
+		m.modeFocus = false
+	case isKey(msg, "left"), isKey(msg, "right"), isSpace(msg), isEnter(msg):
+		return m.toggleMode()
+	case isBack(msg):
+		m.modeFocus = false
+	}
+	return m, nil
+}
+
+func (m JobsModel) toggleMode() (JobsModel, tea.Cmd) {
+	m.modeFocus = false
+	m.detail = nil
+	m.metaExpanded = false
+	if m.view == jobsViewAdd {
+		m.view = jobsViewList
+		m.loading = true
+		return m, m.loadJobs
+	}
+	m.view = jobsViewAdd
+	return m, nil
+}
+
+// --- List ---
+
+func (m JobsModel) renderList() string {
+	if m.loading {
+		return MutedStyle.Render("Loading jobs...")
+	}
+	if len(m.items) == 0 {
+		content := MutedStyle.Render("No jobs found.")
+		return components.Box(content, m.width)
+	}
+	var rows strings.Builder
+	visible := m.list.Visible()
+	for i, label := range visible {
+		absIdx := m.list.RelToAbs(i)
+		if m.list.IsSelected(absIdx) {
+			rows.WriteString(SelectedStyle.Render("  > " + label))
+		} else {
+			rows.WriteString(NormalStyle.Render("    " + label))
+		}
+		if i < len(visible)-1 {
+			rows.WriteString("\n")
+		}
+	}
+	title := "Jobs"
+	countLine := fmt.Sprintf("%d total", len(m.items))
+	if strings.TrimSpace(m.searchBuf) != "" {
+		countLine = fmt.Sprintf("%s · search: %s", countLine, strings.TrimSpace(m.searchBuf))
+	}
+	countLine = MutedStyle.Render(countLine)
+	content := countLine + "\n\n" + rows.String()
+	return components.TitledBox(title, content, m.width)
+}
+
+func (m JobsModel) handleListKeys(msg tea.KeyMsg) (JobsModel, tea.Cmd) {
+	switch {
+	case isKey(msg, "shift+tab"):
+		m.modeFocus = true
+		return m, nil
+	case isDown(msg):
+		m.list.Down()
+	case isUp(msg):
+		m.list.Up()
+	case isEnter(msg), isSpace(msg):
+		if idx := m.list.Selected(); idx < len(m.items) {
+			item := m.items[idx]
+			m.detail = &item
+			m.view = jobsViewDetail
+		}
+	case isKey(msg, "backspace", "delete"):
+		if len(m.searchBuf) > 0 {
+			m.searchBuf = m.searchBuf[:len(m.searchBuf)-1]
+			m.applyJobSearch()
+		}
+	case isKey(msg, "cmd+backspace", "cmd+delete", "ctrl+u"):
+		if m.searchBuf != "" {
+			m.searchBuf = ""
+			m.applyJobSearch()
+		}
+	case isBack(msg):
+		if m.searchBuf != "" {
+			m.searchBuf = ""
+			m.applyJobSearch()
+		}
+	case isKey(msg, "s"):
+		if idx := m.list.Selected(); idx < len(m.items) {
+			item := m.items[idx]
+			m.detail = &item
+			m.view = jobsViewDetail
+			m.changingSt = true
+			m.statusBuf = ""
+		}
+	default:
+		ch := msg.String()
+		if len(ch) == 1 || ch == " " {
+			if ch == " " && m.searchBuf == "" {
+				return m, nil
+			}
+			m.searchBuf += ch
+			m.applyJobSearch()
+		}
+	}
+	return m, nil
+}
+
+// --- Add ---
+
+func (m JobsModel) handleAddKeys(msg tea.KeyMsg) (JobsModel, tea.Cmd) {
+	if m.addSaving {
+		return m, nil
+	}
+	switch {
+	case isKey(msg, "tab"), isDown(msg):
+		m.addFocus = (m.addFocus + 1) % jobFieldCount
+	case isKey(msg, "shift+tab"), isUp(msg):
+		if m.addFocus == 0 {
+			m.modeFocus = true
+			return m, nil
+		}
+		m.addFocus = (m.addFocus - 1 + jobFieldCount) % jobFieldCount
+	case isKey(msg, "ctrl+s"):
+		return m.saveAdd()
+	case isBack(msg):
+		m.resetAddForm()
+	case isKey(msg, "backspace"):
+		if m.addFocus == jobFieldMetadata {
+			return m, nil
+		}
+		if m.addFocus == jobFieldTitle || m.addFocus == jobFieldDescription {
+			f := &m.addFields[m.addFocus]
+			if len(f.value) > 0 {
+				f.value = f.value[:len(f.value)-1]
+			}
+		}
+	default:
+		switch m.addFocus {
+		case jobFieldStatus:
+			switch {
+			case isKey(msg, "left"):
+				m.addStatusIdx = (m.addStatusIdx - 1 + len(jobStatusOptions)) % len(jobStatusOptions)
+			case isKey(msg, "right"), isSpace(msg):
+				m.addStatusIdx = (m.addStatusIdx + 1) % len(jobStatusOptions)
+			}
+		case jobFieldPriority:
+			switch {
+			case isKey(msg, "left"):
+				m.addPriorityIdx = (m.addPriorityIdx - 1 + len(jobPriorityOptions)) % len(jobPriorityOptions)
+			case isKey(msg, "right"), isSpace(msg):
+				m.addPriorityIdx = (m.addPriorityIdx + 1) % len(jobPriorityOptions)
+			}
+		case jobFieldMetadata:
+			if isEnter(msg) {
+				m.addMeta.Active = true
+			}
+		default:
+			ch := msg.String()
+			if len(ch) == 1 || ch == " " {
+				m.addFields[m.addFocus].value += ch
+			}
+		}
+	}
+	return m, nil
+}
+
+func (m JobsModel) renderAdd() string {
+	if m.addSaving {
+		return MutedStyle.Render("Saving...")
+	}
+	if m.addSaved {
+		return components.Box(SuccessStyle.Render("Job saved! Press Esc to add another."), m.width)
+	}
+
+	var b strings.Builder
+	for i, f := range m.addFields {
+		label := f.label
+		switch i {
+		case jobFieldStatus:
+			status := jobStatusOptions[m.addStatusIdx]
+			if i == m.addFocus {
+				b.WriteString(SelectedStyle.Render("> " + label + ":"))
+				b.WriteString("\n")
+				b.WriteString(NormalStyle.Render("  " + status))
+			} else {
+				b.WriteString(MutedStyle.Render("  " + label + ":"))
+				b.WriteString("\n")
+				b.WriteString(NormalStyle.Render("  " + status))
+			}
+		case jobFieldPriority:
+			priority := jobPriorityOptions[m.addPriorityIdx]
+			if priority == "" {
+				priority = "-"
+			}
+			if i == m.addFocus {
+				b.WriteString(SelectedStyle.Render("> " + label + ":"))
+				b.WriteString("\n")
+				b.WriteString(NormalStyle.Render("  " + priority))
+			} else {
+				b.WriteString(MutedStyle.Render("  " + label + ":"))
+				b.WriteString("\n")
+				b.WriteString(NormalStyle.Render("  " + priority))
+			}
+		case jobFieldMetadata:
+			if i == m.addFocus {
+				b.WriteString(SelectedStyle.Render("> " + label + ":"))
+			} else {
+				b.WriteString(MutedStyle.Render("  " + label + ":"))
+			}
+			b.WriteString("\n")
+			meta := renderMetadataInput(m.addMeta.Buffer)
+			b.WriteString(NormalStyle.Render("  " + meta))
+		default:
+			if i == m.addFocus {
+				b.WriteString(SelectedStyle.Render("> " + label + ":"))
+				b.WriteString("\n")
+				b.WriteString(NormalStyle.Render("  " + f.value))
+				b.WriteString(AccentStyle.Render("█"))
+			} else {
+				b.WriteString(MutedStyle.Render("  " + label + ":"))
+				b.WriteString("\n")
+				val := f.value
+				if val == "" {
+					val = "-"
+				}
+				b.WriteString(NormalStyle.Render("  " + val))
+			}
+		}
+
+		if i < jobFieldCount-1 {
+			b.WriteString("\n\n")
+		}
+	}
+
+	if m.addErr != "" {
+		b.WriteString("\n\n")
+		b.WriteString(components.ErrorBox("Error", m.addErr, m.width))
+	}
+	return components.TitledBox("Add Job", b.String(), m.width)
+}
+
+func (m JobsModel) saveAdd() (JobsModel, tea.Cmd) {
+	title := strings.TrimSpace(m.addFields[jobFieldTitle].value)
+	if title == "" {
+		m.addErr = "Title is required"
+		return m, nil
+	}
+	desc := strings.TrimSpace(m.addFields[jobFieldDescription].value)
+	status := jobStatusOptions[m.addStatusIdx]
+	priority := strings.TrimSpace(jobPriorityOptions[m.addPriorityIdx])
+
+	meta, err := parseMetadataInput(m.addMeta.Buffer)
+	if err != nil {
+		m.addErr = err.Error()
+		return m, nil
+	}
+
+	input := api.CreateJobInput{
+		Title:       title,
+		Description: desc,
+		Status:      status,
+		Priority:    priority,
+		Metadata:    meta,
+	}
+
+	m.addSaving = true
+	return m, func() tea.Msg {
+		if _, err := m.client.CreateJob(input); err != nil {
+			return errMsg{err}
+		}
+		return jobCreatedMsg{}
+	}
+}
+
+func (m *JobsModel) resetAddForm() {
+	m.addSaved = false
+	m.addSaving = false
+	m.addErr = ""
+	m.addFocus = 0
+	m.addStatusIdx = statusIndex(jobStatusOptions, "pending")
+	m.addPriorityIdx = statusIndex(jobPriorityOptions, "")
+	m.addMeta.Reset()
+	for i := range m.addFields {
+		m.addFields[i].value = ""
+	}
+}
+
+// --- Edit ---
+
+func (m *JobsModel) startEdit() {
+	if m.detail == nil {
+		return
+	}
+	m.editFocus = jobEditFieldStatus
+	m.editStatusIdx = statusIndex(jobStatusOptions, m.detail.Status)
+	m.editPriorityIdx = statusIndex(jobPriorityOptions, valueOrEmpty(m.detail.Priority))
+	m.editDesc = valueOrEmpty(m.detail.Description)
+	m.editMeta.Reset()
+	m.editMeta.Buffer = metadataToInput(map[string]any(m.detail.Metadata))
+	m.editSaving = false
+}
+
+func (m JobsModel) handleEditKeys(msg tea.KeyMsg) (JobsModel, tea.Cmd) {
+	if m.editSaving {
+		return m, nil
+	}
+	switch {
+	case isKey(msg, "tab"), isDown(msg):
+		m.editFocus = (m.editFocus + 1) % jobEditFieldCount
+	case isKey(msg, "shift+tab"), isUp(msg):
+		m.editFocus = (m.editFocus - 1 + jobEditFieldCount) % jobEditFieldCount
+	case isBack(msg):
+		m.view = jobsViewDetail
+	case isKey(msg, "ctrl+s"):
+		return m.saveEdit()
+	default:
+		switch m.editFocus {
+		case jobEditFieldStatus:
+			switch {
+			case isKey(msg, "left"):
+				m.editStatusIdx = (m.editStatusIdx - 1 + len(jobStatusOptions)) % len(jobStatusOptions)
+			case isKey(msg, "right"), isSpace(msg):
+				m.editStatusIdx = (m.editStatusIdx + 1) % len(jobStatusOptions)
+			}
+		case jobEditFieldPriority:
+			switch {
+			case isKey(msg, "left"):
+				m.editPriorityIdx = (m.editPriorityIdx - 1 + len(jobPriorityOptions)) % len(jobPriorityOptions)
+			case isKey(msg, "right"), isSpace(msg):
+				m.editPriorityIdx = (m.editPriorityIdx + 1) % len(jobPriorityOptions)
+			}
+		case jobEditFieldMetadata:
+			if isEnter(msg) {
+				m.editMeta.Active = true
+			}
+		case jobEditFieldDescription:
+			switch {
+			case isKey(msg, "backspace"):
+				m.editDesc = dropLastRune(m.editDesc)
+			default:
+				ch := msg.String()
+				if len(ch) == 1 || ch == " " {
+					m.editDesc += ch
+				}
+			}
+		}
+	}
+	return m, nil
+}
+
+func (m JobsModel) renderEdit() string {
+	var b strings.Builder
+
+	// Status
+	status := jobStatusOptions[m.editStatusIdx]
+	if m.editFocus == jobEditFieldStatus {
+		b.WriteString(SelectedStyle.Render("> Status:"))
+		b.WriteString("\n")
+		b.WriteString(NormalStyle.Render("  " + status))
+	} else {
+		b.WriteString(MutedStyle.Render("  Status:"))
+		b.WriteString("\n")
+		b.WriteString(NormalStyle.Render("  " + status))
+	}
+
+	b.WriteString("\n\n")
+
+	// Description
+	if m.editFocus == jobEditFieldDescription {
+		b.WriteString(SelectedStyle.Render("> Description:"))
+		b.WriteString("\n")
+		b.WriteString(NormalStyle.Render("  " + m.editDesc))
+		b.WriteString(AccentStyle.Render("█"))
+	} else {
+		b.WriteString(MutedStyle.Render("  Description:"))
+		b.WriteString("\n")
+		val := m.editDesc
+		if val == "" {
+			val = "-"
+		}
+		b.WriteString(NormalStyle.Render("  " + val))
+	}
+
+	b.WriteString("\n\n")
+
+	// Priority
+	priority := jobPriorityOptions[m.editPriorityIdx]
+	if priority == "" {
+		priority = "-"
+	}
+	if m.editFocus == jobEditFieldPriority {
+		b.WriteString(SelectedStyle.Render("> Priority:"))
+		b.WriteString("\n")
+		b.WriteString(NormalStyle.Render("  " + priority))
+	} else {
+		b.WriteString(MutedStyle.Render("  Priority:"))
+		b.WriteString("\n")
+		b.WriteString(NormalStyle.Render("  " + priority))
+	}
+
+	b.WriteString("\n\n")
+
+	// Metadata
+	if m.editFocus == jobEditFieldMetadata {
+		b.WriteString(SelectedStyle.Render("> Metadata:"))
+	} else {
+		b.WriteString(MutedStyle.Render("  Metadata:"))
+	}
+	b.WriteString("\n")
+	meta := renderMetadataInput(m.editMeta.Buffer)
+	b.WriteString(NormalStyle.Render("  " + meta))
+
+	if m.editSaving {
+		b.WriteString("\n\n" + MutedStyle.Render("Saving..."))
+	}
+
+	return components.TitledBox("Edit Job", b.String(), m.width)
+}
+
+func (m JobsModel) saveEdit() (JobsModel, tea.Cmd) {
+	if m.detail == nil {
+		return m, nil
+	}
+	status := jobStatusOptions[m.editStatusIdx]
+	priority := strings.TrimSpace(jobPriorityOptions[m.editPriorityIdx])
+	desc := strings.TrimSpace(m.editDesc)
+	meta, err := parseMetadataInput(m.editMeta.Buffer)
+	if err != nil {
+		m.addErr = err.Error()
+		return m, nil
+	}
+
+	input := api.UpdateJobInput{
+		Status:      &status,
+		Priority:    &priority,
+		Description: &desc,
+		Metadata:    meta,
+	}
+
+	m.editSaving = true
+	return m, func() tea.Msg {
+		if _, err := m.client.UpdateJob(m.detail.ID, input); err != nil {
+			return errMsg{err}
+		}
+		return jobStatusUpdatedMsg{}
+	}
+}
+
+func valueOrEmpty(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+// --- Helpers ---
+
+func (m JobsModel) loadJobs() tea.Msg {
+	items, err := m.client.QueryJobs(nil)
+	if err != nil {
+		return errMsg{err}
+	}
+	return jobsLoadedMsg{items}
+}
+
+func (m *JobsModel) applyJobSearch() {
+	query := strings.TrimSpace(strings.ToLower(m.searchBuf))
+	if query == "" {
+		m.items = m.allItems
+	} else {
+		filtered := make([]api.Job, 0, len(m.allItems))
+		for _, j := range m.allItems {
+			line := strings.ToLower(j.Title + " " + j.Status + " " + j.ID)
+			if strings.Contains(line, query) {
+				filtered = append(filtered, j)
+			}
+		}
+		m.items = filtered
+	}
+	labels := make([]string, len(m.items))
+	for i, j := range m.items {
+		labels[i] = formatJobLine(j)
+	}
+	m.list.SetItems(labels)
+}
+
+func (m JobsModel) handleDetailKeys(msg tea.KeyMsg) (JobsModel, tea.Cmd) {
+	switch {
+	case isKey(msg, "shift+tab"):
+		m.modeFocus = true
+		return m, nil
+	case isBack(msg):
+		m.detail = nil
+		m.metaExpanded = false
+		m.view = jobsViewList
+	case isKey(msg, "s"):
+		m.changingSt = true
+		m.statusBuf = ""
+	case isKey(msg, "n"):
+		m.creatingSubtask = true
+		m.subtaskBuf = ""
+	case isKey(msg, "e"):
+		m.startEdit()
+		m.view = jobsViewEdit
+	case isKey(msg, "m"):
+		m.metaExpanded = !m.metaExpanded
+	}
+	return m, nil
+}
+
+func (m JobsModel) handleStatusInput(msg tea.KeyMsg) (JobsModel, tea.Cmd) {
+	switch {
+	case isBack(msg):
+		m.changingSt = false
+		m.statusBuf = ""
+	case isEnter(msg):
+		id := m.detail.ID
+		status := m.statusBuf
+		m.changingSt = false
+		m.statusBuf = ""
+		return m, func() tea.Msg {
+			_, err := m.client.UpdateJobStatus(id, status)
+			if err != nil {
+				return errMsg{err}
+			}
+			return jobStatusUpdatedMsg{}
+		}
+	case isKey(msg, "backspace"):
+		if len(m.statusBuf) > 0 {
+			m.statusBuf = m.statusBuf[:len(m.statusBuf)-1]
+		}
+	default:
+		if len(msg.String()) == 1 || msg.String() == " " {
+			m.statusBuf += msg.String()
+		}
+	}
+	return m, nil
+}
+
+func (m JobsModel) handleSubtaskInput(msg tea.KeyMsg) (JobsModel, tea.Cmd) {
+	switch {
+	case isBack(msg):
+		m.creatingSubtask = false
+		m.subtaskBuf = ""
+	case isEnter(msg):
+		title := strings.TrimSpace(m.subtaskBuf)
+		if title == "" {
+			return m, nil
+		}
+		id := m.detail.ID
+		m.creatingSubtask = false
+		m.subtaskBuf = ""
+		return m, func() tea.Msg {
+			_, err := m.client.CreateSubtask(id, map[string]string{"title": title})
+			if err != nil {
+				return errMsg{err}
+			}
+			return subtaskCreatedMsg{}
+		}
+	case isKey(msg, "backspace"):
+		if len(m.subtaskBuf) > 0 {
+			m.subtaskBuf = m.subtaskBuf[:len(m.subtaskBuf)-1]
+		}
+	default:
+		if len(msg.String()) == 1 || msg.String() == " " {
+			m.subtaskBuf += msg.String()
+		}
+	}
+	return m, nil
+}
+
+func (m JobsModel) renderDetail() string {
+	if m.detail == nil {
+		return m.renderList()
+	}
+	j := m.detail
+	var sections []string
+
+	rows := []components.TableRow{
+		{Label: "ID", Value: j.ID},
+		{Label: "Title", Value: j.Title},
+		{Label: "Status", Value: j.Status},
+	}
+	if j.Priority != nil && strings.TrimSpace(*j.Priority) != "" {
+		rows = append(rows, components.TableRow{Label: "Priority", Value: *j.Priority})
+	}
+	rows = append(rows, components.TableRow{Label: "Created", Value: j.CreatedAt.Format("2006-01-02 15:04")})
+	if !j.UpdatedAt.IsZero() {
+		rows = append(rows, components.TableRow{Label: "Updated", Value: j.UpdatedAt.Format("2006-01-02 15:04")})
+	}
+	sections = append(sections, components.Table("Job", rows, m.width))
+
+	if j.Description != nil && strings.TrimSpace(*j.Description) != "" {
+		sections = append(sections, components.TitledBox("Description", NormalStyle.Render(*j.Description), m.width))
+	}
+
+	if len(j.Metadata) > 0 {
+		metaTable := renderMetadataBlock(map[string]any(j.Metadata), m.width, m.metaExpanded)
+		if metaTable != "" {
+			sections = append(sections, metaTable)
+		}
+	}
+
+	return strings.Join(sections, "\n\n")
+}
+
+func formatJobLine(j api.Job) string {
+	p := ""
+	if j.Priority != nil {
+		p = fmt.Sprintf(" · %s", *j.Priority)
+	}
+	line := fmt.Sprintf("%s · %s%s", j.Title, j.Status, p)
+	if preview := metadataPreview(map[string]any(j.Metadata), 40); preview != "" {
+		line = fmt.Sprintf("%s · %s", line, preview)
+	}
+	return line
+}

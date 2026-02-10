@@ -1,0 +1,39 @@
+# Environment variables
+.env
+.env.*
+!.env.example
+.envrc
+
+# Python caches
+__pycache__/
+*.pyc
+*.pyo
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+.coverage
+coverage/
+
+# Virtual environments
+.venv/
+venv/
+
+# Build outputs
+build/
+dist/
+
+# Logs
+*.log
+
+# OS/editor
+.DS_Store
+.idea/
+.vscode/
+
+# Docker volumes
+nebula-data/
+database/data/
+
+# Node modules (if using drizzle locally)
+node_modules/
+package-lock.json
