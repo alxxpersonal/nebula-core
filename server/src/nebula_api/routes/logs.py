@@ -12,7 +12,7 @@ from pydantic import BaseModel
 # Local
 from nebula_api.auth import maybe_check_agent_approval, require_auth
 from nebula_api.response import api_error, success
-from nebula_mcp.enums import require_log_type, require_status
+from nebula_mcp.enums import require_log_type
 from nebula_mcp.executors import execute_create_log, execute_update_log
 from nebula_mcp.query_loader import QueryLoader
 

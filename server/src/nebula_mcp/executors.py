@@ -440,8 +440,8 @@ async def execute_create_log(
 ) -> dict:
     """Execute log creation from approved request."""
 
-    from .models import CreateLogInput
     from .enums import require_log_type
+    from .models import CreateLogInput
 
     if isinstance(change_details, str):
         change_details = json.loads(change_details)
@@ -469,8 +469,8 @@ async def execute_update_log(
 ) -> dict:
     """Execute log update from approved request."""
 
-    from .models import UpdateLogInput
     from .enums import require_log_type
+    from .models import UpdateLogInput
 
     if isinstance(change_details, str):
         change_details = json.loads(change_details)

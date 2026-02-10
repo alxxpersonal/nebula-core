@@ -591,7 +591,10 @@ class UpdateFileInput(BaseModel):
 
     file_id: str = Field(..., description="File UUID")
     filename: str | None = Field(default=None, description="File name")
-    file_path: str | None = Field(default=None, description="Absolute or vault-relative path")
+    file_path: str | None = Field(
+        default=None,
+        description="Absolute or vault-relative path",
+    )
     mime_type: str | None = Field(default=None, description="MIME type")
     size_bytes: int | None = Field(default=None, description="File size in bytes")
     checksum: str | None = Field(default=None, description="Checksum hash")

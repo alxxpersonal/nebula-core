@@ -1,8 +1,8 @@
 """Graph cycle stress tests for traversal queries."""
 
+import asyncio
 from pathlib import Path
 
-import asyncio
 import pytest
 
 from nebula_mcp.query_loader import QueryLoader
