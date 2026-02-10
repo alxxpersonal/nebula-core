@@ -897,18 +897,16 @@ func (m EntitiesModel) renderList() string {
 	var rows strings.Builder
 	visible := m.list.Visible()
 	contentWidth := components.BoxContentWidth(m.width)
-	for i, label := range visible {
+	for i := range visible {
 		absIdx := m.list.RelToAbs(i)
+		if absIdx < 0 || absIdx >= len(m.items) {
+			continue
+		}
 		prefix := "    "
 		if m.isBulkSelected(absIdx) {
 			prefix = "  ✓ "
 		}
-		if contentWidth > 0 {
-			maxWidth := contentWidth - lipgloss.Width(prefix)
-			if maxWidth > 0 {
-				label = lipgloss.NewStyle().Width(maxWidth).Render(label)
-			}
-		}
+		label := formatEntityLineWidth(m.items[absIdx], contentWidth-lipgloss.Width(prefix))
 		if m.list.IsSelected(absIdx) {
 			rows.WriteString(SelectedStyle.Render(prefix + label))
 		} else {
@@ -2076,11 +2074,19 @@ func (m EntitiesModel) scopeNamesFromIDs(ids []string) []string {
 }
 
 func formatEntityLine(e api.Entity) string {
+	return formatEntityLineWidth(e, maxEntityLineLen)
+}
+
+func formatEntityLineWidth(e api.Entity, maxWidth int) string {
 	name, t := normalizeEntityNameType(e.Name, e.Type)
 	if t == "" {
 		t = "?"
 	}
-	header := formatEntityHeader(name, strings.ToLower(t), maxEntityLineLen)
+	lineWidth := maxWidth
+	if lineWidth <= 0 || lineWidth > maxEntityLineLen {
+		lineWidth = maxEntityLineLen
+	}
+	header := formatEntityHeader(name, strings.ToLower(t), lineWidth)
 	segments := []string{header}
 	if status := strings.TrimSpace(e.Status); status != "" {
 		segments = append(segments, status)
@@ -2091,7 +2097,7 @@ func formatEntityLine(e api.Entity) string {
 	if preview := metadataPreview(map[string]any(e.Metadata), 40); preview != "" {
 		segments = append(segments, preview)
 	}
-	return joinEntitySegments(segments, maxEntityLineLen)
+	return joinEntitySegments(segments, lineWidth)
 }
 
 func previewTags(tags []string, max int) string {
