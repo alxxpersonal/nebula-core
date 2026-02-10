@@ -70,18 +70,18 @@ type App struct {
 
 	importExportOpen bool
 
-	inbox    InboxModel
-	entities EntitiesModel
-	rels     RelationshipsModel
-	know     KnowledgeModel
-	jobs     JobsModel
-	logs     LogsModel
-	files    FilesModel
+	inbox     InboxModel
+	entities  EntitiesModel
+	rels      RelationshipsModel
+	know      KnowledgeModel
+	jobs      JobsModel
+	logs      LogsModel
+	files     FilesModel
 	protocols ProtocolsModel
-	history  HistoryModel
-	search   SearchModel
-	profile  ProfileModel
-	impex    ImportExportModel
+	history   HistoryModel
+	search    SearchModel
+	profile   ProfileModel
+	impex     ImportExportModel
 }
 
 // NewApp creates the root application model.
@@ -220,6 +220,11 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if isKey(msg, "/") {
 			a.openPalette()
 			return a, nil
+		}
+
+		if idx, ok := tabIndexForKey(msg.String()); ok {
+			app, cmd := a.switchTab(idx)
+			return app, cmd
 		}
 
 		// Arrow tab navigation until user enters content with Down
@@ -425,7 +430,7 @@ func (a App) statusHints() []string {
 
 func (a App) statusHintsForTab() []string {
 	base := []string{
-		components.Hint("←/→", "Tabs"),
+		components.Hint("1-9/0/-", "Tabs"),
 		components.Hint("/", "Command"),
 		components.Hint("?", "Help"),
 		components.Hint("q", "Quit"),
@@ -1220,4 +1225,23 @@ func (a App) canExitToTabNav() bool {
 		return a.profile.agentList == nil || a.profile.agentList.Selected() == 0
 	}
 	return false
+}
+
+func tabIndexForKey(key string) (int, bool) {
+	switch key {
+	case "1", "2", "3", "4", "5", "6", "7", "8", "9":
+		idx := int(key[0] - '1')
+		if idx >= 0 && idx < tabCount {
+			return idx, true
+		}
+	case "0":
+		if tabCount > 9 {
+			return 9, true
+		}
+	case "-":
+		if tabCount > 10 {
+			return 10, true
+		}
+	}
+	return 0, false
 }

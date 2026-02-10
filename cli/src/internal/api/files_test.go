@@ -15,8 +15,8 @@ func TestGetFile(t *testing.T) {
 		assert.Contains(t, r.URL.Path, "/api/files/")
 
 		w.Write(jsonResponse(map[string]any{
-			"id":       "file-1",
-			"filename": "demo.txt",
+			"id":        "file-1",
+			"filename":  "demo.txt",
 			"file_path": "/tmp/demo.txt",
 		}))
 	})
@@ -37,8 +37,8 @@ func TestCreateFile(t *testing.T) {
 		assert.Equal(t, "demo.txt", body.Filename)
 
 		w.Write(jsonResponse(map[string]any{
-			"id":       "file-2",
-			"filename": body.Filename,
+			"id":        "file-2",
+			"filename":  body.Filename,
 			"file_path": body.FilePath,
 		}))
 	})
@@ -65,9 +65,9 @@ func TestQueryFiles(t *testing.T) {
 	})
 
 	files, err := client.QueryFiles(QueryParams{
-		"mime_type":      "application/pdf",
+		"mime_type":       "application/pdf",
 		"status_category": "archived",
-		"tags":           "tag-1",
+		"tags":            "tag-1",
 	})
 	require.NoError(t, err)
 	assert.Len(t, files, 2)

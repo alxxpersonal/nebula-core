@@ -50,36 +50,36 @@ var logStatusOptions = []string{"active", "archived"}
 // --- Logs Model ---
 
 type LogsModel struct {
-	client    *api.Client
-	items     []api.Log
-	allItems  []api.Log
-	list      *components.List
-	loading   bool
-	view      logsView
-	modeFocus bool
-	searchBuf string
+	client        *api.Client
+	items         []api.Log
+	allItems      []api.Log
+	list          *components.List
+	loading       bool
+	view          logsView
+	modeFocus     bool
+	searchBuf     string
 	searchSuggest string
-	detail    *api.Log
-	errText   string
-	addErr    string
+	detail        *api.Log
+	errText       string
+	addErr        string
 	valueExpanded bool
 	metaExpanded  bool
-	width     int
-	height    int
-	scopeOptions []string
+	width         int
+	height        int
+	scopeOptions  []string
 
 	// add
-	addFields      []formField
-	addFocus       int
-	addStatusIdx   int
-	addTags        []string
-	addTagBuf      string
-	addType        string
-	addTimestamp   string
-	addValue       MetadataEditor
-	addMeta        MetadataEditor
-	addSaving      bool
-	addSaved       bool
+	addFields    []formField
+	addFocus     int
+	addStatusIdx int
+	addTags      []string
+	addTagBuf    string
+	addType      string
+	addTimestamp string
+	addValue     MetadataEditor
+	addMeta      MetadataEditor
+	addSaving    bool
+	addSaved     bool
 
 	// edit
 	editFocus     int
@@ -809,9 +809,9 @@ func (m LogsModel) saveEdit() (LogsModel, tea.Cmd) {
 	meta = mergeMetadataScopes(meta, m.editMeta.Scopes)
 
 	input := api.UpdateLogInput{
-		Status:  &status,
-		Tags:    &m.editTags,
-		Value:   value,
+		Status:   &status,
+		Tags:     &m.editTags,
+		Value:    value,
 		Metadata: meta,
 	}
 	m.editSaving = true

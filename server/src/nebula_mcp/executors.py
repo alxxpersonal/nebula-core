@@ -435,6 +435,7 @@ async def execute_update_protocol(
 
     return dict(row) if row else {}
 
+
 async def execute_create_log(
     pool: Pool, enums: EnumRegistry, change_details: dict
 ) -> dict:

@@ -65,9 +65,9 @@ func TestQueryLogs(t *testing.T) {
 	})
 
 	logs, err := client.QueryLogs(QueryParams{
-		"log_type":       "event",
+		"log_type":        "event",
 		"status_category": "archived",
-		"tags":           "tag-1",
+		"tags":            "tag-1",
 	})
 	require.NoError(t, err)
 	assert.Len(t, logs, 2)

@@ -46,21 +46,21 @@ var fileStatusOptions = []string{"active", "archived"}
 // --- Files Model ---
 
 type FilesModel struct {
-	client *api.Client
-	items  []api.File
-	all    []api.File
-	list   *components.List
-	loading bool
-	view   filesView
-	modeFocus bool
-	searchBuf string
+	client        *api.Client
+	items         []api.File
+	all           []api.File
+	list          *components.List
+	loading       bool
+	view          filesView
+	modeFocus     bool
+	searchBuf     string
 	searchSuggest string
-	detail *api.File
-	errText string
-	metaExpanded bool
-	width int
-	height int
-	scopeOptions []string
+	detail        *api.File
+	errText       string
+	metaExpanded  bool
+	width         int
+	height        int
+	scopeOptions  []string
 
 	// add
 	addFields    []formField

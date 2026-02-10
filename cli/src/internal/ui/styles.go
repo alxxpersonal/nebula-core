@@ -82,6 +82,8 @@ var (
 			Foreground(ColorMuted).
 			Border(lipgloss.NormalBorder()).
 			BorderForeground(ColorBorder).
+			BorderTop(false).
+			BorderBottom(false).
 			Bold(true).
 			Padding(0, 1)
 
