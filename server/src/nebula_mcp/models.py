@@ -3,6 +3,7 @@
 # Standard Library
 import unicodedata
 from datetime import datetime
+from pathlib import Path
 from typing import Self
 
 # Third-Party
@@ -42,6 +43,12 @@ BIDI_CONTROLS = {
     "\u2069",
     "\u200e",
     "\u200f",
+}
+
+BANNED_METADATA_KEYS = {
+    "__proto__",
+    "prototype",
+    "constructor",
 }
 
 
@@ -84,6 +91,43 @@ def _validate_node_type(value: str | None) -> str | None:
     return cleaned
 
 
+def _reject_metadata_keys(value: object) -> None:
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if isinstance(key, str) and key in BANNED_METADATA_KEYS:
+                raise ValueError(f"Metadata key '{key}' is not allowed")
+            _reject_metadata_keys(item)
+        return
+    if isinstance(value, list):
+        for item in value:
+            _reject_metadata_keys(item)
+
+
+def _sanitize_metadata(value: dict | None) -> dict | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError("Metadata must be an object")
+    _reject_metadata_keys(value)
+    return value
+
+
+def _sanitize_vault_path(value: str | None) -> str | None:
+    if value is None:
+        return None
+    cleaned = _strip_control(value)
+    if not cleaned:
+        return None
+    if cleaned.startswith("~"):
+        raise ValueError("Vault file path must be relative")
+    path = Path(cleaned)
+    if path.is_absolute():
+        raise ValueError("Vault file path must be relative")
+    if ".." in path.parts:
+        raise ValueError("Vault file path may not contain '..'")
+    return cleaned
+
+
 # --- Core Input Models ---
 class CreateEntityInput(BaseModel):
     """Input payload for creating an entity."""
@@ -107,6 +151,16 @@ class CreateEntityInput(BaseModel):
     @classmethod
     def _clean_tags(cls, v: list[str] | None) -> list[str] | None:
         return _sanitize_tags(v)
+
+    @field_validator("metadata", mode="before")
+    @classmethod
+    def _clean_metadata(cls, v: dict | None) -> dict | None:
+        return _sanitize_metadata(v)
+
+    @field_validator("vault_file_path", mode="before")
+    @classmethod
+    def _clean_vault_path(cls, v: str | None) -> str | None:
+        return _sanitize_vault_path(v)
 
 
 # --- Shared Metadata Models ---
@@ -376,6 +430,11 @@ class UpdateEntityInput(BaseModel):
     def _clean_update_tags(cls, v: list[str] | None) -> list[str] | None:
         return _sanitize_tags(v)
 
+    @field_validator("metadata", mode="before")
+    @classmethod
+    def _clean_update_metadata(cls, v: dict | None) -> dict | None:
+        return _sanitize_metadata(v)
+
 
 class BulkUpdateEntityTagsInput(BaseModel):
     """Input payload for bulk updating entity tags."""
@@ -473,6 +532,11 @@ class CreateKnowledgeInput(BaseModel):
     def _clean_knowledge_tags(cls, v: list[str] | None) -> list[str] | None:
         return _sanitize_tags(v)
 
+    @field_validator("metadata", mode="before")
+    @classmethod
+    def _clean_knowledge_metadata(cls, v: dict | None) -> dict | None:
+        return _sanitize_metadata(v)
+
 
 class QueryKnowledgeInput(BaseModel):
     """Input payload for searching knowledge items."""
@@ -523,6 +587,11 @@ class CreateLogInput(BaseModel):
     def _clean_log_tags(cls, v: list[str] | None) -> list[str] | None:
         return _sanitize_tags(v)
 
+    @field_validator("metadata", mode="before")
+    @classmethod
+    def _clean_log_metadata(cls, v: dict | None) -> dict | None:
+        return _sanitize_metadata(v)
+
 
 class GetLogInput(BaseModel):
     """Input payload for retrieving a log entry."""
@@ -563,6 +632,11 @@ class UpdateLogInput(BaseModel):
     def _clean_update_log_tags(cls, v: list[str] | None) -> list[str] | None:
         return _sanitize_tags(v)
 
+    @field_validator("metadata", mode="before")
+    @classmethod
+    def _clean_update_log_metadata(cls, v: dict | None) -> dict | None:
+        return _sanitize_metadata(v)
+
 
 # --- Relationship Input Models ---
 
@@ -590,6 +664,11 @@ class CreateRelationshipInput(BaseModel):
     @classmethod
     def _clean_rel_name(cls, v: str | None) -> str | None:
         return _sanitize_text(v)
+
+    @field_validator("properties", mode="before")
+    @classmethod
+    def _clean_rel_properties(cls, v: dict | None) -> dict | None:
+        return _sanitize_metadata(v)
 
 
 class GetRelationshipsInput(BaseModel):
@@ -697,6 +776,11 @@ class CreateJobInput(BaseModel):
     due_at: str | None = Field(default=None, description="ISO8601 due date")
     metadata: dict = Field(default_factory=dict, description="Additional metadata")
 
+    @field_validator("metadata", mode="before")
+    @classmethod
+    def _clean_job_metadata(cls, v: dict | None) -> dict | None:
+        return _sanitize_metadata(v)
+
 
 class GetJobInput(BaseModel):
     """Input payload for retrieving a job."""
@@ -776,6 +860,11 @@ class CreateFileInput(BaseModel):
     def _clean_file_tags(cls, v: list[str] | None) -> list[str] | None:
         return _sanitize_tags(v)
 
+    @field_validator("metadata", mode="before")
+    @classmethod
+    def _clean_file_metadata(cls, v: dict | None) -> dict | None:
+        return _sanitize_metadata(v)
+
 
 class GetFileInput(BaseModel):
     """Input payload for retrieving a file record."""
@@ -826,6 +915,11 @@ class UpdateFileInput(BaseModel):
     def _clean_update_file_tags(cls, v: list[str] | None) -> list[str] | None:
         return _sanitize_tags(v)
 
+    @field_validator("metadata", mode="before")
+    @classmethod
+    def _clean_update_file_metadata(cls, v: dict | None) -> dict | None:
+        return _sanitize_metadata(v)
+
 
 class AttachFileInput(BaseModel):
     """Input payload for attaching a file to another record."""
@@ -871,6 +965,16 @@ class CreateProtocolInput(BaseModel):
     def _clean_protocol_tags(cls, v: list[str] | None) -> list[str] | None:
         return _sanitize_tags(v)
 
+    @field_validator("metadata", mode="before")
+    @classmethod
+    def _clean_protocol_metadata(cls, v: dict | None) -> dict | None:
+        return _sanitize_metadata(v)
+
+    @field_validator("vault_file_path", mode="before")
+    @classmethod
+    def _clean_protocol_vault_path(cls, v: str | None) -> str | None:
+        return _sanitize_vault_path(v)
+
 
 class UpdateProtocolInput(BaseModel):
     """Input payload for updating a protocol."""
@@ -896,6 +1000,16 @@ class UpdateProtocolInput(BaseModel):
     @classmethod
     def _clean_update_protocol_tags(cls, v: list[str] | None) -> list[str] | None:
         return _sanitize_tags(v)
+
+    @field_validator("metadata", mode="before")
+    @classmethod
+    def _clean_update_protocol_metadata(cls, v: dict | None) -> dict | None:
+        return _sanitize_metadata(v)
+
+    @field_validator("vault_file_path", mode="before")
+    @classmethod
+    def _clean_update_protocol_vault_path(cls, v: str | None) -> str | None:
+        return _sanitize_vault_path(v)
 
 
 # --- Agent Input Models ---
