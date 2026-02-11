@@ -136,7 +136,6 @@ async def test_get_relationships_hides_foreign_job_links(db_pool, enums):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="job relationships should not be queryable by other agents")
 async def test_query_relationships_hides_foreign_job_links(db_pool, enums):
     """Querying relationships should not expose other agents' jobs."""
 
@@ -152,7 +151,7 @@ async def test_query_relationships_hides_foreign_job_links(db_pool, enums):
     payload = QueryRelationshipsInput(
         source_type=None,
         target_type=None,
-        relationship_types=None,
+        relationship_types=[],
         status_category="active",
         limit=50,
     )
