@@ -76,7 +76,6 @@ async def _make_job(db_pool, enums, agent_id):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="invalid entity type should return 400, not 500")
 async def test_create_entity_invalid_type_returns_400(db_pool, enums):
     """Create entity should reject invalid type with a validation error."""
 
@@ -118,7 +117,6 @@ async def test_create_entity_invalid_type_returns_400(db_pool, enums):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="invalid relationship type should return 400, not 500")
 async def test_create_relationship_invalid_type_returns_400(db_pool, enums):
     """Create relationship should reject invalid relationship type."""
 
@@ -163,7 +161,6 @@ async def test_create_relationship_invalid_type_returns_400(db_pool, enums):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="invalid status should return 400, not 500")
 async def test_update_job_status_invalid_returns_400(db_pool, enums):
     """Update job status should reject unknown statuses with validation error."""
 
