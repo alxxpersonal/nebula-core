@@ -36,7 +36,6 @@ async def _make_entity(db_pool, enums, name, scopes):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="entity history should respect privacy scopes")
 async def test_api_entity_history_denies_private_entity(db_pool, enums):
     """Entity history should be denied for private entities via API."""
 
