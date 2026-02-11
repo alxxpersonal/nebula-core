@@ -92,6 +92,22 @@ async def test_get_entity_denies_private_scope(db_pool, enums):
 
 
 @pytest.mark.asyncio
+@pytest.mark.xfail(reason="errors should not disclose entity existence")
+async def test_get_entity_not_found_uses_generic_error(db_pool, enums):
+    """Missing entities should not leak existence details."""
+
+    public_agent = {
+        "id": "test-agent",
+        "scopes": [enums.scopes.name_to_id["public"]],
+    }
+    ctx = _make_context(db_pool, enums, public_agent)
+
+    payload = GetEntityInput(entity_id="00000000-0000-0000-0000-000000000001")
+    with pytest.raises(ValueError, match="Not found"):
+        await get_entity(payload, ctx)
+
+
+@pytest.mark.asyncio
 @pytest.mark.xfail(reason="mcp relationship queries should hide private nodes")
 async def test_mcp_relationships_hide_private_nodes(
     db_pool, enums, test_entity, untrusted_mcp_context
@@ -124,8 +140,7 @@ async def test_mcp_relationships_hide_private_nodes(
     private_id = str(private_entity["id"])
 
     assert all(
-        private_id not in (row.get("source_id"), row.get("target_id"))
-        for row in rows
+        private_id not in (row.get("source_id"), row.get("target_id")) for row in rows
     )
 
 
@@ -163,8 +178,7 @@ async def test_mcp_query_relationships_hides_private_nodes(
     private_id = str(private_entity["id"])
 
     assert all(
-        private_id not in (row.get("source_id"), row.get("target_id"))
-        for row in rows
+        private_id not in (row.get("source_id"), row.get("target_id")) for row in rows
     )
 
 

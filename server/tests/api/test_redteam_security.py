@@ -77,6 +77,5 @@ async def test_relationships_hide_private_targets(api, db_pool, enums, test_enti
 
     private_id = str(private_entity["id"])
     assert all(
-        private_id not in (row.get("source_id"), row.get("target_id"))
-        for row in data
+        private_id not in (row.get("source_id"), row.get("target_id")) for row in data
     )
