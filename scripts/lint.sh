@@ -7,16 +7,16 @@ GO_DIR="${ROOT_DIR}/cli/src"
 
 run_ruff() {
   if command -v uv >/dev/null 2>&1; then
-    (cd "${PY_DIR}" && uv run ruff check .)
+    (cd "${PY_DIR}" && uv run ruff check src)
     return
   fi
 
   if [[ -x "${PY_DIR}/.venv/bin/ruff" ]]; then
-    (cd "${PY_DIR}" && "${PY_DIR}/.venv/bin/ruff" check .)
+    (cd "${PY_DIR}" && "${PY_DIR}/.venv/bin/ruff" check src)
     return
   fi
 
-  (cd "${PY_DIR}" && ruff check .)
+  (cd "${PY_DIR}" && ruff check src)
 }
 
 run_go_lint() {
