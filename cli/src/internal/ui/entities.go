@@ -897,6 +897,9 @@ func (m EntitiesModel) renderList() string {
 	var rows strings.Builder
 	visible := m.list.Visible()
 	contentWidth := components.BoxContentWidth(m.width)
+	if contentWidth > 2 {
+		contentWidth -= 2
+	}
 	for i := range visible {
 		absIdx := m.list.RelToAbs(i)
 		if absIdx < 0 || absIdx >= len(m.items) {
