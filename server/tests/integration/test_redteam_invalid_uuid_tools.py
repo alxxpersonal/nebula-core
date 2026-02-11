@@ -7,8 +7,13 @@ from unittest.mock import MagicMock
 import pytest
 
 # Local
-from nebula_mcp.models import GetRelationshipsInput, UpdateEntityInput, UpdateRelationshipInput
-from nebula_mcp.server import get_relationships, update_entity, update_relationship
+from nebula_mcp.models import (
+    GetRelationshipsInput,
+    QueryJobsInput,
+    UpdateEntityInput,
+    UpdateRelationshipInput,
+)
+from nebula_mcp.server import get_relationships, query_jobs, update_entity, update_relationship
 
 
 def _make_context(pool, enums, agent):
@@ -94,3 +99,17 @@ async def test_get_relationships_rejects_invalid_uuid(db_pool, enums):
 
     with pytest.raises(ValueError):
         await get_relationships(payload, ctx)
+
+
+@pytest.mark.asyncio
+@pytest.mark.xfail(reason="invalid UUIDs raise asyncpg DataError")
+async def test_query_jobs_rejects_invalid_assignee(db_pool, enums):
+    """query_jobs should reject malformed assigned_to UUIDs."""
+
+    agent = await _make_agent(db_pool, enums, "job-filter-agent", ["public"])
+    ctx = _make_context(db_pool, enums, agent)
+
+    payload = QueryJobsInput(assigned_to="not-a-uuid")
+
+    with pytest.raises(ValueError):
+        await query_jobs(payload, ctx)

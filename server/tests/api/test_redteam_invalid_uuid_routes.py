@@ -35,3 +35,12 @@ async def test_api_update_relationship_rejects_invalid_uuid(api):
         json={"properties": {"note": "bad"}},
     )
     assert resp.status_code in {400, 404}
+
+
+@pytest.mark.asyncio
+@pytest.mark.xfail(reason="invalid UUIDs raise asyncpg DataError")
+async def test_api_query_jobs_rejects_invalid_assignee(api):
+    """Invalid UUIDs should not crash job query routes."""
+
+    resp = await api.get("/api/jobs", params={"assigned_to": "not-a-uuid"})
+    assert resp.status_code in {400, 404}
