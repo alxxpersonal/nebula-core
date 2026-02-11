@@ -1,6 +1,7 @@
 """Executor functions for approved actions."""
 
 # Standard Library
+import hashlib
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -32,6 +33,12 @@ CYCLE_SENSITIVE_REL_TYPES = {
 }
 
 
+def _advisory_lock_key(*parts: str) -> int:
+    token = "|".join(str(part) for part in parts)
+    digest = hashlib.sha256(token.encode("utf-8")).digest()
+    return int.from_bytes(digest[:8], "big", signed=True)
+
+
 async def execute_create_entity(
     pool: Pool, enums: EnumRegistry, change_details: dict
 ) -> dict:
@@ -57,62 +64,84 @@ async def execute_create_entity(
 
     payload = CreateEntityInput(**change_details)
 
-    # Validate enums first (fail fast)
-    status_id = require_status(payload.status, enums)
-    type_id = require_entity_type(payload.type, enums)
-    scope_ids = require_scopes(payload.scopes, enums)
+    async def _run(conn) -> dict:
+        # Validate enums first (fail fast)
+        status_id = require_status(payload.status, enums)
+        type_id = require_entity_type(payload.type, enums)
+        scope_ids = require_scopes(payload.scopes, enums)
+        scope_key = ",".join(sorted(str(scope_id) for scope_id in scope_ids))
 
-    # LAYER 1: Vault file path dedup (hard block)
-    if payload.vault_file_path:
-        existing = await pool.fetchrow(
-            QUERIES["entities/check_vault_file"], payload.vault_file_path
+        lock_parts = [payload.name, type_id, scope_key]
+        if payload.vault_file_path:
+            lock_parts.append(payload.vault_file_path)
+
+        await conn.execute(
+            "SELECT pg_advisory_xact_lock($1)", _advisory_lock_key(*lock_parts)
+        )
+
+        # LAYER 1: Vault file path dedup (hard block)
+        if payload.vault_file_path:
+            existing = await conn.fetchrow(
+                QUERIES["entities/check_vault_file"], payload.vault_file_path
+            )
+            if existing:
+                raise ValueError(
+                    "Entity already exists for vault file "
+                    f"'{payload.vault_file_path}': "
+                    f"{existing['name']} (id: {existing['id']})"
+                )
+
+        # LAYER 2: Name + Type + Scopes dedup (likely duplicate)
+        existing = await conn.fetchrow(
+            QUERIES["entities/check_duplicate"], payload.name, type_id, scope_ids
         )
         if existing:
             raise ValueError(
-                f"Entity already exists for vault file '{payload.vault_file_path}': "
-                f"{existing['name']} (id: {existing['id']})"
+                f"Entity '{payload.name}' with same type and scopes already exists "
+                f"(id: {existing['id']}). If intentional, use different scopes or name."
             )
 
-    # LAYER 2: Name + Type + Scopes dedup (likely duplicate)
-    existing = await pool.fetchrow(
-        QUERIES["entities/check_duplicate"], payload.name, type_id, scope_ids
-    )
-    if existing:
-        raise ValueError(
-            f"Entity '{payload.name}' with same type and scopes already exists "
-            f"(id: {existing['id']}). If intentional, use different scopes or name."
+        # Validate metadata structure
+        metadata = validate_entity_metadata(payload.type, payload.metadata)
+
+        # Validate context segment privacy rules
+        context_segments = metadata.get("context_segments") if metadata else None
+        if context_segments:
+            allowed_scopes = set(payload.scopes)
+            for segment in context_segments:
+                segment_scopes = segment.get("scopes", [])
+                if not segment_scopes:
+                    raise ValueError("Context segment scopes required")
+                for scope_name in segment_scopes:
+                    if scope_name not in enums.scopes.name_to_id:
+                        raise ValueError(f"Unknown scope: {scope_name}")
+                    if scope_name not in allowed_scopes:
+                        raise ValueError("Context segment scope not in entity scopes")
+
+        # LAYER 3: Insert entity
+        row = await conn.fetchrow(
+            QUERIES["entities/create"],
+            scope_ids,
+            payload.name,
+            type_id,
+            status_id,
+            payload.tags,
+            json.dumps(metadata) if metadata else None,
+            payload.vault_file_path,
         )
 
-    # Validate metadata structure
-    metadata = validate_entity_metadata(payload.type, payload.metadata)
+        return dict(row) if row else {}
 
-    # Validate context segment privacy rules
-    context_segments = metadata.get("context_segments") if metadata else None
-    if context_segments:
-        allowed_scopes = set(payload.scopes)
-        for segment in context_segments:
-            segment_scopes = segment.get("scopes", [])
-            if not segment_scopes:
-                raise ValueError("Context segment scopes required")
-            for scope_name in segment_scopes:
-                if scope_name not in enums.scopes.name_to_id:
-                    raise ValueError(f"Unknown scope: {scope_name}")
-                if scope_name not in allowed_scopes:
-                    raise ValueError("Context segment scope not in entity scopes")
+    if isinstance(pool, Pool):
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                return await _run(conn)
 
-    # LAYER 3: Insert entity
-    row = await pool.fetchrow(
-        QUERIES["entities/create"],
-        scope_ids,
-        payload.name,
-        type_id,
-        status_id,
-        payload.tags,
-        json.dumps(metadata) if metadata else None,
-        payload.vault_file_path,
-    )
+    if pool.is_in_transaction():
+        return await _run(pool)
 
-    return dict(row) if row else {}
+    async with pool.transaction():
+        return await _run(pool)
 
 
 async def execute_create_knowledge(

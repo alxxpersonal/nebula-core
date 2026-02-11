@@ -162,6 +162,14 @@ def _scope_filter_ids(agent: dict, enums: Any) -> list | None:
     return agent.get("scopes", []) or []
 
 
+def _has_write_scopes(agent_scopes: list, node_scopes: list) -> bool:
+    if not node_scopes:
+        return True
+    if not agent_scopes:
+        return False
+    return set(node_scopes).issubset(set(agent_scopes))
+
+
 async def _node_allowed(
     pool: Pool, enums: Any, agent: dict, node_type: str, node_id: str
 ) -> bool:
@@ -189,19 +197,29 @@ async def _validate_relationship_node(
     node_type: str,
     node_id: str,
     label: str,
+    require_write: bool = False,
 ) -> None:
     if node_type == "entity":
         row = await pool.fetchrow(QUERIES["entities/get_by_id"], node_id)
         if not row:
             raise ValueError(f"{label} entity not found")
-        if not await _node_allowed(pool, enums, agent, node_type, node_id):
+        if require_write:
+            if not _has_write_scopes(
+                agent.get("scopes", []), row.get("privacy_scope_ids") or []
+            ):
+                raise ValueError("Access denied")
+        elif not await _node_allowed(pool, enums, agent, node_type, node_id):
             raise ValueError("Access denied")
         return
     if node_type == "knowledge":
-        scope_ids = _scope_filter_ids(agent, enums)
+        scope_ids = None if require_write else _scope_filter_ids(agent, enums)
         row = await pool.fetchrow(QUERIES["knowledge/get"], node_id, scope_ids)
         if not row:
             raise ValueError(f"{label} knowledge not found")
+        if require_write and not _has_write_scopes(
+            agent.get("scopes", []), row.get("privacy_scope_ids") or []
+        ):
+            raise ValueError("Access denied")
         return
     if node_type == "job":
         row = await pool.fetchrow(QUERIES["jobs/get"], node_id)
@@ -490,6 +508,15 @@ async def update_entity(payload: UpdateEntityInput, ctx: Context) -> dict:
 
     pool, enums, agent = await require_context(ctx)
 
+    row = await pool.fetchrow(QUERIES["entities/get_by_id"], payload.entity_id)
+    if not row:
+        raise ValueError("Entity not found")
+    entity = dict(row)
+    if not _has_write_scopes(
+        agent.get("scopes", []), entity.get("privacy_scope_ids") or []
+    ):
+        raise ValueError("Access denied")
+
     if resp := await maybe_require_approval(
         pool, agent, "update_entity", payload.model_dump()
     ):
@@ -770,10 +797,22 @@ async def create_relationship(payload: CreateRelationshipInput, ctx: Context) ->
 
     pool, enums, agent = await require_context(ctx)
     await _validate_relationship_node(
-        pool, enums, agent, payload.source_type, payload.source_id, "Source"
+        pool,
+        enums,
+        agent,
+        payload.source_type,
+        payload.source_id,
+        "Source",
+        require_write=True,
     )
     await _validate_relationship_node(
-        pool, enums, agent, payload.target_type, payload.target_id, "Target"
+        pool,
+        enums,
+        agent,
+        payload.target_type,
+        payload.target_id,
+        "Target",
+        require_write=True,
     )
 
     if resp := await maybe_require_approval(
@@ -829,6 +868,32 @@ async def update_relationship(payload: UpdateRelationshipInput, ctx: Context) ->
     """Update relationship properties or status."""
 
     pool, enums, agent = await require_context(ctx)
+    row = await pool.fetchrow(
+        QUERIES["relationships/get_by_id"], payload.relationship_id
+    )
+    if not row:
+        raise ValueError("Relationship not found")
+
+    relationship = dict(row)
+    await _validate_relationship_node(
+        pool,
+        enums,
+        agent,
+        relationship["source_type"],
+        relationship["source_id"],
+        "Source",
+        require_write=True,
+    )
+    await _validate_relationship_node(
+        pool,
+        enums,
+        agent,
+        relationship["target_type"],
+        relationship["target_id"],
+        "Target",
+        require_write=True,
+    )
+
     if resp := await maybe_require_approval(
         pool, agent, "update_relationship", payload.model_dump()
     ):
