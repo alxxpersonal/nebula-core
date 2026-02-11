@@ -161,7 +161,7 @@ async def test_api_list_files_hides_private_entity_files(db_pool, enums):
     app.state.enums = enums
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        resp = await client.get("/api/files")
+        resp = await client.get("/api/files/")
     app.dependency_overrides.pop(require_auth, None)
 
     assert resp.status_code == 200
