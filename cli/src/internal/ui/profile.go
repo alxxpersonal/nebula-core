@@ -42,6 +42,7 @@ type ProfileModel struct {
 	height int
 }
 
+// NewProfileModel builds the profile UI model.
 func NewProfileModel(client *api.Client, cfg *config.Config) ProfileModel {
 	return ProfileModel{
 		client:    client,
@@ -279,7 +280,12 @@ func (m ProfileModel) renderKeys() string {
 
 	var rows strings.Builder
 	visible := m.keyList.Visible()
+	contentWidth := components.BoxContentWidth(m.width)
+	maxLabelWidth := contentWidth - 4
 	for i, label := range visible {
+		if maxLabelWidth > 0 {
+			label = components.ClampTextWidth(label, maxLabelWidth)
+		}
 		absIdx := m.keyList.RelToAbs(i)
 		if m.section == 0 && m.keyList.IsSelected(absIdx) {
 			rows.WriteString(SelectedStyle.Render("  > " + label))
@@ -304,7 +310,12 @@ func (m ProfileModel) renderAgents() string {
 
 	var rows strings.Builder
 	visible := m.agentList.Visible()
+	contentWidth := components.BoxContentWidth(m.width)
+	maxLabelWidth := contentWidth - 4
 	for i, label := range visible {
+		if maxLabelWidth > 0 {
+			label = components.ClampTextWidth(label, maxLabelWidth)
+		}
 		absIdx := m.agentList.RelToAbs(i)
 		if m.section == 1 && m.agentList.IsSelected(absIdx) {
 			rows.WriteString(SelectedStyle.Render("  > " + label))
@@ -363,14 +374,16 @@ func (m ProfileModel) handleAgentDetailKeys(msg tea.KeyMsg) (ProfileModel, tea.C
 }
 
 func formatKeyLine(k api.APIKey) string {
-	prefix := k.KeyPrefix + "..."
+	prefix := components.SanitizeOneLine(k.KeyPrefix + "...")
 	owner := "-"
 	if k.EntityName != nil {
 		owner = *k.EntityName
 	} else if k.AgentName != nil {
 		owner = "agent: " + *k.AgentName
 	}
-	return fmt.Sprintf("%-12s  %-20s  %-5s  %s", prefix, k.Name, k.CreatedAt.Format("01/02"), owner)
+	name := components.SanitizeOneLine(k.Name)
+	owner = components.SanitizeOneLine(owner)
+	return fmt.Sprintf("%-12s  %-20s  %-5s  %s", prefix, name, k.CreatedAt.Format("01/02"), owner)
 }
 
 func formatAgentLine(a api.Agent) string {
@@ -378,5 +391,7 @@ func formatAgentLine(a api.Agent) string {
 	if !a.RequiresApproval {
 		trust = "trusted"
 	}
-	return fmt.Sprintf("[%s] %s (%s)", a.Status, a.Name, trust)
+	status := components.SanitizeOneLine(a.Status)
+	name := components.SanitizeOneLine(a.Name)
+	return fmt.Sprintf("[%s] %s (%s)", status, name, trust)
 }

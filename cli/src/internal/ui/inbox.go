@@ -33,6 +33,8 @@ type InboxModel struct {
 	filterBuf     string
 	filtered      []int
 	selected      map[string]bool
+	confirming    bool
+	confirmBulk   bool
 	rejecting     bool
 	rejectBuf     string
 	bulkRejectIDs []string
@@ -67,6 +69,7 @@ func (m InboxModel) Update(msg tea.Msg) (InboxModel, tea.Cmd) {
 		m.rejecting = false
 		m.rejectBuf = ""
 		m.bulkRejectIDs = nil
+		m.confirming = false
 		m.selected = make(map[string]bool)
 		return m, m.loadApprovals
 
@@ -80,6 +83,17 @@ func (m InboxModel) Update(msg tea.Msg) (InboxModel, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		if m.confirmBulk && m.confirming {
+			switch {
+			case isKey(msg, "y"):
+				m.confirming = false
+				return m.approveSelected()
+			case isKey(msg, "n"), isBack(msg):
+				m.confirming = false
+				return m, nil
+			}
+			return m, nil
+		}
 		if m.filtering {
 			return m.handleFilterInput(msg)
 		}
@@ -107,10 +121,18 @@ func (m InboxModel) Update(msg tea.Msg) (InboxModel, tea.Cmd) {
 				return m, m.loadApprovalDiff(item.ID)
 			}
 		case isKey(msg, "a"):
+			if m.confirmBulk && m.selectedCount() > 1 {
+				m.confirming = true
+				return m, nil
+			}
 			return m.approveSelected()
 		case isKey(msg, "A"):
 			if m.selectedCount() == 0 {
 				m.selectAllFiltered()
+			}
+			if m.confirmBulk && m.selectedCount() > 1 {
+				m.confirming = true
+				return m, nil
 			}
 			return m.approveSelected()
 		case isKey(msg, "r"):
@@ -131,6 +153,15 @@ func (m InboxModel) Update(msg tea.Msg) (InboxModel, tea.Cmd) {
 func (m InboxModel) View() string {
 	if m.loading {
 		return "  " + MutedStyle.Render("Loading approvals...")
+	}
+
+	if m.confirmBulk && m.confirming {
+		count := m.selectedCount()
+		if count == 0 {
+			count = len(m.items)
+		}
+		body := fmt.Sprintf("Approve %d items?", count)
+		return components.Indent(components.ConfirmDialog("Approve", body), 1)
 	}
 
 	if m.rejecting && m.detail != nil {
@@ -156,12 +187,17 @@ func (m InboxModel) View() string {
 	}
 
 	var rows strings.Builder
+	contentWidth := components.BoxContentWidth(m.width)
+	maxLabelWidth := contentWidth - 6
 	visible := m.list.Visible()
 	for i, label := range visible {
 		absIdx := m.list.RelToAbs(i)
 		item, ok := m.itemAtFilteredIndex(absIdx)
 		if !ok {
 			continue
+		}
+		if maxLabelWidth > 0 {
+			label = components.ClampTextWidth(label, maxLabelWidth)
 		}
 		prefix := "  - "
 		if m.selected[item.ID] {

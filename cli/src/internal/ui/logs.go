@@ -290,8 +290,13 @@ func (m LogsModel) renderList() string {
 	}
 
 	var rows strings.Builder
+	contentWidth := components.BoxContentWidth(m.width)
+	maxLabelWidth := contentWidth - 4
 	visible := m.list.Visible()
 	for i, label := range visible {
+		if maxLabelWidth > 0 {
+			label = components.ClampTextWidth(label, maxLabelWidth)
+		}
 		absIdx := m.list.RelToAbs(i)
 		if m.list.IsSelected(absIdx) {
 			rows.WriteString(SelectedStyle.Render("  > " + label))

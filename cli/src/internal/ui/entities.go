@@ -1241,12 +1241,17 @@ func (m EntitiesModel) renderHistory() string {
 	}
 	title := "History"
 	if m.detail != nil {
-		title = fmt.Sprintf("History - %s", m.detail.Name)
+		title = fmt.Sprintf("History - %s", components.SanitizeOneLine(m.detail.Name))
 	}
 
 	var rows strings.Builder
 	visible := m.historyList.Visible()
+	contentWidth := components.BoxContentWidth(m.width)
+	maxLabelWidth := contentWidth - 4
 	for i, label := range visible {
+		if maxLabelWidth > 0 {
+			label = components.ClampTextWidth(label, maxLabelWidth)
+		}
 		absIdx := m.historyList.RelToAbs(i)
 		if m.historyList.IsSelected(absIdx) {
 			rows.WriteString(SelectedStyle.Render("  > " + label))

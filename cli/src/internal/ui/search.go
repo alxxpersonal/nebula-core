@@ -133,8 +133,13 @@ func (m SearchModel) View() string {
 	} else if len(m.items) == 0 {
 		b.WriteString(MutedStyle.Render("No matches."))
 	} else {
+		contentWidth := components.BoxContentWidth(m.width)
+		maxLabelWidth := contentWidth - 4
 		visible := m.list.Visible()
 		for i, label := range visible {
+			if maxLabelWidth > 0 {
+				label = components.ClampTextWidth(label, maxLabelWidth)
+			}
 			absIdx := m.list.RelToAbs(i)
 			if m.list.IsSelected(absIdx) {
 				b.WriteString(SelectedStyle.Render("  > " + label))

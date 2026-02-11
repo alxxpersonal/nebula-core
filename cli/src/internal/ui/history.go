@@ -56,6 +56,7 @@ type HistoryModel struct {
 	actorList *components.List
 }
 
+// NewHistoryModel builds the audit history UI model.
 func NewHistoryModel(client *api.Client) HistoryModel {
 	return HistoryModel{
 		client:    client,
@@ -299,8 +300,13 @@ func (m HistoryModel) renderList() string {
 		rows.WriteString(MutedStyle.Render(filterLine))
 		rows.WriteString("\n\n")
 	}
+	contentWidth := components.BoxContentWidth(m.width)
+	maxLabelWidth := contentWidth - 4
 	visible := m.list.Visible()
 	for i, label := range visible {
+		if maxLabelWidth > 0 {
+			label = components.ClampTextWidth(label, maxLabelWidth)
+		}
 		absIdx := m.list.RelToAbs(i)
 		if m.list.IsSelected(absIdx) {
 			rows.WriteString(SelectedStyle.Render("  > " + label))
@@ -320,8 +326,13 @@ func (m HistoryModel) renderScopes() string {
 		return components.Indent(components.Box(content, m.width), 1)
 	}
 	var rows strings.Builder
+	contentWidth := components.BoxContentWidth(m.width)
+	maxLabelWidth := contentWidth - 4
 	visible := m.scopeList.Visible()
 	for i, label := range visible {
+		if maxLabelWidth > 0 {
+			label = components.ClampTextWidth(label, maxLabelWidth)
+		}
 		absIdx := m.scopeList.RelToAbs(i)
 		if m.scopeList.IsSelected(absIdx) {
 			rows.WriteString(SelectedStyle.Render("  > " + label))
@@ -341,8 +352,13 @@ func (m HistoryModel) renderActors() string {
 		return components.Indent(components.Box(content, m.width), 1)
 	}
 	var rows strings.Builder
+	contentWidth := components.BoxContentWidth(m.width)
+	maxLabelWidth := contentWidth - 4
 	visible := m.actorList.Visible()
 	for i, label := range visible {
+		if maxLabelWidth > 0 {
+			label = components.ClampTextWidth(label, maxLabelWidth)
+		}
 		absIdx := m.actorList.RelToAbs(i)
 		if m.actorList.IsSelected(absIdx) {
 			rows.WriteString(SelectedStyle.Render("  > " + label))

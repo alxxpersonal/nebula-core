@@ -86,13 +86,15 @@ type App struct {
 
 // NewApp creates the root application model.
 func NewApp(client *api.Client, cfg *config.Config) App {
+	inbox := NewInboxModel(client)
+	inbox.confirmBulk = true
 	return App{
 		client:         client,
 		config:         cfg,
 		tab:            tabInbox,
 		tabNav:         true,
 		paletteActions: defaultPaletteActions(),
-		inbox:          NewInboxModel(client),
+		inbox:          inbox,
 		entities:       NewEntitiesModel(client),
 		rels:           NewRelationshipsModel(client),
 		know:           NewKnowledgeModel(client),
@@ -176,6 +178,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a.applySearchSelection(msg)
 
 	case tea.KeyMsg:
+		if a.err != "" {
+			a.err = ""
+		}
 		if a.importExportOpen {
 			var cmd tea.Cmd
 			a.impex, cmd = a.impex.Update(msg)
@@ -818,7 +823,7 @@ func (a *App) openPalette() {
 
 func (a App) renderPalette() string {
 	title := "Command Palette"
-	query := components.SanitizeText(a.paletteQuery)
+	query := components.SanitizeOneLine(a.paletteQuery)
 	if query == "" {
 		query = ""
 	}
@@ -835,11 +840,9 @@ func (a App) renderPalette() string {
 		b.WriteString(MutedStyle.Render("No matches."))
 	} else {
 		for i, item := range items {
-			line := fmt.Sprintf(
-				"%s  %s",
-				components.SanitizeText(item.Label),
-				MutedStyle.Render(components.SanitizeText(item.Desc)),
-			)
+			label := components.SanitizeOneLine(item.Label)
+			desc := components.SanitizeOneLine(item.Desc)
+			line := fmt.Sprintf("%s  %s", label, MutedStyle.Render(desc))
 			if i == a.paletteIndex {
 				b.WriteString(SelectedStyle.Render("  > " + line))
 			} else {

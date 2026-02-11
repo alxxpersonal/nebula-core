@@ -54,6 +54,9 @@ var (
 
 func boxWidth(width int) int {
 	// Use ~70% of terminal width, capped at 80
+	if width <= 0 {
+		return 0
+	}
 	w := width * 70 / 100
 	if w < 40 {
 		w = 40
@@ -64,14 +67,25 @@ func boxWidth(width int) int {
 	return w
 }
 
+func safeBoxWidth(width int) int {
+	if width <= 0 {
+		return boxWidth(width)
+	}
+	w := boxWidth(width)
+	if w > width {
+		return width
+	}
+	return w
+}
+
 // Box renders content inside a bordered box.
 func Box(content string, width int) string {
-	return boxBorder.Width(boxWidth(width)).Render(content)
+	return boxBorder.Width(safeBoxWidth(width)).Render(content)
 }
 
 // BoxContentWidth returns the inner content width excluding border and padding.
 func BoxContentWidth(width int) int {
-	w := boxWidth(width)
+	w := safeBoxWidth(width)
 	if w <= 0 {
 		return 0
 	}
@@ -83,9 +97,21 @@ func BoxContentWidth(width int) int {
 	return inner
 }
 
+// ClampTextWidth truncates text to the given visual width (ANSI-aware).
+func ClampTextWidth(text string, width int) string {
+	if width <= 0 {
+		return text
+	}
+	cleaned := SanitizeOneLine(text)
+	if lipgloss.Width(cleaned) <= width {
+		return cleaned
+	}
+	return truncateRunes(cleaned, width)
+}
+
 // ActiveBox renders content inside a highlighted bordered box.
 func ActiveBox(content string, width int) string {
-	return boxBorderActive.Width(boxWidth(width)).Render(content)
+	return boxBorderActive.Width(safeBoxWidth(width)).Render(content)
 }
 
 // ErrorBox renders a red bordered box for errors.
@@ -95,7 +121,7 @@ func ErrorBox(title, message string, width int) string {
 		header = errorHeaderStyle.Render(title) + "\n\n"
 	}
 	body := errorBodyStyle.Render(message)
-	return errorBorder.Width(boxWidth(width)).Render(header + body)
+	return errorBorder.Width(safeBoxWidth(width)).Render(header + body)
 }
 
 // TitledBox renders a box with a header title.
@@ -105,9 +131,9 @@ func TitledBox(title, content string, width int) string {
 
 func titledBoxWithStyle(title, content string, width int, boxStyle, headerStyle lipgloss.Style, borderColor lipgloss.Color) string {
 	if title == "" {
-		return boxStyle.Width(boxWidth(width)).Render(content)
+		return boxStyle.Width(safeBoxWidth(width)).Render(content)
 	}
-	boxed := boxStyle.Width(boxWidth(width)).Render(content)
+	boxed := boxStyle.Width(safeBoxWidth(width)).Render(content)
 	lines := strings.Split(boxed, "\n")
 	if len(lines) == 0 {
 		return boxed
@@ -169,10 +195,25 @@ func truncateRunes(s string, max int) string {
 	return b.String()
 }
 
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func padRight(s string, width int) string {
+	w := lipgloss.Width(s)
+	if w >= width {
+		return s
+	}
+	return s + strings.Repeat(" ", width-w)
+}
+
 // InfoRow renders a label: value row for detail views.
 func InfoRow(label, value string) string {
-	safeLabel := SanitizeText(label)
-	safeValue := SanitizeText(value)
+	safeLabel := SanitizeOneLine(label)
+	safeValue := SanitizeOneLine(value)
 	return boxMutedStyle.Render(safeLabel+": ") + boxValueStyle.Render(safeValue)
 }
 
@@ -187,18 +228,49 @@ func Table(title string, rows []TableRow, width int) string {
 	safeRows := make([]TableRow, len(rows))
 	for i, r := range rows {
 		safeRows[i] = TableRow{
-			Label: SanitizeText(r.Label),
-			Value: SanitizeText(r.Value),
+			Label: SanitizeOneLine(r.Label),
+			Value: SanitizeOneLine(r.Value),
 		}
-		if len(safeRows[i].Label) > maxLabel {
-			maxLabel = len(safeRows[i].Label)
+		if lipgloss.Width(safeRows[i].Label) > maxLabel {
+			maxLabel = lipgloss.Width(safeRows[i].Label)
+		}
+	}
+
+	contentWidth := BoxContentWidth(width)
+	if contentWidth <= 0 {
+		contentWidth = maxLabel + 8
+	}
+
+	labelWidth := maxLabel
+	if labelWidth > 24 {
+		labelWidth = 24
+	}
+	if contentWidth > 0 {
+		maxLabelWidth := contentWidth / 2
+		if maxLabelWidth < 8 {
+			maxLabelWidth = contentWidth
+		}
+		if labelWidth > maxLabelWidth {
+			labelWidth = maxLabelWidth
+		}
+	}
+	if labelWidth < 4 {
+		labelWidth = maxLabel
+	}
+	valueWidth := contentWidth - labelWidth - 2
+	if valueWidth < 4 {
+		valueWidth = 4
+		if contentWidth > 0 {
+			labelWidth = maxInt(4, contentWidth-valueWidth-2)
 		}
 	}
 
 	var b strings.Builder
 	for i, r := range safeRows {
-		label := boxLabelStyle.Render(fmt.Sprintf("%-*s", maxLabel, r.Label))
-		b.WriteString(label + "  " + boxValueStyle.Render(r.Value))
+		labelText := ClampTextWidth(r.Label, labelWidth)
+		valueText := ClampTextWidth(r.Value, valueWidth)
+		label := boxLabelStyle.Render(padRight(labelText, labelWidth))
+		b.WriteString(label + "  " + boxValueStyle.Render(valueText))
 		if i < len(safeRows)-1 {
 			b.WriteString("\n")
 		}
@@ -228,7 +300,7 @@ func Indent(s string, spaces int) string {
 
 // CenterLine centers a single line within the standard box width.
 func CenterLine(s string, width int) string {
-	w := boxWidth(width)
+	w := safeBoxWidth(width)
 	if w <= 0 {
 		return s
 	}
@@ -259,6 +331,7 @@ func DiffTable(title string, rows []DiffRow, width int) string {
 	removeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#ff4d6d"))
 	addStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#ffbf3f"))
 	renderValue := func(style lipgloss.Style, prefix string, value string) string {
+		value = SanitizeText(value)
 		if value == "" {
 			value = "-"
 		}
@@ -279,7 +352,8 @@ func DiffTable(title string, rows []DiffRow, width int) string {
 
 	var b strings.Builder
 	for i, r := range rows {
-		b.WriteString(diffLabelStyle.Render(r.Label))
+		label := SanitizeOneLine(r.Label)
+		b.WriteString(diffLabelStyle.Render(label))
 		b.WriteString("\n")
 		b.WriteString(renderValue(removeStyle, "  - ", r.From))
 		b.WriteString("\n")

@@ -93,6 +93,7 @@ type ProtocolsModel struct {
 	editSaving    bool
 }
 
+// NewProtocolsModel builds the protocols UI model.
 func NewProtocolsModel(client *api.Client) ProtocolsModel {
 	return ProtocolsModel{
 		client: client,
@@ -245,9 +246,11 @@ func (m *ProtocolsModel) applySearch() {
 	}
 	labels := make([]string, 0, len(m.items))
 	for _, item := range m.items {
-		label := item.Name
+		name := components.SanitizeOneLine(item.Name)
+		title := components.SanitizeOneLine(item.Title)
+		label := name
 		if strings.TrimSpace(item.Title) != "" {
-			label = fmt.Sprintf("%s · %s", item.Name, item.Title)
+			label = fmt.Sprintf("%s · %s", name, title)
 		}
 		labels = append(labels, label)
 	}
@@ -312,7 +315,12 @@ func (m ProtocolsModel) renderList() string {
 	}
 	var rows strings.Builder
 	visible := m.list.Visible()
+	contentWidth := components.BoxContentWidth(m.width)
+	maxLabelWidth := contentWidth - 4
 	for i, label := range visible {
+		if maxLabelWidth > 0 {
+			label = components.ClampTextWidth(label, maxLabelWidth)
+		}
 		absIdx := m.list.RelToAbs(i)
 		if m.list.IsSelected(absIdx) {
 			rows.WriteString(SelectedStyle.Render("  > " + label))
@@ -381,7 +389,10 @@ func (m ProtocolsModel) renderDetail() string {
 
 	sections := []string{components.Table("Protocol", rows, m.width)}
 	if p.Content != nil && strings.TrimSpace(*p.Content) != "" {
-		sections = append(sections, components.TitledBox("Content", *p.Content, m.width))
+		sections = append(
+			sections,
+			components.TitledBox("Content", components.SanitizeText(*p.Content), m.width),
+		)
 	}
 	if len(p.Metadata) > 0 {
 		sections = append(sections, renderMetadataBlock(map[string]any(p.Metadata), m.width, true))
