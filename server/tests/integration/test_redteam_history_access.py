@@ -48,7 +48,6 @@ async def _make_entity(db_pool, enums, name, scopes):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="entity history should respect privacy scopes")
 async def test_get_entity_history_denies_private_entity(db_pool, enums):
     """Entity history should be denied when entity is outside agent scopes."""
 
@@ -66,6 +65,6 @@ async def test_get_entity_history_denies_private_entity(db_pool, enums):
     ctx = _make_context(db_pool, enums, public_agent)
 
     payload = GetEntityHistoryInput(entity_id=str(private_entity["id"]))
-    rows = await get_entity_history(payload, ctx)
 
-    assert rows == []
+    with pytest.raises(ValueError):
+        await get_entity_history(payload, ctx)
