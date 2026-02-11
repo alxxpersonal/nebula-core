@@ -7,6 +7,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Callable
+from uuid import UUID
 
 # Third-Party
 from asyncpg import Pool
@@ -184,6 +185,49 @@ def _require_job_owner(agent: dict, enums: Any, job: dict) -> None:
         raise ValueError("Access denied")
 
 
+async def _require_entity_write_access(
+    pool: Pool, enums: Any, agent: dict, entity_ids: list[str]
+) -> None:
+    if _is_admin(agent, enums):
+        return
+    if not entity_ids:
+        return
+    rows = await pool.fetch(QUERIES["entities/scopes_by_ids"], entity_ids)
+    if len(rows) != len(set(entity_ids)):
+        raise ValueError("Entity not found")
+    agent_scopes = agent.get("scopes", []) or []
+    for row in rows:
+        if not _has_write_scopes(agent_scopes, row.get("privacy_scope_ids") or []):
+            raise ValueError("Access denied")
+
+
+async def _has_hidden_relationships(
+    pool: Pool, enums: Any, agent: dict, node_type: str, node_id: str
+) -> bool:
+    if _is_admin(agent, enums):
+        return False
+    scope_ids = agent.get("scopes", []) or []
+    all_rows = await pool.fetch(
+        QUERIES["relationships/get"], node_type, node_id, "both", None, None
+    )
+    if not all_rows:
+        return False
+    scoped_rows = await pool.fetch(
+        QUERIES["relationships/get"], node_type, node_id, "both", None, scope_ids
+    )
+    if len(scoped_rows) < len(all_rows):
+        return True
+    for rel in all_rows:
+        if rel["source_type"] == "job" or rel["target_type"] == "job":
+            job_id = (
+                rel["source_id"] if rel["source_type"] == "job" else rel["target_id"]
+            )
+            job_row = await pool.fetchrow(QUERIES["jobs/get"], job_id)
+            if job_row and job_row.get("agent_id") != agent.get("id"):
+                return True
+    return False
+
+
 async def _node_allowed(
     pool: Pool, enums: Any, agent: dict, node_type: str, node_id: str
 ) -> bool:
@@ -201,6 +245,11 @@ async def _node_allowed(
         scope_ids = agent.get("scopes", []) or []
         row = await pool.fetchrow(QUERIES["knowledge/get"], node_id, scope_ids)
         return row is not None
+    if node_type == "job":
+        row = await pool.fetchrow(QUERIES["jobs/get"], node_id)
+        if not row:
+            return False
+        return row.get("agent_id") == agent.get("id")
     return True
 
 
@@ -239,6 +288,9 @@ async def _validate_relationship_node(
         row = await pool.fetchrow(QUERIES["jobs/get"], node_id)
         if not row:
             raise ValueError(f"{label} job not found")
+        if require_write and not _is_admin(agent, enums):
+            if row.get("agent_id") != agent.get("id"):
+                raise ValueError("Access denied")
         return
     raise ValueError(f"Unsupported {label.lower()} type")
 
@@ -301,6 +353,27 @@ async def _run_bulk_import(
                     normalized["scopes"] = enforce_scope_subset(
                         normalized["scopes"], allowed_scopes
                     )
+                if action == "bulk_import_jobs" and not _is_admin(agent, enums):
+                    normalized["agent_id"] = agent.get("id")
+                if action == "bulk_import_relationships":
+                    await _validate_relationship_node(
+                        pool,
+                        enums,
+                        agent,
+                        normalized.get("source_type", ""),
+                        normalized.get("source_id", ""),
+                        "Source",
+                        require_write=True,
+                    )
+                    await _validate_relationship_node(
+                        pool,
+                        enums,
+                        agent,
+                        normalized.get("target_type", ""),
+                        normalized.get("target_id", ""),
+                        "Target",
+                        require_write=True,
+                    )
                 approval = await create_approval_request(
                     pool,
                     agent["id"],
@@ -333,6 +406,27 @@ async def _run_bulk_import(
                     if "scopes" in normalized:
                         normalized["scopes"] = enforce_scope_subset(
                             normalized["scopes"], allowed_scopes
+                        )
+                    if action == "bulk_import_jobs" and not _is_admin(agent, enums):
+                        normalized["agent_id"] = agent.get("id")
+                    if action == "bulk_import_relationships":
+                        await _validate_relationship_node(
+                            conn,
+                            enums,
+                            agent,
+                            normalized.get("source_type", ""),
+                            normalized.get("source_id", ""),
+                            "Source",
+                            require_write=True,
+                        )
+                        await _validate_relationship_node(
+                            conn,
+                            enums,
+                            agent,
+                            normalized.get("target_type", ""),
+                            normalized.get("target_id", ""),
+                            "Target",
+                            require_write=True,
                         )
                     result = await executor(conn, enums, normalized)
                     created.append(result)
@@ -513,7 +607,15 @@ async def query_entities(payload: QueryEntitiesInput, ctx: Context) -> list[dict
         limit,
         offset,
     )
-    return [dict(r) for r in rows]
+    results = []
+    for row in rows:
+        entity = dict(row)
+        if entity.get("metadata"):
+            entity["metadata"] = filter_context_segments(
+                entity["metadata"], allowed_scopes
+            )
+        results.append(entity)
+    return results
 
 
 @mcp.tool()
@@ -546,6 +648,7 @@ async def bulk_update_entity_tags(
     """Bulk update entity tags."""
 
     pool, enums, agent = await require_context(ctx)
+    await _require_entity_write_access(pool, enums, agent, payload.entity_ids)
 
     if resp := await maybe_require_approval(
         pool, agent, "bulk_update_entity_tags", payload.model_dump()
@@ -566,6 +669,7 @@ async def bulk_update_entity_scopes(
     """Bulk update entity privacy scopes."""
 
     pool, enums, agent = await require_context(ctx)
+    await _require_entity_write_access(pool, enums, agent, payload.entity_ids)
 
     op = normalize_bulk_operation(payload.op)
     allowed_scopes = scope_names_from_ids(agent.get("scopes", []), enums)
@@ -591,6 +695,7 @@ async def search_entities_by_metadata(
     pool, enums, agent = await require_context(ctx)
     scope_ids = agent.get("scopes", [])
     limit = _clamp_limit(payload.limit)
+    scope_names = scope_names_from_ids(scope_ids, enums)
 
     rows = await pool.fetch(
         QUERIES["entities/search_by_metadata"],
@@ -598,7 +703,15 @@ async def search_entities_by_metadata(
         limit,
         scope_ids,
     )
-    return [dict(r) for r in rows]
+    results = []
+    for row in rows:
+        entity = dict(row)
+        if entity.get("metadata"):
+            entity["metadata"] = filter_context_segments(
+                entity["metadata"], scope_names
+            )
+        results.append(entity)
+    return results
 
 
 @mcp.tool()
@@ -626,6 +739,8 @@ async def get_entity_history(
     pool, enums, agent = await require_context(ctx)
     limit = _clamp_limit(payload.limit)
     offset = max(0, payload.offset)
+    if not await _node_allowed(pool, enums, agent, "entity", payload.entity_id):
+        raise ValueError("Access denied")
     return await fetch_entity_history(pool, payload.entity_id, limit, offset)
 
 
@@ -655,6 +770,10 @@ async def revert_entity(payload: RevertEntityInput, ctx: Context) -> dict:
     """Revert an entity to a historical audit entry."""
 
     pool, enums, agent = await require_context(ctx)
+    try:
+        UUID(str(payload.audit_id))
+    except ValueError as exc:
+        raise ValueError("Invalid audit id") from exc
     audit_row = await pool.fetchrow(QUERIES["audit/get"], payload.audit_id)
     if not audit_row:
         raise ValueError("Audit entry not found")
@@ -718,7 +837,14 @@ async def query_knowledge(payload: QueryKnowledgeInput, ctx: Context) -> list[di
         limit,
         offset,
     )
-    return [dict(r) for r in rows]
+    scope_names = scope_names_from_ids(scope_ids, enums)
+    results = []
+    for row in rows:
+        item = dict(row)
+        if item.get("metadata"):
+            item["metadata"] = filter_context_segments(item["metadata"], scope_names)
+        results.append(item)
+    return results
 
 
 @mcp.tool()
@@ -726,6 +852,24 @@ async def link_knowledge_to_entity(payload: LinkKnowledgeInput, ctx: Context) ->
     """Link knowledge item to entity via relationship."""
 
     pool, enums, agent = await require_context(ctx)
+    await _validate_relationship_node(
+        pool,
+        enums,
+        agent,
+        "knowledge",
+        payload.knowledge_id,
+        "Source",
+        require_write=True,
+    )
+    await _validate_relationship_node(
+        pool,
+        enums,
+        agent,
+        "entity",
+        payload.entity_id,
+        "Target",
+        require_write=True,
+    )
     relationship_payload = {
         "source_type": "knowledge",
         "source_id": payload.knowledge_id,
@@ -765,6 +909,8 @@ async def get_log(payload: GetLogInput, ctx: Context) -> dict:
     row = await pool.fetchrow(QUERIES["logs/get"], payload.log_id)
     if not row:
         raise ValueError(f"Log '{payload.log_id}' not found")
+    if await _has_hidden_relationships(pool, enums, agent, "log", payload.log_id):
+        raise ValueError("Access denied")
     return dict(row)
 
 
@@ -787,7 +933,12 @@ async def query_logs(payload: QueryLogsInput, ctx: Context) -> list[dict]:
         limit,
         offset,
     )
-    return [dict(r) for r in rows]
+    results = []
+    for row in rows:
+        if await _has_hidden_relationships(pool, enums, agent, "log", row["id"]):
+            continue
+        results.append(dict(row))
+    return results
 
 
 @mcp.tool()
@@ -795,6 +946,8 @@ async def update_log(payload: UpdateLogInput, ctx: Context) -> dict:
     """Update a log entry."""
 
     pool, enums, agent = await require_context(ctx)
+    if await _has_hidden_relationships(pool, enums, agent, "log", payload.log_id):
+        raise ValueError("Access denied")
     if resp := await maybe_require_approval(
         pool, agent, "update_log", payload.model_dump()
     ):
@@ -852,7 +1005,16 @@ async def get_relationships(payload: GetRelationshipsInput, ctx: Context) -> lis
         payload.relationship_type,
         scope_ids,
     )
-    return [dict(r) for r in rows]
+    results = []
+    for row in rows:
+        if row["source_type"] == "job":
+            if not await _node_allowed(pool, enums, agent, "job", row["source_id"]):
+                continue
+        if row["target_type"] == "job":
+            if not await _node_allowed(pool, enums, agent, "job", row["target_id"]):
+                continue
+        results.append(dict(row))
+    return results
 
 
 @mcp.tool()
@@ -874,7 +1036,16 @@ async def query_relationships(
         limit,
         scope_ids,
     )
-    return [dict(r) for r in rows]
+    results = []
+    for row in rows:
+        if row["source_type"] == "job":
+            if not await _node_allowed(pool, enums, agent, "job", row["source_id"]):
+                continue
+        if row["target_type"] == "job":
+            if not await _node_allowed(pool, enums, agent, "job", row["target_id"]):
+                continue
+        results.append(dict(row))
+    return results
 
 
 @mcp.tool()
@@ -1156,6 +1327,8 @@ async def get_file(payload: GetFileInput, ctx: Context) -> dict:
     row = await pool.fetchrow(QUERIES["files/get"], payload.file_id)
     if not row:
         raise ValueError(f"File '{payload.file_id}' not found")
+    if await _has_hidden_relationships(pool, enums, agent, "file", payload.file_id):
+        raise ValueError("Access denied")
 
     return dict(row)
 
@@ -1176,7 +1349,12 @@ async def list_files(payload: QueryFilesInput, ctx: Context) -> list[dict]:
         limit,
         offset,
     )
-    return [dict(r) for r in rows]
+    results = []
+    for row in rows:
+        if await _has_hidden_relationships(pool, enums, agent, "file", row["id"]):
+            continue
+        results.append(dict(row))
+    return results
 
 
 async def _attach_file(
@@ -1205,6 +1383,15 @@ async def _attach_file(
     file_row = await pool.fetchrow(QUERIES["files/get"], payload.file_id)
     if not file_row:
         raise ValueError("File not found")
+    await _validate_relationship_node(
+        pool,
+        enums,
+        agent,
+        target_type,
+        payload.target_id,
+        "Target",
+        require_write=True,
+    )
 
     relationship = {
         "source_type": "file",

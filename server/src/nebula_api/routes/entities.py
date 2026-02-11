@@ -38,6 +38,41 @@ from nebula_mcp.query_loader import QueryLoader
 QUERIES = QueryLoader(Path(__file__).resolve().parents[2] / "queries")
 
 router = APIRouter()
+ADMIN_SCOPE_NAMES = {"vault-only", "sensitive"}
+
+
+def _is_admin(auth: dict, enums: Any) -> bool:
+    scope_ids = set(auth.get("scopes", []))
+    allowed_ids = {
+        enums.scopes.name_to_id.get(name)
+        for name in ADMIN_SCOPE_NAMES
+        if enums.scopes.name_to_id.get(name)
+    }
+    return bool(scope_ids.intersection(allowed_ids))
+
+
+def _has_write_scopes(agent_scopes: list, node_scopes: list) -> bool:
+    if not node_scopes:
+        return True
+    if not agent_scopes:
+        return False
+    return set(node_scopes).issubset(set(agent_scopes))
+
+
+async def _require_entity_write_access(
+    pool: Any, enums: Any, auth: dict, entity_ids: list[str]
+) -> None:
+    if auth["caller_type"] != "agent":
+        return
+    if _is_admin(auth, enums):
+        return
+    rows = await pool.fetch(QUERIES["entities/scopes_by_ids"], entity_ids)
+    if len(rows) != len(set(entity_ids)):
+        api_error("NOT_FOUND", "Entity not found", 404)
+    agent_scopes = auth.get("scopes", []) or []
+    for row in rows:
+        if not _has_write_scopes(agent_scopes, row.get("privacy_scope_ids") or []):
+            api_error("FORBIDDEN", "Entity not in your scopes", 403)
 
 
 def _validate_tag_list(tags: list[str] | None) -> list[str] | None:
@@ -246,6 +281,14 @@ async def get_entity_history(
         API response with audit history entries.
     """
     pool = request.app.state.pool
+    row = await pool.fetchrow(QUERIES["entities/get"], entity_id)
+    if not row:
+        api_error("NOT_FOUND", "Entity not found", 404)
+    entity = dict(row)
+    entity_scopes = entity.get("privacy_scope_ids", [])
+    auth_scopes = auth.get("scopes", [])
+    if entity_scopes and not any(s in auth_scopes for s in entity_scopes):
+        api_error("FORBIDDEN", "Entity not in your scopes", 403)
     rows = await fetch_entity_history(pool, entity_id, limit, offset)
     return success(rows)
 
@@ -312,6 +355,8 @@ async def bulk_update_entity_tags(
         pool, auth, "bulk_update_entity_tags", payload.model_dump()
     ):
         return resp
+    enums = request.app.state.enums
+    await _require_entity_write_access(pool, enums, auth, payload.entity_ids)
 
     updated = await do_bulk_update_entity_tags(
         pool, payload.entity_ids, payload.tags, op
@@ -344,6 +389,8 @@ async def bulk_update_entity_scopes(
 
     pool = request.app.state.pool
     enums = request.app.state.enums
+
+    await _require_entity_write_access(pool, enums, auth, payload.entity_ids)
 
     scopes = payload.scopes
     if auth["caller_type"] == "agent":
@@ -405,8 +452,16 @@ async def query_entities(
         limit,
         offset,
     )
-
-    return paginated([dict(r) for r in rows], len(rows), limit, offset)
+    scope_names = [enums.scopes.id_to_name.get(s, "") for s in scope_ids]
+    results = []
+    for row in rows:
+        entity = dict(row)
+        if entity.get("metadata"):
+            entity["metadata"] = filter_context_segments(
+                entity["metadata"], scope_names
+            )
+        results.append(entity)
+    return paginated(results, len(results), limit, offset)
 
 
 @router.patch("/{entity_id}")
@@ -430,10 +485,15 @@ async def update_entity(
     pool = request.app.state.pool
     enums = request.app.state.enums
 
+    await _require_entity_write_access(pool, enums, auth, [entity_id])
+
     change = payload.model_dump()
     change["entity_id"] = entity_id
     if change.get("metadata") is None:
         change.pop("metadata", None)
+    if auth["caller_type"] == "agent" and change.get("scopes") is not None:
+        allowed = scope_names_from_ids(auth.get("scopes", []), enums)
+        change["scopes"] = enforce_scope_subset(change["scopes"], allowed)
     if resp := await maybe_check_agent_approval(pool, auth, "update_entity", change):
         return resp
     result = await execute_update_entity(pool, enums, change)
@@ -465,4 +525,14 @@ async def search_by_metadata(
         payload.limit,
         scope_ids,
     )
-    return success([dict(r) for r in rows])
+    enums = request.app.state.enums
+    scope_names = [enums.scopes.id_to_name.get(s, "") for s in scope_ids]
+    results = []
+    for row in rows:
+        entity = dict(row)
+        if entity.get("metadata"):
+            entity["metadata"] = filter_context_segments(
+                entity["metadata"], scope_names
+            )
+        results.append(entity)
+    return success(results)

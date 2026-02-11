@@ -13,13 +13,68 @@ from nebula_api.auth import maybe_check_agent_approval, require_auth
 from nebula_api.response import paginated, success
 from nebula_mcp.enums import require_status
 from nebula_mcp.executors import execute_create_knowledge, execute_create_relationship
-from nebula_mcp.helpers import enforce_scope_subset, scope_names_from_ids
+from nebula_mcp.helpers import (
+    enforce_scope_subset,
+    filter_context_segments,
+    scope_names_from_ids,
+)
 from nebula_mcp.models import MAX_PAGE_LIMIT, MAX_TAG_LENGTH, MAX_TAGS
 from nebula_mcp.query_loader import QueryLoader
 
 QUERIES = QueryLoader(Path(__file__).resolve().parents[2] / "queries")
 
 router = APIRouter()
+ADMIN_SCOPE_NAMES = {"vault-only", "sensitive"}
+
+
+def _is_admin(auth: dict, enums: Any) -> bool:
+    scope_ids = set(auth.get("scopes", []))
+    allowed_ids = {
+        enums.scopes.name_to_id.get(name)
+        for name in ADMIN_SCOPE_NAMES
+        if enums.scopes.name_to_id.get(name)
+    }
+    return bool(scope_ids.intersection(allowed_ids))
+
+
+def _has_write_scopes(agent_scopes: list, node_scopes: list) -> bool:
+    if not node_scopes:
+        return True
+    if not agent_scopes:
+        return False
+    return set(node_scopes).issubset(set(agent_scopes))
+
+
+async def _require_entity_write_access(
+    pool: Any, enums: Any, auth: dict, entity_id: str
+) -> None:
+    if auth["caller_type"] != "agent":
+        return
+    if _is_admin(auth, enums):
+        return
+    row = await pool.fetchrow(QUERIES["entities/get"], entity_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Not Found")
+    if not _has_write_scopes(
+        auth.get("scopes", []), row.get("privacy_scope_ids") or []
+    ):
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+
+async def _require_knowledge_write_access(
+    pool: Any, enums: Any, auth: dict, knowledge_id: str
+) -> None:
+    if auth["caller_type"] != "agent":
+        return
+    if _is_admin(auth, enums):
+        return
+    row = await pool.fetchrow(QUERIES["knowledge/get"], knowledge_id, None)
+    if not row:
+        raise HTTPException(status_code=404, detail="Not Found")
+    if not _has_write_scopes(
+        auth.get("scopes", []), row.get("privacy_scope_ids") or []
+    ):
+        raise HTTPException(status_code=403, detail="Forbidden")
 
 
 def _validate_tag_list(tags: list[str] | None) -> list[str] | None:
@@ -190,7 +245,14 @@ async def query_knowledge(
         limit,
         offset,
     )
-    return paginated([dict(r) for r in rows], len(rows), limit, offset)
+    scope_names = scope_names_from_ids(scope_ids, request.app.state.enums)
+    results = []
+    for row in rows:
+        item = dict(row)
+        if item.get("metadata"):
+            item["metadata"] = filter_context_segments(item["metadata"], scope_names)
+        results.append(item)
+    return paginated(results, len(results), limit, offset)
 
 
 @router.get("/{knowledge_id}")
@@ -218,7 +280,11 @@ async def get_knowledge(
     )
     if not row:
         raise HTTPException(status_code=404, detail="Not Found")
-    return success(dict(row))
+    item = dict(row)
+    if item.get("metadata"):
+        scope_names = scope_names_from_ids(scope_ids, request.app.state.enums)
+        item["metadata"] = filter_context_segments(item["metadata"], scope_names)
+    return success(item)
 
 
 @router.post("/{knowledge_id}/link")
@@ -241,6 +307,8 @@ async def link_to_entity(
     """
     pool = request.app.state.pool
     enums = request.app.state.enums
+    await _require_knowledge_write_access(pool, enums, auth, knowledge_id)
+    await _require_entity_write_access(pool, enums, auth, payload.entity_id)
     relationship_payload = {
         "source_type": "knowledge",
         "source_id": knowledge_id,
@@ -278,6 +346,8 @@ async def update_knowledge(
     """
     pool = request.app.state.pool
     enums = request.app.state.enums
+
+    await _require_knowledge_write_access(pool, enums, auth, knowledge_id)
 
     data = payload.model_dump()
     status_id = None

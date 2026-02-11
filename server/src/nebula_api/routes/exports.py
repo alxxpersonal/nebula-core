@@ -14,11 +14,32 @@ from fastapi import APIRouter, Depends, Query, Request
 from nebula_api.auth import require_auth
 from nebula_api.response import api_error, success
 from nebula_mcp.enums import require_entity_type, require_scopes
+from nebula_mcp.helpers import filter_context_segments, scope_names_from_ids
 from nebula_mcp.query_loader import QueryLoader
 
 QUERIES = QueryLoader(Path(__file__).resolve().parents[2] / "queries")
 
 router = APIRouter()
+ADMIN_SCOPE_NAMES = {"vault-only", "sensitive"}
+
+
+def _is_admin(auth: dict, enums: Any) -> bool:
+    scope_ids = set(auth.get("scopes", []))
+    allowed_ids = {
+        enums.scopes.name_to_id.get(name)
+        for name in ADMIN_SCOPE_NAMES
+        if enums.scopes.name_to_id.get(name)
+    }
+    return bool(scope_ids.intersection(allowed_ids))
+
+
+async def _job_visible(pool: Any, auth: dict, job_id: str) -> bool:
+    if auth["caller_type"] != "agent":
+        return True
+    row = await pool.fetchrow(QUERIES["jobs/get"], job_id)
+    if not row:
+        return False
+    return row.get("agent_id") == auth.get("agent_id")
 
 
 def _flatten_value(value: Any) -> str:
@@ -126,7 +147,14 @@ async def export_entities(
         limit,
         offset,
     )
-    return _export_response([dict(r) for r in rows], format)
+    scope_names = scope_names_from_ids(scope_ids or [], enums)
+    results = []
+    for row in rows:
+        item = dict(row)
+        if item.get("metadata"):
+            item["metadata"] = filter_context_segments(item["metadata"], scope_names)
+        results.append(item)
+    return _export_response(results, format)
 
 
 @router.get("/knowledge")
@@ -171,7 +199,14 @@ async def export_knowledge(
         limit,
         offset,
     )
-    return _export_response([dict(r) for r in rows], format)
+    scope_names = scope_names_from_ids(scope_ids or [], enums)
+    results = []
+    for row in rows:
+        item = dict(row)
+        if item.get("metadata"):
+            item["metadata"] = filter_context_segments(item["metadata"], scope_names)
+        results.append(item)
+    return _export_response(results, format)
 
 
 @router.get("/relationships")
@@ -212,7 +247,18 @@ async def export_relationships(
         limit,
         scope_ids,
     )
-    return _export_response([dict(r) for r in rows], format)
+    if auth["caller_type"] != "agent" or _is_admin(auth, request.app.state.enums):
+        return _export_response([dict(r) for r in rows], format)
+    results = []
+    for row in rows:
+        if row["source_type"] == "job":
+            if not await _job_visible(pool, auth, row["source_id"]):
+                continue
+        if row["target_type"] == "job":
+            if not await _job_visible(pool, auth, row["target_id"]):
+                continue
+        results.append(dict(row))
+    return _export_response(results, format)
 
 
 @router.get("/jobs")
@@ -250,12 +296,16 @@ async def export_jobs(
         Export response payload.
     """
     pool = request.app.state.pool
+    enums = request.app.state.enums
+    agent_filter = agent_id
+    if auth["caller_type"] == "agent" and not _is_admin(auth, enums):
+        agent_filter = auth.get("agent_id")
 
     rows = await pool.fetch(
         QUERIES["jobs/query"],
         status_names or None,
         assigned_to,
-        agent_id,
+        agent_filter,
         priority,
         due_before,
         due_after,
@@ -290,6 +340,7 @@ async def export_context(
         api_error("VALIDATION_ERROR", "Context export supports json only", 400)
 
     pool = request.app.state.pool
+    enums = request.app.state.enums
     scope_ids = auth.get("scopes")
 
     entities_rows = await pool.fetch(
@@ -320,11 +371,14 @@ async def export_context(
         limit,
         scope_ids,
     )
+    job_agent_filter = None
+    if auth["caller_type"] == "agent" and not _is_admin(auth, enums):
+        job_agent_filter = auth.get("agent_id")
     jobs_rows = await pool.fetch(
         QUERIES["jobs/query"],
         None,
         None,
-        None,
+        job_agent_filter,
         None,
         None,
         None,
@@ -333,12 +387,38 @@ async def export_context(
         limit,
     )
 
+    scope_names = scope_names_from_ids(scope_ids or [], enums)
+    entities = []
+    for row in entities_rows:
+        item = dict(row)
+        if item.get("metadata"):
+            item["metadata"] = filter_context_segments(item["metadata"], scope_names)
+        entities.append(item)
+    knowledge = []
+    for row in knowledge_rows:
+        item = dict(row)
+        if item.get("metadata"):
+            item["metadata"] = filter_context_segments(item["metadata"], scope_names)
+        knowledge.append(item)
+    relationships = []
+    if auth["caller_type"] != "agent" or _is_admin(auth, enums):
+        relationships = [dict(r) for r in relationships_rows]
+    else:
+        for row in relationships_rows:
+            if row["source_type"] == "job":
+                if not await _job_visible(pool, auth, row["source_id"]):
+                    continue
+            if row["target_type"] == "job":
+                if not await _job_visible(pool, auth, row["target_id"]):
+                    continue
+            relationships.append(dict(row))
+
     return success(
         {
             "format": "json",
-            "entities": [dict(r) for r in entities_rows],
-            "knowledge": [dict(r) for r in knowledge_rows],
-            "relationships": [dict(r) for r in relationships_rows],
+            "entities": entities,
+            "knowledge": knowledge,
+            "relationships": relationships,
             "jobs": [dict(r) for r in jobs_rows],
         }
     )

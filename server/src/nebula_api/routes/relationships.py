@@ -32,6 +32,55 @@ def _is_admin(auth: dict, enums: EnumRegistry) -> bool:
     return bool(scope_ids.intersection(allowed_ids))
 
 
+def _has_write_scopes(agent_scopes: list, node_scopes: list) -> bool:
+    if not node_scopes:
+        return True
+    if not agent_scopes:
+        return False
+    return set(node_scopes).issubset(set(agent_scopes))
+
+
+async def _job_visible(pool: Any, auth: dict, job_id: str) -> bool:
+    if auth["caller_type"] != "agent":
+        return True
+    row = await pool.fetchrow(QUERIES["jobs/get"], job_id)
+    if not row:
+        return False
+    return row.get("agent_id") == auth.get("agent_id")
+
+
+async def _validate_relationship_node(
+    pool: Any, enums: EnumRegistry, auth: dict, node_type: str, node_id: str
+) -> None:
+    if auth["caller_type"] != "agent":
+        return
+    if _is_admin(auth, enums):
+        return
+    if node_type == "entity":
+        row = await pool.fetchrow(QUERIES["entities/get"], node_id)
+        if not row:
+            api_error("NOT_FOUND", "Entity not found", 404)
+        if not _has_write_scopes(
+            auth.get("scopes", []), row.get("privacy_scope_ids") or []
+        ):
+            api_error("FORBIDDEN", "Access denied", 403)
+        return
+    if node_type == "knowledge":
+        row = await pool.fetchrow(QUERIES["knowledge/get"], node_id, None)
+        if not row:
+            api_error("NOT_FOUND", "Knowledge not found", 404)
+        if not _has_write_scopes(
+            auth.get("scopes", []), row.get("privacy_scope_ids") or []
+        ):
+            api_error("FORBIDDEN", "Access denied", 403)
+        return
+    if node_type == "job":
+        if not await _job_visible(pool, auth, node_id):
+            api_error("FORBIDDEN", "Access denied", 403)
+        return
+    return
+
+
 class CreateRelationshipBody(BaseModel):
     """Payload for creating a relationship.
 
@@ -85,6 +134,12 @@ async def create_relationship(
     data = payload.model_dump()
     if data.get("properties") is None:
         data["properties"] = {}
+    await _validate_relationship_node(
+        pool, enums, auth, data["source_type"], data["source_id"]
+    )
+    await _validate_relationship_node(
+        pool, enums, auth, data["target_type"], data["target_id"]
+    )
     if resp := await maybe_check_agent_approval(
         pool, auth, "create_relationship", data
     ):
@@ -127,7 +182,18 @@ async def get_relationships(
         relationship_type,
         scope_ids,
     )
-    return success([dict(r) for r in rows])
+    if auth["caller_type"] != "agent" or _is_admin(auth, enums):
+        return success([dict(r) for r in rows])
+    results = []
+    for row in rows:
+        if row["source_type"] == "job":
+            if not await _job_visible(pool, auth, row["source_id"]):
+                continue
+        if row["target_type"] == "job":
+            if not await _job_visible(pool, auth, row["target_id"]):
+                continue
+        results.append(dict(row))
+    return success(results)
 
 
 @router.get("/")
@@ -169,7 +235,18 @@ async def query_relationships(
         limit,
         scope_ids,
     )
-    return success([dict(r) for r in rows])
+    if auth["caller_type"] != "agent" or _is_admin(auth, enums):
+        return success([dict(r) for r in rows])
+    results = []
+    for row in rows:
+        if row["source_type"] == "job":
+            if not await _job_visible(pool, auth, row["source_id"]):
+                continue
+        if row["target_type"] == "job":
+            if not await _job_visible(pool, auth, row["target_id"]):
+                continue
+        results.append(dict(row))
+    return success(results)
 
 
 @router.patch("/{relationship_id}")
@@ -197,6 +274,17 @@ async def update_relationship(
         "properties": payload.properties,
         "status": payload.status,
     }
+    row = await pool.fetchrow(
+        QUERIES["relationships/get_by_id"], relationship_id
+    )
+    if not row:
+        api_error("NOT_FOUND", "Relationship not found", 404)
+    await _validate_relationship_node(
+        pool, enums, auth, row["source_type"], row["source_id"]
+    )
+    await _validate_relationship_node(
+        pool, enums, auth, row["target_type"], row["target_id"]
+    )
     if resp := await maybe_check_agent_approval(
         pool, auth, "update_relationship", change
     ):
