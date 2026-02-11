@@ -45,3 +45,39 @@ async def test_relationship_rejects_missing_job(db_pool, enums, mock_mcp_context
 
     with pytest.raises(ValueError):
         await create_relationship(payload, mock_mcp_context)
+
+
+@pytest.mark.asyncio
+@pytest.mark.xfail(reason="invalid UUIDs raise asyncpg DataError")
+async def test_relationship_rejects_invalid_uuid(db_pool, enums, mock_mcp_context):
+    """Relationships should reject malformed UUIDs cleanly."""
+
+    status_id = enums.statuses.name_to_id["active"]
+    type_id = enums.entity_types.name_to_id["person"]
+    scope_ids = [enums.scopes.name_to_id["public"]]
+
+    entity = await db_pool.fetchrow(
+        """
+        INSERT INTO entities (name, type_id, status_id, privacy_scope_ids, tags, metadata)
+        VALUES ($1, $2, $3, $4, $5, $6::jsonb)
+        RETURNING *
+        """,
+        "Valid Target",
+        type_id,
+        status_id,
+        scope_ids,
+        ["test"],
+        json.dumps({}),
+    )
+
+    payload = CreateRelationshipInput(
+        source_type="entity",
+        source_id="not-a-uuid",
+        target_type="entity",
+        target_id=str(entity["id"]),
+        relationship_type="related-to",
+        properties={"note": "bad uuid"},
+    )
+
+    with pytest.raises(ValueError):
+        await create_relationship(payload, mock_mcp_context)
