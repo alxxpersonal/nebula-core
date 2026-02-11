@@ -593,7 +593,7 @@ async def execute_update_entity(
     if payload.metadata:
         entity = await pool.fetchrow(QUERIES["entities/get_type_id"], payload.entity_id)
         if not entity:
-            raise ValueError(f"Entity '{payload.entity_id}' not found")
+            raise ValueError("Entity not found")
 
         type_name = enums.entity_types.id_to_name[entity["type_id"]]
         metadata = validate_entity_metadata(type_name, payload.metadata)

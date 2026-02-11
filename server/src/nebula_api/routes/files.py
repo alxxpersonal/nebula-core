@@ -3,6 +3,7 @@
 # Standard Library
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 # Third-Party
 from fastapi import APIRouter, Depends, Query, Request
@@ -142,6 +143,12 @@ async def get_file(
 
     pool = request.app.state.pool
     enums = request.app.state.enums
+
+    try:
+        UUID(file_id)
+    except ValueError:
+        api_error("INVALID_INPUT", "Invalid file id", 400)
+
     row = await pool.fetchrow(QUERIES["files/get"], file_id)
     if not row:
         api_error("NOT_FOUND", f"File '{file_id}' not found", 404)
@@ -184,6 +191,12 @@ async def update_file(
 
     pool = request.app.state.pool
     enums = request.app.state.enums
+
+    try:
+        UUID(file_id)
+    except ValueError:
+        api_error("INVALID_INPUT", "Invalid file id", 400)
+
     data = payload.model_dump()
     data["file_id"] = file_id
 

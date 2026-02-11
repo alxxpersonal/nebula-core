@@ -81,6 +81,11 @@ async def _require_entity_write_access(
         return
     if _is_admin(auth, enums):
         return
+    for entity_id in entity_ids:
+        try:
+            UUID(entity_id)
+        except ValueError:
+            api_error("INVALID_INPUT", "Invalid entity id", 400)
     rows = await pool.fetch(QUERIES["entities/scopes_by_ids"], entity_ids)
     if len(rows) != len(set(entity_ids)):
         api_error("NOT_FOUND", "Entity not found", 404)
@@ -507,6 +512,11 @@ async def update_entity(
     """
     pool = request.app.state.pool
     enums = request.app.state.enums
+
+    try:
+        UUID(entity_id)
+    except ValueError:
+        api_error("INVALID_INPUT", "Invalid entity id", 400)
 
     await _require_entity_write_access(pool, enums, auth, [entity_id])
 

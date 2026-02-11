@@ -3,6 +3,7 @@
 # Standard Library
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 # Third-Party
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -273,6 +274,10 @@ async def get_knowledge(
     """
     pool = request.app.state.pool
     scope_ids = auth.get("scopes", [])
+    try:
+        UUID(knowledge_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid knowledge id")
     row = await pool.fetchrow(
         QUERIES["knowledge/get"],
         knowledge_id,
@@ -307,6 +312,11 @@ async def link_to_entity(
     """
     pool = request.app.state.pool
     enums = request.app.state.enums
+    try:
+        UUID(knowledge_id)
+        UUID(payload.entity_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid id")
     await _require_knowledge_write_access(pool, enums, auth, knowledge_id)
     await _require_entity_write_access(pool, enums, auth, payload.entity_id)
     relationship_payload = {
@@ -346,6 +356,10 @@ async def update_knowledge(
     """
     pool = request.app.state.pool
     enums = request.app.state.enums
+    try:
+        UUID(knowledge_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid knowledge id")
 
     await _require_knowledge_write_access(pool, enums, auth, knowledge_id)
 

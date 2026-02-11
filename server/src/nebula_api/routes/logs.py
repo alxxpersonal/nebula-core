@@ -4,6 +4,7 @@
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 # Third-Party
 from fastapi import APIRouter, Depends, Query, Request
@@ -146,6 +147,12 @@ async def get_log(
 
     pool = request.app.state.pool
     enums = request.app.state.enums
+
+    try:
+        UUID(log_id)
+    except ValueError:
+        api_error("INVALID_INPUT", "Invalid log id", 400)
+
     row = await pool.fetchrow(QUERIES["logs/get"], log_id)
     if not row:
         api_error("NOT_FOUND", f"Log '{log_id}' not found", 404)
@@ -202,6 +209,12 @@ async def update_log(
 
     pool = request.app.state.pool
     enums = request.app.state.enums
+
+    try:
+        UUID(log_id)
+    except ValueError:
+        api_error("INVALID_INPUT", "Invalid log id", 400)
+
     data = payload.model_dump()
     data["id"] = log_id
 

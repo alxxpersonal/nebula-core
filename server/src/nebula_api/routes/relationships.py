@@ -4,6 +4,7 @@
 import json
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 # Third-Party
 from fastapi import APIRouter, Depends, Query, Request
@@ -175,6 +176,12 @@ async def get_relationships(
     """
     pool = request.app.state.pool
     enums = request.app.state.enums
+
+    try:
+        UUID(source_id)
+    except ValueError:
+        api_error("INVALID_INPUT", "Invalid source id", 400)
+
     scope_ids = None if _is_admin(auth, enums) else auth.get("scopes", [])
 
     rows = await pool.fetch(
@@ -272,6 +279,12 @@ async def update_relationship(
     """
     pool = request.app.state.pool
     enums = request.app.state.enums
+
+    try:
+        UUID(relationship_id)
+    except ValueError:
+        api_error("INVALID_INPUT", "Invalid relationship id", 400)
+
     change = {
         "relationship_id": relationship_id,
         "properties": payload.properties,

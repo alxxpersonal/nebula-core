@@ -146,6 +146,13 @@ def _clamp_hops(value: int) -> int:
     return value
 
 
+def _require_uuid(value: str, label: str) -> None:
+    try:
+        UUID(str(value))
+    except (TypeError, ValueError):
+        raise ValueError(f"Invalid {label} id")
+
+
 def _require_admin(agent: dict, enums: Any) -> None:
     scope_names = scope_names_from_ids(agent.get("scopes", []), enums)
     if not any(scope in ADMIN_SCOPES for scope in scope_names):
@@ -604,10 +611,7 @@ async def get_entity(payload: GetEntityInput, ctx: Context) -> dict:
 
     pool, enums, agent = await require_context(ctx)
 
-    try:
-        UUID(payload.entity_id)
-    except ValueError:
-        raise ValueError("Invalid entity id")
+    _require_uuid(payload.entity_id, "entity")
 
     row = await pool.fetchrow(QUERIES["entities/get"], payload.entity_id)
     if not row:
@@ -669,6 +673,8 @@ async def update_entity(payload: UpdateEntityInput, ctx: Context) -> dict:
     """Update entity metadata, tags, or status."""
 
     pool, enums, agent = await require_context(ctx)
+
+    _require_uuid(payload.entity_id, "entity")
 
     row = await pool.fetchrow(QUERIES["entities/get_by_id"], payload.entity_id)
     if not row:
@@ -903,6 +909,10 @@ async def link_knowledge_to_entity(payload: LinkKnowledgeInput, ctx: Context) ->
     """Link knowledge item to entity via relationship."""
 
     pool, enums, agent = await require_context(ctx)
+
+    _require_uuid(payload.knowledge_id, "knowledge")
+    _require_uuid(payload.entity_id, "entity")
+
     await _validate_relationship_node(
         pool,
         enums,
@@ -957,9 +967,10 @@ async def get_log(payload: GetLogInput, ctx: Context) -> dict:
     """Retrieve a log entry by id."""
 
     pool, enums, agent = await require_context(ctx)
+    _require_uuid(payload.log_id, "log")
     row = await pool.fetchrow(QUERIES["logs/get"], payload.log_id)
     if not row:
-        raise ValueError(f"Log '{payload.log_id}' not found")
+        raise ValueError("Log not found")
     if await _has_hidden_relationships(pool, enums, agent, "log", payload.log_id):
         raise ValueError("Access denied")
     return dict(row)
@@ -999,6 +1010,7 @@ async def update_log(payload: UpdateLogInput, ctx: Context) -> dict:
     """Update a log entry."""
 
     pool, enums, agent = await require_context(ctx)
+    _require_uuid(payload.id, "log")
     if await _has_hidden_relationships(pool, enums, agent, "log", payload.id):
         raise ValueError("Access denied")
     if resp := await maybe_require_approval(
@@ -1049,6 +1061,8 @@ async def get_relationships(payload: GetRelationshipsInput, ctx: Context) -> lis
 
     pool, enums, agent = await require_context(ctx)
     scope_ids = _scope_filter_ids(agent, enums)
+
+    _require_uuid(payload.source_id, "source")
 
     rows = await pool.fetch(
         QUERIES["relationships/get"],
@@ -1106,6 +1120,9 @@ async def update_relationship(payload: UpdateRelationshipInput, ctx: Context) ->
     """Update relationship properties or status."""
 
     pool, enums, agent = await require_context(ctx)
+
+    _require_uuid(payload.relationship_id, "relationship")
+
     row = await pool.fetchrow(
         QUERIES["relationships/get_by_id"], payload.relationship_id
     )
@@ -1179,10 +1196,7 @@ async def graph_neighbors(payload: GraphNeighborsInput, ctx: Context) -> list[di
     pool, enums, agent = await require_context(ctx)
     max_hops = _clamp_hops(payload.max_hops)
     limit = _clamp_limit(payload.limit)
-    try:
-        UUID(str(payload.source_id))
-    except (TypeError, ValueError):
-        raise ValueError("Invalid source id")
+    _require_uuid(payload.source_id, "source")
 
     if not await _node_allowed(
         pool, enums, agent, payload.source_type, payload.source_id
@@ -1223,11 +1237,8 @@ async def graph_shortest_path(payload: GraphShortestPathInput, ctx: Context) -> 
 
     pool, enums, agent = await require_context(ctx)
     max_hops = _clamp_hops(payload.max_hops)
-    try:
-        UUID(str(payload.source_id))
-        UUID(str(payload.target_id))
-    except (TypeError, ValueError):
-        raise ValueError("Invalid node id")
+    _require_uuid(payload.source_id, "source")
+    _require_uuid(payload.target_id, "target")
 
     if not await _node_allowed(
         pool, enums, agent, payload.source_type, payload.source_id
@@ -1387,9 +1398,11 @@ async def get_file(payload: GetFileInput, ctx: Context) -> dict:
 
     pool, enums, agent = await require_context(ctx)
 
+    _require_uuid(payload.file_id, "file")
+
     row = await pool.fetchrow(QUERIES["files/get"], payload.file_id)
     if not row:
-        raise ValueError(f"File '{payload.file_id}' not found")
+        raise ValueError("File not found")
     if await _has_hidden_relationships(pool, enums, agent, "file", payload.file_id):
         raise ValueError("Access denied")
 
