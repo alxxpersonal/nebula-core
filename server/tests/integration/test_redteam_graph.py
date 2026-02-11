@@ -12,7 +12,6 @@ from nebula_mcp.server import graph_neighbors
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="graph traversal should respect privacy scopes")
 async def test_graph_neighbors_hides_private_nodes(
     db_pool, enums, test_entity, untrusted_mcp_context
 ):
@@ -60,3 +59,53 @@ async def test_graph_neighbors_hides_private_nodes(
     leaked_ids = {row["node_id"] for row in results}
 
     assert str(private_entity["id"]) not in leaked_ids
+
+
+@pytest.mark.asyncio
+async def test_graph_neighbors_hides_private_knowledge(
+    db_pool, enums, test_entity, untrusted_mcp_context
+):
+    """Graph traversal should not expose knowledge outside agent scopes."""
+
+    status_id = enums.statuses.name_to_id["active"]
+    private_scope_id = enums.scopes.name_to_id["sensitive"]
+
+    knowledge = await db_pool.fetchrow(
+        """
+        INSERT INTO knowledge_items (title, source_type, content, privacy_scope_ids, status_id, tags, metadata)
+        VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
+        RETURNING *
+        """,
+        "Private Knowledge",
+        "note",
+        "secret",
+        [private_scope_id],
+        status_id,
+        ["private"],
+        json.dumps({"context_segments": [{"text": "secret", "scopes": ["sensitive"]}]}),
+    )
+
+    relationship_type_id = enums.relationship_types.name_to_id["related-to"]
+
+    await db_pool.execute(
+        """
+        INSERT INTO relationships (source_type, source_id, target_type, target_id, type_id, status_id, properties)
+        VALUES ('entity', $1, 'knowledge', $2, $3, $4, $5::jsonb)
+        """,
+        str(test_entity["id"]),
+        str(knowledge["id"]),
+        relationship_type_id,
+        status_id,
+        json.dumps({"note": "secret knowledge"}),
+    )
+
+    payload = GraphNeighborsInput(
+        source_type="entity",
+        source_id=str(test_entity["id"]),
+        max_hops=1,
+        limit=10,
+    )
+    results = await graph_neighbors(payload, untrusted_mcp_context)
+    leaked_ids = {row["node_id"] for row in results}
+
+    assert str(knowledge["id"]) not in leaked_ids

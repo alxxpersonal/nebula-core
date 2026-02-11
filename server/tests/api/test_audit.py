@@ -6,6 +6,8 @@ import pytest
 
 @pytest.mark.asyncio
 async def test_list_audit_scopes(api):
+    """List audit scopes."""
+
     r = await api.get("/api/audit/scopes")
     assert r.status_code == 200
     data = r.json()["data"]
@@ -14,6 +16,8 @@ async def test_list_audit_scopes(api):
 
 @pytest.mark.asyncio
 async def test_list_audit_actors(api, test_entity):
+    """List audit actors."""
+
     r = await api.get("/api/audit/actors")
     assert r.status_code == 200
     data = r.json()["data"]
@@ -22,6 +26,8 @@ async def test_list_audit_actors(api, test_entity):
 
 @pytest.mark.asyncio
 async def test_list_audit_scope_filter(api, enums, test_entity):
+    """Filter audit log by scope."""
+
     scope_id = enums.scopes.name_to_id["public"]
     r = await api.get("/api/audit", params={"scope_id": str(scope_id)})
     assert r.status_code == 200

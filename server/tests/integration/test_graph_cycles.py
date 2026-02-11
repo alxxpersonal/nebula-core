@@ -1,10 +1,13 @@
 """Graph cycle stress tests for traversal queries."""
 
+# Standard Library
 import asyncio
 from pathlib import Path
 
+# Third-Party
 import pytest
 
+# Local
 from nebula_mcp.query_loader import QueryLoader
 
 QUERIES = QueryLoader(Path(__file__).resolve().parents[2] / "src" / "queries")
@@ -12,6 +15,8 @@ QUERIES = QueryLoader(Path(__file__).resolve().parents[2] / "src" / "queries")
 
 @pytest.mark.asyncio
 async def test_graph_cycle_neighbors(db_pool, enums):
+    """Ensure graph neighbors query handles cycles without hanging."""
+
     status_id = enums.statuses.name_to_id["active"]
     type_id = enums.entity_types.name_to_id["person"]
     scope_ids = [enums.scopes.name_to_id["public"]]
@@ -71,6 +76,8 @@ async def test_graph_cycle_neighbors(db_pool, enums):
     )
 
     async def run_neighbors():
+        """Execute neighbors query for cycle check."""
+
         return await db_pool.fetch(
             QUERIES["graph/neighbors"],
             "entity",
@@ -85,6 +92,8 @@ async def test_graph_cycle_neighbors(db_pool, enums):
 
 @pytest.mark.asyncio
 async def test_graph_shortest_path_cycle(db_pool, enums):
+    """Ensure shortest path query handles cycles correctly."""
+
     status_id = enums.statuses.name_to_id["active"]
     type_id = enums.entity_types.name_to_id["person"]
     scope_ids = [enums.scopes.name_to_id["public"]]
@@ -144,6 +153,8 @@ async def test_graph_shortest_path_cycle(db_pool, enums):
     )
 
     async def run_path():
+        """Execute shortest path query for cycle check."""
+
         return await db_pool.fetchrow(
             QUERIES["graph/shortest_path"],
             "entity",

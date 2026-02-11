@@ -1,6 +1,10 @@
 """Red team tests for approval queue validation gaps."""
 
+# Standard Library
+from uuid import uuid4
+
 # Third-Party
+from pydantic import ValidationError
 import pytest
 
 # Local
@@ -13,7 +17,6 @@ from nebula_mcp.models import (
 )
 from nebula_mcp.server import (
     bulk_import_entities,
-    create_entity,
     create_knowledge,
     create_relationship,
     revert_entity,
@@ -21,11 +24,26 @@ from nebula_mcp.server import (
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="revert should validate audit id before approval")
 async def test_revert_entity_rejects_invalid_audit_id(
     test_entity, untrusted_mcp_context
 ):
-    """Invalid audit ids should be rejected before approval queue."""
+    """Nonexistent audit ids should be rejected before approval queue."""
+
+    payload = RevertEntityInput(
+        entity_id=str(test_entity["id"]),
+        audit_id=str(uuid4()),
+    )
+
+    with pytest.raises(ValueError):
+        await revert_entity(payload, untrusted_mcp_context)
+
+
+@pytest.mark.asyncio
+@pytest.mark.xfail(reason="audit id format should be validated before DB query")
+async def test_revert_entity_rejects_invalid_audit_format(
+    test_entity, untrusted_mcp_context
+):
+    """Invalid audit id formats should be rejected before DB access."""
 
     payload = RevertEntityInput(
         entity_id=str(test_entity["id"]),
@@ -37,7 +55,6 @@ async def test_revert_entity_rejects_invalid_audit_id(
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="relationship creation should validate node existence")
 async def test_create_relationship_rejects_missing_nodes(
     enums, test_entity, untrusted_mcp_context
 ):
@@ -57,22 +74,19 @@ async def test_create_relationship_rejects_missing_nodes(
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="vault file paths should be sanitized")
 async def test_create_entity_rejects_path_traversal(mock_mcp_context):
     """Entities should reject vault file paths outside vault root."""
 
-    payload = CreateEntityInput(
-        name="Path Traversal",
-        type="person",
-        status="active",
-        scopes=["public"],
-        tags=["test"],
-        metadata={},
-        vault_file_path="../../../../etc/passwd",
-    )
-
-    with pytest.raises(ValueError):
-        await create_entity(payload, mock_mcp_context)
+    with pytest.raises(ValidationError):
+        CreateEntityInput(
+            name="Path Traversal",
+            type="person",
+            status="active",
+            scopes=["public"],
+            tags=["test"],
+            metadata={},
+            vault_file_path="../../../../etc/passwd",
+        )
 
 
 @pytest.mark.asyncio
@@ -96,25 +110,21 @@ async def test_create_knowledge_rejects_javascript_url(mock_mcp_context):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="metadata should block prototype pollution keys")
 async def test_create_entity_rejects_proto_pollution(mock_mcp_context):
     """Entities should reject prototype pollution keys in metadata."""
 
-    payload = CreateEntityInput(
-        name="Proto",
-        type="person",
-        status="active",
-        scopes=["public"],
-        tags=["test"],
-        metadata={"__proto__": {"isAdmin": True}},
-    )
-
-    with pytest.raises(ValueError):
-        await create_entity(payload, mock_mcp_context)
+    with pytest.raises(ValidationError):
+        CreateEntityInput(
+            name="Proto",
+            type="person",
+            status="active",
+            scopes=["public"],
+            tags=["test"],
+            metadata={"__proto__": {"isAdmin": True}},
+        )
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="bulk import should require per item approval")
 async def test_bulk_import_requires_per_item_approval(db_pool, untrusted_mcp_context):
     """Bulk imports should not collapse into a single approval."""
 

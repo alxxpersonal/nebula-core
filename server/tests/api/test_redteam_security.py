@@ -35,7 +35,6 @@ async def test_audit_log_requires_admin(api):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="relationship queries should not expose private nodes")
 async def test_relationships_hide_private_targets(api, db_pool, enums, test_entity):
     """Relationship list should filter out private nodes for non-admin users."""
 

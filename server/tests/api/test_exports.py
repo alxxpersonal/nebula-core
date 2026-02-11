@@ -6,6 +6,8 @@ import pytest
 
 @pytest.mark.asyncio
 async def test_export_entities_json(api, test_entity):
+    """Export entities in json format."""
+
     r = await api.get("/api/export/entities")
     assert r.status_code == 200
     data = r.json()["data"]
@@ -15,6 +17,8 @@ async def test_export_entities_json(api, test_entity):
 
 @pytest.mark.asyncio
 async def test_export_entities_csv(api, test_entity):
+    """Export entities in csv format."""
+
     r = await api.get("/api/export/entities", params={"format": "csv"})
     assert r.status_code == 200
     data = r.json()["data"]
@@ -24,6 +28,8 @@ async def test_export_entities_csv(api, test_entity):
 
 @pytest.mark.asyncio
 async def test_export_knowledge_json(api):
+    """Export knowledge in json format."""
+
     await api.post(
         "/api/knowledge",
         json={"title": "Export Knowledge", "source_type": "note", "scopes": ["public"]},
@@ -37,6 +43,8 @@ async def test_export_knowledge_json(api):
 
 @pytest.mark.asyncio
 async def test_export_relationships_json(api):
+    """Export relationships in json format."""
+
     r1 = await api.post(
         "/api/entities",
         json={"name": "ExportSource", "type": "person", "scopes": ["public"]},
@@ -64,6 +72,8 @@ async def test_export_relationships_json(api):
 
 @pytest.mark.asyncio
 async def test_export_context_json(api):
+    """Export full context in json format."""
+
     r = await api.get("/api/export/context")
     assert r.status_code == 200
     data = r.json()["data"]

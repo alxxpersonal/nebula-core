@@ -1,12 +1,16 @@
 """Chaos tests for API behavior and resilience."""
 
+# Standard Library
 import asyncio
 
+# Third-Party
 import pytest
 
 
 @pytest.mark.asyncio
 async def test_concurrent_entity_updates(api):
+    """Update the same entity concurrently and ensure responses succeed."""
+
     payload = {
         "name": "chaos-entity",
         "type": "person",
@@ -20,6 +24,8 @@ async def test_concurrent_entity_updates(api):
     entity_id = create.json()["data"]["id"]
 
     async def do_update(i: int):
+        """Run a single concurrent update request."""
+
         return await api.patch(
             f"/api/entities/{entity_id}",
             json={"metadata": {"iteration": i}},
@@ -31,6 +37,8 @@ async def test_concurrent_entity_updates(api):
 
 @pytest.mark.asyncio
 async def test_state_desync_reflects_db_changes(api, db_pool):
+    """Reflect direct DB updates on subsequent API reads."""
+
     payload = {
         "name": "desync-entity",
         "type": "person",
@@ -56,6 +64,8 @@ async def test_state_desync_reflects_db_changes(api, db_pool):
 
 @pytest.mark.asyncio
 async def test_malformed_json_rejected(api):
+    """Reject malformed JSON payloads for entity creation."""
+
     resp = await api.post(
         "/api/entities",
         content=b"{bad json",
@@ -66,6 +76,8 @@ async def test_malformed_json_rejected(api):
 
 @pytest.mark.asyncio
 async def test_large_payload_and_unicode(api):
+    """Handle large payloads and unicode data in knowledge creation."""
+
     big_text = "x" * 10_000_000
     payload = {
         "title": "big-knowledge",
@@ -81,6 +93,8 @@ async def test_large_payload_and_unicode(api):
 
 @pytest.mark.asyncio
 async def test_auth_fuzzing(api_no_auth, api_key_row, db_pool, enums):
+    """Reject invalid or revoked API keys during auth checks."""
+
     raw_key, row = api_key_row
 
     missing = await api_no_auth.get("/api/entities")

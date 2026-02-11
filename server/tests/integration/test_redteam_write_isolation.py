@@ -13,6 +13,8 @@ from nebula_mcp.server import create_relationship, update_entity
 
 
 def _make_context(pool, enums, agent):
+    """Build MCP context with a specific agent."""
+
     ctx = MagicMock()
     ctx.request_context.lifespan_context = {
         "pool": pool,
@@ -23,6 +25,8 @@ def _make_context(pool, enums, agent):
 
 
 async def _make_entity(db_pool, enums, name, scopes):
+    """Insert an entity for write isolation tests."""
+
     status_id = enums.statuses.name_to_id["active"]
     type_id = enums.entity_types.name_to_id["person"]
     scope_ids = [enums.scopes.name_to_id[s] for s in scopes]
@@ -43,9 +47,9 @@ async def _make_entity(db_pool, enums, name, scopes):
     return dict(row)
 
 
-
-
 async def _make_trusted_agent(db_pool, enums, scopes):
+    """Insert a trusted agent with specified scopes."""
+
     status_id = enums.statuses.name_to_id["active"]
     scope_ids = [enums.scopes.name_to_id[s] for s in scopes]
 
@@ -65,7 +69,6 @@ async def _make_trusted_agent(db_pool, enums, scopes):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="trusted agents should not update entities outside scopes")
 async def test_update_entity_denies_scope_violation(db_pool, enums):
     """Trusted agent should not update entity outside its scopes."""
 
@@ -83,7 +86,6 @@ async def test_update_entity_denies_scope_violation(db_pool, enums):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="trusted agents should not link private nodes")
 async def test_create_relationship_denies_private_node(db_pool, enums):
     """Trusted agent should not create relationships to private nodes."""
 

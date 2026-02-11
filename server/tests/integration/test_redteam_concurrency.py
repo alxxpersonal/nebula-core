@@ -37,9 +37,7 @@ async def test_concurrent_create_entity_duplicate(mock_mcp_context, db_pool):
 
 
 @pytest.mark.asyncio
-async def test_self_relationship_blocked(
-    db_pool, enums, test_entity, mock_mcp_context
-):
+async def test_self_relationship_blocked(db_pool, enums, test_entity, mock_mcp_context):
     """Self referential relationships should be rejected."""
 
     relationship_type = "owns"
@@ -57,9 +55,7 @@ async def test_self_relationship_blocked(
 
 
 @pytest.mark.asyncio
-async def test_cycle_relationship_blocked(
-    db_pool, enums, mock_mcp_context
-):
+async def test_cycle_relationship_blocked(db_pool, enums, mock_mcp_context):
     """Cycles for cycle sensitive relationship types should be blocked."""
 
     status_id = enums.statuses.name_to_id["active"]
@@ -84,6 +80,8 @@ async def test_cycle_relationship_blocked(
         rows.append(dict(row))
 
     def rel_payload(source, target):
+        """Build relationship payload for cycle checks."""
+
         return CreateRelationshipInput(
             source_type="entity",
             source_id=str(source["id"]),

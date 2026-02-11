@@ -6,6 +6,8 @@ import pytest
 
 @pytest.mark.asyncio
 async def test_import_entities_json(api):
+    """Bulk import entities from json."""
+
     payload = {
         "format": "json",
         "items": [
@@ -26,6 +28,8 @@ async def test_import_entities_json(api):
 
 @pytest.mark.asyncio
 async def test_import_entities_csv(api):
+    """Bulk import entities from csv."""
+
     payload = {
         "format": "csv",
         "data": "name,type,scopes,tags\nCSV Entity,person,public,import",
@@ -38,6 +42,8 @@ async def test_import_entities_csv(api):
 
 @pytest.mark.asyncio
 async def test_import_knowledge_json(api):
+    """Bulk import knowledge from json."""
+
     payload = {
         "format": "json",
         "items": [
@@ -57,6 +63,8 @@ async def test_import_knowledge_json(api):
 
 @pytest.mark.asyncio
 async def test_import_relationships_json(api):
+    """Bulk import relationships from json."""
+
     r1 = await api.post(
         "/api/entities",
         json={"name": "ImportSource", "type": "person", "scopes": ["public"]},
@@ -88,6 +96,8 @@ async def test_import_relationships_json(api):
 
 @pytest.mark.asyncio
 async def test_import_jobs_json(api):
+    """Bulk import jobs from json."""
+
     payload = {
         "format": "json",
         "items": [

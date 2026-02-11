@@ -25,6 +25,8 @@ from nebula_mcp.server import (
 
 
 def _make_context(pool, enums, agent):
+    """Build MCP context with a specific agent."""
+
     ctx = MagicMock()
     ctx.request_context.lifespan_context = {
         "pool": pool,
@@ -35,6 +37,8 @@ def _make_context(pool, enums, agent):
 
 
 async def _make_entity(db_pool, enums, name, scopes):
+    """Insert an entity for MCP isolation tests."""
+
     status_id = enums.statuses.name_to_id["active"]
     type_id = enums.entity_types.name_to_id["person"]
     scope_ids = [enums.scopes.name_to_id[s] for s in scopes]
@@ -108,7 +112,6 @@ async def test_get_entity_not_found_uses_generic_error(db_pool, enums):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="mcp relationship queries should hide private nodes")
 async def test_mcp_relationships_hide_private_nodes(
     db_pool, enums, test_entity, untrusted_mcp_context
 ):
@@ -145,7 +148,6 @@ async def test_mcp_relationships_hide_private_nodes(
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="mcp relationship queries should hide private nodes")
 async def test_mcp_query_relationships_hides_private_nodes(
     db_pool, enums, test_entity, untrusted_mcp_context
 ):
@@ -183,13 +185,11 @@ async def test_mcp_query_relationships_hides_private_nodes(
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="audit log should be admin only")
 async def test_mcp_audit_log_requires_admin(db_pool, enums, untrusted_mcp_context):
     """Audit log should be restricted to admin agents."""
 
     await _make_entity(db_pool, enums, "Audit Target", ["public"])
 
     payload = QueryAuditLogInput(limit=50)
-    rows = await query_audit_log(payload, untrusted_mcp_context)
-
-    assert rows == []
+    with pytest.raises(ValueError, match="Admin scope required"):
+        await query_audit_log(payload, untrusted_mcp_context)

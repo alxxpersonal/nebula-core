@@ -1,8 +1,12 @@
 """Integration tests for the approval workflow helpers."""
 
+# Standard Library
+import asyncio
+
 # Third-Party
 import pytest
 
+# Local
 from nebula_mcp.helpers import (
     approve_request,
     create_approval_request,
@@ -145,6 +149,47 @@ async def test_approve_twice_raises(db_pool, enums, untrusted_agent, test_entity
             str(approval["id"]),
             str(test_entity["id"]),
         )
+
+
+async def test_approve_request_race_only_one_executes(
+    db_pool,
+    enums,
+    untrusted_agent,
+    test_entity,
+):
+    """Concurrent approvals should only execute once."""
+
+    approval = await create_approval_request(
+        db_pool,
+        str(untrusted_agent["id"]),
+        "create_entity",
+        {
+            "name": "Race Approval",
+            "type": "project",
+            "status": "active",
+            "scopes": ["public"],
+        },
+    )
+
+    async def do_approve():
+        """Run a single approval attempt."""
+
+        try:
+            return await approve_request(
+                db_pool,
+                enums,
+                str(approval["id"]),
+                str(test_entity["id"]),
+            )
+        except Exception as exc:  # noqa: BLE001 - redteam capture
+            return exc
+
+    results = await asyncio.gather(do_approve(), do_approve())
+    successes = [r for r in results if isinstance(r, dict)]
+    failures = [r for r in results if isinstance(r, Exception)]
+
+    assert len(successes) == 1
+    assert len(failures) == 1
 
 
 async def test_approve_unknown_executor_type_raises(
