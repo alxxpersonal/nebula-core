@@ -9,7 +9,8 @@ import pytest
 
 # Local
 from nebula_mcp.models import CreateRelationshipInput
-from nebula_mcp.server import create_entity, create_relationship
+from nebula_mcp.models import UpdateEntityInput
+from nebula_mcp.server import create_entity, create_relationship, update_entity
 
 
 @pytest.mark.asyncio
@@ -96,3 +97,20 @@ async def test_cycle_relationship_blocked(db_pool, enums, mock_mcp_context):
 
     with pytest.raises(ValueError):
         await create_relationship(rel_payload(rows[2], rows[0]), mock_mcp_context)
+
+
+@pytest.mark.asyncio
+async def test_concurrent_entity_updates_do_not_error(test_entity, mock_mcp_context):
+    """Concurrent updates should not crash or return errors."""
+
+    async def do_update(i: int):
+        """Run a single entity update for concurrency tests."""
+
+        payload = UpdateEntityInput(
+            entity_id=str(test_entity["id"]),
+            metadata={"iteration": i},
+        )
+        return await update_entity(payload, mock_mcp_context)
+
+    results = await asyncio.gather(*(do_update(i) for i in range(25)))
+    assert all(isinstance(row, dict) for row in results)
