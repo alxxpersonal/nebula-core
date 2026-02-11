@@ -90,23 +90,20 @@ async def test_create_entity_rejects_path_traversal(mock_mcp_context):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="knowledge URLs should reject javascript scheme")
 async def test_create_knowledge_rejects_javascript_url(mock_mcp_context):
     """Knowledge URLs should be restricted to http and https."""
 
-    payload = CreateKnowledgeInput(
-        title="Bad URL",
-        url="javascript:alert('xss')",
-        source_type="article",
-        content="x",
-        status="active",
-        scopes=["public"],
-        tags=["test"],
-        metadata={},
-    )
-
-    with pytest.raises(ValueError):
-        await create_knowledge(payload, mock_mcp_context)
+    with pytest.raises(ValidationError):
+        CreateKnowledgeInput(
+            title="Bad URL",
+            url="javascript:alert('xss')",
+            source_type="article",
+            content="x",
+            status="active",
+            scopes=["public"],
+            tags=["test"],
+            metadata={},
+        )
 
 
 @pytest.mark.asyncio
