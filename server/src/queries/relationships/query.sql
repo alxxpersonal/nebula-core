@@ -24,6 +24,21 @@ WHERE
     ($1::text IS NULL OR r.source_type = $1)
     AND ($2::text IS NULL OR r.target_type = $2)
     AND ($3::text[] IS NULL OR rt.name = ANY($3))
+    AND (
+        $6::uuid[] IS NULL
+        OR (
+            (
+                r.source_type NOT IN ('entity', 'knowledge')
+                OR (r.source_type = 'entity' AND es.privacy_scope_ids && $6)
+                OR (r.source_type = 'knowledge' AND ks.privacy_scope_ids && $6)
+            )
+            AND (
+                r.target_type NOT IN ('entity', 'knowledge')
+                OR (r.target_type = 'entity' AND et.privacy_scope_ids && $6)
+                OR (r.target_type = 'knowledge' AND kt.privacy_scope_ids && $6)
+            )
+        )
+    )
     AND s.category = $4
 ORDER BY r.created_at DESC
 LIMIT $5;

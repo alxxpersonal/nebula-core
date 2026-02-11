@@ -60,6 +60,16 @@ class CreateKnowledgeBody(BaseModel):
     def _clean_tags(cls, v: list[str] | None) -> list[str] | None:
         return _validate_tag_list(v)
 
+    @field_validator("url", mode="before")
+    @classmethod
+    def _validate_url(cls, v: str | None) -> str | None:
+        if not v:
+            return v
+        v = v.strip()
+        if not (v.startswith("http://") or v.startswith("https://")):
+            raise ValueError("URL must start with http:// or https://")
+        return v
+
 
 class LinkKnowledgeBody(BaseModel):
     """Payload for linking knowledge to an entity.
@@ -100,6 +110,16 @@ class UpdateKnowledgeBody(BaseModel):
     @classmethod
     def _clean_tags(cls, v: list[str] | None) -> list[str] | None:
         return _validate_tag_list(v)
+
+    @field_validator("url", mode="before")
+    @classmethod
+    def _validate_url(cls, v: str | None) -> str | None:
+        if not v:
+            return v
+        v = v.strip()
+        if not (v.startswith("http://") or v.startswith("https://")):
+            raise ValueError("URL must start with http:// or https://")
+        return v
 
 
 @router.post("/")

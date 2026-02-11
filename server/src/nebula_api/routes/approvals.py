@@ -1,6 +1,7 @@
 """Approval API routes."""
 
 # Standard Library
+import os
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +29,22 @@ from nebula_mcp.query_loader import QueryLoader
 QUERIES = QueryLoader(Path(__file__).resolve().parents[2] / "queries")
 
 router = APIRouter()
+ADMIN_SCOPE_NAMES = {"vault-only", "sensitive"}
+
+
+def _require_admin_scope(auth: dict, enums: Any) -> None:
+    if os.getenv("NEBULA_STRICT_ADMIN") != "1":
+        return
+    if auth.get("caller_type") != "agent":
+        return
+    scope_ids = set(auth.get("scopes", []))
+    allowed_ids = {
+        enums.scopes.name_to_id.get(name)
+        for name in ADMIN_SCOPE_NAMES
+        if enums.scopes.name_to_id.get(name)
+    }
+    if not scope_ids.intersection(allowed_ids):
+        api_error("FORBIDDEN", "Admin scope required", 403)
 
 
 class RejectBody(BaseModel):
@@ -54,6 +71,8 @@ async def get_pending(
         API response with pending approvals.
     """
     pool = request.app.state.pool
+    enums = request.app.state.enums
+    _require_admin_scope(auth, enums)
     results = await get_pending_approvals_all(pool)
     return success(results)
 
@@ -75,6 +94,8 @@ async def get_approval(
         API response with approval request data.
     """
     pool = request.app.state.pool
+    enums = request.app.state.enums
+    _require_admin_scope(auth, enums)
 
     row = await pool.fetchrow(QUERIES["approvals/get_request"], approval_id)
     if not row:
@@ -101,6 +122,7 @@ async def approve(
     """
     pool = request.app.state.pool
     enums = request.app.state.enums
+    _require_admin_scope(auth, enums)
 
     result = await do_approve(pool, enums, approval_id, str(auth["entity_id"]))
     return success(result)
@@ -125,6 +147,8 @@ async def reject(
         API response with rejection result.
     """
     pool = request.app.state.pool
+    enums = request.app.state.enums
+    _require_admin_scope(auth, enums)
 
     result = await do_reject(
         pool, approval_id, str(auth["entity_id"]), payload.review_notes
@@ -149,5 +173,7 @@ async def get_diff(
         API response with approval diff data.
     """
     pool = request.app.state.pool
+    enums = request.app.state.enums
+    _require_admin_scope(auth, enums)
     result = await compute_approval_diff(pool, approval_id)
     return success(result)

@@ -1,8 +1,5 @@
 """Red team tests for approval queue validation gaps."""
 
-# Standard Library
-import json
-
 # Third-Party
 import pytest
 
@@ -118,9 +115,7 @@ async def test_create_entity_rejects_proto_pollution(mock_mcp_context):
 
 @pytest.mark.asyncio
 @pytest.mark.xfail(reason="bulk import should require per item approval")
-async def test_bulk_import_requires_per_item_approval(
-    db_pool, untrusted_mcp_context
-):
+async def test_bulk_import_requires_per_item_approval(db_pool, untrusted_mcp_context):
     """Bulk imports should not collapse into a single approval."""
 
     payload = BulkImportInput(

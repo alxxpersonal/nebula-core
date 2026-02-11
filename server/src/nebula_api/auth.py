@@ -139,7 +139,18 @@ async def maybe_check_agent_approval(
     if not agent.get("requires_approval", True):
         return None
 
-    from nebula_mcp.helpers import create_approval_request
+    from nebula_mcp.helpers import create_approval_request, ensure_approval_capacity
+
+    try:
+        await ensure_approval_capacity(pool, agent["id"])
+    except ValueError as exc:
+        return JSONResponse(
+            status_code=429,
+            content={
+                "status": "rate_limited",
+                "message": str(exc),
+            },
+        )
 
     approval = await create_approval_request(pool, agent["id"], action, payload)
     return JSONResponse(

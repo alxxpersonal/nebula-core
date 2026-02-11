@@ -12,13 +12,24 @@ from pydantic import BaseModel
 # Local
 from nebula_api.auth import maybe_check_agent_approval, require_auth
 from nebula_api.response import api_error, success
-from nebula_mcp.enums import require_status
+from nebula_mcp.enums import EnumRegistry, require_status
 from nebula_mcp.executors import execute_create_relationship
 from nebula_mcp.query_loader import QueryLoader
 
 QUERIES = QueryLoader(Path(__file__).resolve().parents[2] / "queries")
 
 router = APIRouter()
+ADMIN_SCOPE_NAMES = {"vault-only", "sensitive"}
+
+
+def _is_admin(auth: dict, enums: EnumRegistry) -> bool:
+    scope_ids = set(auth.get("scopes", []))
+    allowed_ids = {
+        enums.scopes.name_to_id.get(name)
+        for name in ADMIN_SCOPE_NAMES
+        if enums.scopes.name_to_id.get(name)
+    }
+    return bool(scope_ids.intersection(allowed_ids))
 
 
 class CreateRelationshipBody(BaseModel):
@@ -105,6 +116,8 @@ async def get_relationships(
         API response with relationships.
     """
     pool = request.app.state.pool
+    enums = request.app.state.enums
+    scope_ids = None if _is_admin(auth, enums) else auth.get("scopes", [])
 
     rows = await pool.fetch(
         QUERIES["relationships/get"],
@@ -112,6 +125,7 @@ async def get_relationships(
         source_id,
         direction,
         relationship_type,
+        scope_ids,
     )
     return success([dict(r) for r in rows])
 
@@ -141,6 +155,8 @@ async def query_relationships(
         API response with relationship list.
     """
     pool = request.app.state.pool
+    enums = request.app.state.enums
+    scope_ids = None if _is_admin(auth, enums) else auth.get("scopes", [])
 
     type_list = relationship_types.split(",") if relationship_types else None
 
@@ -151,6 +167,7 @@ async def query_relationships(
         type_list,
         status_category,
         limit,
+        scope_ids,
     )
     return success([dict(r) for r in rows])
 

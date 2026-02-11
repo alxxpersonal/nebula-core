@@ -113,10 +113,12 @@ async def maybe_require_approval(
     """
 
     # Import here to avoid circular dependency
-    from .helpers import create_approval_request
+    from .helpers import create_approval_request, ensure_approval_capacity
 
     if not agent.get("requires_approval", True):
         return None
+
+    await ensure_approval_capacity(pool, agent["id"])
 
     approval = await create_approval_request(
         pool,

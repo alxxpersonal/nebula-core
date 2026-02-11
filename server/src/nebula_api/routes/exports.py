@@ -110,6 +110,7 @@ async def export_entities(
         Export response payload.
     """
     pool = request.app.state.pool
+    scope_ids = auth.get("scopes", [])
     enums = request.app.state.enums
 
     type_id = require_entity_type(type, enums) if type else None
@@ -200,6 +201,7 @@ async def export_relationships(
         Export response payload.
     """
     pool = request.app.state.pool
+    scope_ids = auth.get("scopes", [])
 
     rows = await pool.fetch(
         QUERIES["relationships/query"],
@@ -208,6 +210,7 @@ async def export_relationships(
         relationship_types or None,
         status_category,
         limit,
+        scope_ids,
     )
     return _export_response([dict(r) for r in rows], format)
 
@@ -315,6 +318,7 @@ async def export_context(
         None,
         "active",
         limit,
+        scope_ids,
     )
     jobs_rows = await pool.fetch(
         QUERIES["jobs/query"],

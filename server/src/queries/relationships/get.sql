@@ -12,6 +12,10 @@ SELECT
 FROM relationships r
 JOIN relationship_types rt ON r.type_id = rt.id
 JOIN statuses s ON r.status_id = s.id
+LEFT JOIN entities es ON r.source_type = 'entity' AND es.id::text = r.source_id
+LEFT JOIN knowledge_items ks ON r.source_type = 'knowledge' AND ks.id::text = r.source_id
+LEFT JOIN entities et ON r.target_type = 'entity' AND et.id::text = r.target_id
+LEFT JOIN knowledge_items kt ON r.target_type = 'knowledge' AND kt.id::text = r.target_id
 WHERE 
     CASE 
         WHEN $3 = 'outgoing' THEN r.source_type = $1 AND r.source_id = $2
@@ -20,5 +24,20 @@ WHERE
              OR (r.target_type = $1 AND r.target_id = $2)
     END
     AND ($4::text IS NULL OR rt.name = $4)
+    AND (
+        $5::uuid[] IS NULL
+        OR (
+            (
+                r.source_type NOT IN ('entity', 'knowledge')
+                OR (r.source_type = 'entity' AND es.privacy_scope_ids && $5)
+                OR (r.source_type = 'knowledge' AND ks.privacy_scope_ids && $5)
+            )
+            AND (
+                r.target_type NOT IN ('entity', 'knowledge')
+                OR (r.target_type = 'entity' AND et.privacy_scope_ids && $5)
+                OR (r.target_type = 'knowledge' AND kt.privacy_scope_ids && $5)
+            )
+        )
+    )
     AND s.category = 'active'
 ORDER BY r.created_at DESC;

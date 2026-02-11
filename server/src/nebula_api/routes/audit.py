@@ -1,11 +1,15 @@
 """Audit API routes."""
 
+# Standard Library
+import os
+
 # Third-Party
 from fastapi import APIRouter, Depends, Query, Request
 
 # Local
 from nebula_api.auth import require_auth
-from nebula_api.response import paginated, success
+from nebula_api.response import api_error, paginated, success
+from nebula_mcp.enums import EnumRegistry
 from nebula_mcp.helpers import (
     list_audit_actors,
     list_audit_scopes,
@@ -13,6 +17,22 @@ from nebula_mcp.helpers import (
 )
 
 router = APIRouter()
+ADMIN_SCOPE_NAMES = {"vault-only", "sensitive"}
+
+
+def _require_admin_scope(auth: dict, enums: EnumRegistry) -> None:
+    if os.getenv("NEBULA_STRICT_ADMIN") != "1":
+        return
+    if auth.get("caller_type") != "agent":
+        return
+    scope_ids = set(auth.get("scopes", []))
+    allowed_ids = {
+        enums.scopes.name_to_id.get(name)
+        for name in ADMIN_SCOPE_NAMES
+        if enums.scopes.name_to_id.get(name)
+    }
+    if not scope_ids.intersection(allowed_ids):
+        api_error("FORBIDDEN", "Admin scope required", 403)
 
 
 @router.get("/")
@@ -46,6 +66,8 @@ async def list_audit_log(
         Paginated audit log response.
     """
     pool = request.app.state.pool
+    enums = request.app.state.enums
+    _require_admin_scope(auth, enums)
     rows = await query_audit_log(
         pool,
         table,
@@ -75,6 +97,8 @@ async def list_scopes(
         List of scopes with counts.
     """
     pool = request.app.state.pool
+    enums = request.app.state.enums
+    _require_admin_scope(auth, enums)
     rows = await list_audit_scopes(pool)
     return success(rows)
 
@@ -96,5 +120,7 @@ async def list_actors(
         List of audit actors.
     """
     pool = request.app.state.pool
+    enums = request.app.state.enums
+    _require_admin_scope(auth, enums)
     rows = await list_audit_actors(pool, actor_type)
     return success(rows)

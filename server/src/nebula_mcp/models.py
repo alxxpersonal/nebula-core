@@ -458,6 +458,16 @@ class CreateKnowledgeInput(BaseModel):
     def _clean_knowledge_text(cls, v: str | None) -> str | None:
         return _sanitize_text(v)
 
+    @field_validator("url", mode="before")
+    @classmethod
+    def _validate_knowledge_url(cls, v: str | None) -> str | None:
+        if not v:
+            return v
+        v = v.strip()
+        if not (v.startswith("http://") or v.startswith("https://")):
+            raise ValueError("URL must start with http:// or https://")
+        return v
+
     @field_validator("tags", mode="before")
     @classmethod
     def _clean_knowledge_tags(cls, v: list[str] | None) -> list[str] | None:

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 # Third-Party
+from asyncpg import Pool
 from dotenv import load_dotenv
 from mcp.server.fastmcp import Context, FastMCP
 
@@ -151,6 +152,61 @@ def _require_admin(agent: dict, enums: Any) -> None:
 def _is_admin(agent: dict, enums: Any) -> bool:
     scope_names = scope_names_from_ids(agent.get("scopes", []), enums)
     return any(scope in ADMIN_SCOPES for scope in scope_names)
+
+
+def _scope_filter_ids(agent: dict, enums: Any) -> list | None:
+    if _is_admin(agent, enums):
+        return None
+    return agent.get("scopes", []) or []
+
+
+async def _node_allowed(
+    pool: Pool, enums: Any, agent: dict, node_type: str, node_id: str
+) -> bool:
+    if _is_admin(agent, enums):
+        return True
+    if node_type == "entity":
+        row = await pool.fetchrow(QUERIES["entities/get_by_id"], node_id)
+        if not row:
+            return False
+        scopes = row.get("privacy_scope_ids") or []
+        if not scopes:
+            return True
+        return any(s in agent.get("scopes", []) for s in scopes)
+    if node_type == "knowledge":
+        scope_ids = agent.get("scopes", []) or []
+        row = await pool.fetchrow(QUERIES["knowledge/get"], node_id, scope_ids)
+        return row is not None
+    return True
+
+
+async def _validate_relationship_node(
+    pool: Pool,
+    enums: Any,
+    agent: dict,
+    node_type: str,
+    node_id: str,
+    label: str,
+) -> None:
+    if node_type == "entity":
+        row = await pool.fetchrow(QUERIES["entities/get_by_id"], node_id)
+        if not row:
+            raise ValueError(f"{label} entity not found")
+        if not await _node_allowed(pool, enums, agent, node_type, node_id):
+            raise ValueError("Access denied")
+        return
+    if node_type == "knowledge":
+        scope_ids = _scope_filter_ids(agent, enums)
+        row = await pool.fetchrow(QUERIES["knowledge/get"], node_id, scope_ids)
+        if not row:
+            raise ValueError(f"{label} knowledge not found")
+        return
+    if node_type == "job":
+        row = await pool.fetchrow(QUERIES["jobs/get"], node_id)
+        if not row:
+            raise ValueError(f"{label} job not found")
+        return
+    raise ValueError(f"Unsupported {label.lower()} type")
 
 
 @asynccontextmanager
@@ -359,7 +415,7 @@ async def get_entity(payload: GetEntityInput, ctx: Context) -> dict:
 
     row = await pool.fetchrow(QUERIES["entities/get"], payload.entity_id)
     if not row:
-        raise ValueError(f"Entity '{payload.entity_id}' not found")
+        raise ValueError("Entity not found")
 
     entity = dict(row)
 
@@ -513,6 +569,7 @@ async def query_audit_log(payload: QueryAuditLogInput, ctx: Context) -> list[dic
     """Query audit log entries with filters."""
 
     pool, enums, agent = await require_context(ctx)
+    _require_admin(agent, enums)
     limit = _clamp_limit(payload.limit)
     offset = max(0, payload.offset)
     return await fetch_audit_log(
@@ -533,6 +590,13 @@ async def revert_entity(payload: RevertEntityInput, ctx: Context) -> dict:
     """Revert an entity to a historical audit entry."""
 
     pool, enums, agent = await require_context(ctx)
+    audit_row = await pool.fetchrow(QUERIES["audit/get"], payload.audit_id)
+    if not audit_row:
+        raise ValueError("Audit entry not found")
+    if audit_row.get("table_name") != "entities":
+        raise ValueError("Audit entry is not for entities")
+    if audit_row.get("record_id") != payload.entity_id:
+        raise ValueError("Audit entry does not match entity")
 
     if resp := await maybe_require_approval(
         pool, agent, "revert_entity", payload.model_dump()
@@ -681,6 +745,12 @@ async def create_relationship(payload: CreateRelationshipInput, ctx: Context) ->
     """Create a polymorphic relationship between items."""
 
     pool, enums, agent = await require_context(ctx)
+    await _validate_relationship_node(
+        pool, enums, agent, payload.source_type, payload.source_id, "Source"
+    )
+    await _validate_relationship_node(
+        pool, enums, agent, payload.target_type, payload.target_id, "Target"
+    )
 
     if resp := await maybe_require_approval(
         pool, agent, "create_relationship", payload.model_dump()
@@ -695,6 +765,7 @@ async def get_relationships(payload: GetRelationshipsInput, ctx: Context) -> lis
     """Get relationships for an item with direction filter."""
 
     pool, enums, agent = await require_context(ctx)
+    scope_ids = _scope_filter_ids(agent, enums)
 
     rows = await pool.fetch(
         QUERIES["relationships/get"],
@@ -702,6 +773,7 @@ async def get_relationships(payload: GetRelationshipsInput, ctx: Context) -> lis
         payload.source_id,
         payload.direction,
         payload.relationship_type,
+        scope_ids,
     )
     return [dict(r) for r in rows]
 
@@ -714,6 +786,7 @@ async def query_relationships(
 
     pool, enums, agent = await require_context(ctx)
     limit = _clamp_limit(payload.limit)
+    scope_ids = _scope_filter_ids(agent, enums)
 
     rows = await pool.fetch(
         QUERIES["relationships/query"],
@@ -722,6 +795,7 @@ async def query_relationships(
         payload.relationship_types or None,
         payload.status_category,
         limit,
+        scope_ids,
     )
     return [dict(r) for r in rows]
 
@@ -779,6 +853,11 @@ async def graph_neighbors(payload: GraphNeighborsInput, ctx: Context) -> list[di
     max_hops = _clamp_hops(payload.max_hops)
     limit = _clamp_limit(payload.limit)
 
+    if not await _node_allowed(
+        pool, enums, agent, payload.source_type, payload.source_id
+    ):
+        raise ValueError("Access denied")
+
     rows = await pool.fetch(
         QUERIES["graph/neighbors"],
         payload.source_type,
@@ -788,12 +867,20 @@ async def graph_neighbors(payload: GraphNeighborsInput, ctx: Context) -> list[di
     )
     results = []
     for row in rows:
+        path_nodes = _decode_graph_path(row["path"])
+        allowed = True
+        for node in path_nodes:
+            if not await _node_allowed(pool, enums, agent, node["type"], node["id"]):
+                allowed = False
+                break
+        if not allowed:
+            continue
         results.append(
             {
                 "node_type": row["node_type"],
                 "node_id": row["node_id"],
                 "depth": row["depth"],
-                "path": _decode_graph_path(row["path"]),
+                "path": path_nodes,
             }
         )
     return results
@@ -806,6 +893,15 @@ async def graph_shortest_path(payload: GraphShortestPathInput, ctx: Context) -> 
     pool, enums, agent = await require_context(ctx)
     max_hops = _clamp_hops(payload.max_hops)
 
+    if not await _node_allowed(
+        pool, enums, agent, payload.source_type, payload.source_id
+    ):
+        raise ValueError("Access denied")
+    if not await _node_allowed(
+        pool, enums, agent, payload.target_type, payload.target_id
+    ):
+        raise ValueError("Access denied")
+
     row = await pool.fetchrow(
         QUERIES["graph/shortest_path"],
         payload.source_type,
@@ -817,7 +913,12 @@ async def graph_shortest_path(payload: GraphShortestPathInput, ctx: Context) -> 
     if not row:
         raise ValueError("No path found")
 
-    return {"depth": row["depth"], "path": _decode_graph_path(row["path"])}
+    path_nodes = _decode_graph_path(row["path"])
+    for node in path_nodes:
+        if not await _node_allowed(pool, enums, agent, node["type"], node["id"]):
+            raise ValueError("No path found")
+
+    return {"depth": row["depth"], "path": path_nodes}
 
 
 # --- Job Tools ---
