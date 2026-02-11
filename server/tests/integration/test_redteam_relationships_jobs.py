@@ -1,0 +1,162 @@
+"""Red team tests for relationship access involving jobs."""
+
+# Standard Library
+import json
+from unittest.mock import MagicMock
+
+# Third-Party
+import pytest
+
+# Local
+from nebula_mcp.models import GetRelationshipsInput, QueryRelationshipsInput
+from nebula_mcp.server import get_relationships, query_relationships
+
+
+def _make_context(pool, enums, agent):
+    """Build a mock MCP context for relationship job tests."""
+
+    ctx = MagicMock()
+    ctx.request_context.lifespan_context = {
+        "pool": pool,
+        "enums": enums,
+        "agent": agent,
+    }
+    return ctx
+
+
+async def _make_agent(db_pool, enums, name, scopes):
+    """Insert a test agent for relationship job scenarios."""
+
+    status_id = enums.statuses.name_to_id["active"]
+    scope_ids = [enums.scopes.name_to_id[s] for s in scopes]
+
+    row = await db_pool.fetchrow(
+        """
+        INSERT INTO agents (name, description, scopes, requires_approval, status_id)
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING *
+        """,
+        name,
+        "redteam agent",
+        scope_ids,
+        False,
+        status_id,
+    )
+    return dict(row)
+
+
+async def _make_entity(db_pool, enums, name, scopes):
+    """Insert a test entity for relationship job scenarios."""
+
+    status_id = enums.statuses.name_to_id["active"]
+    type_id = enums.entity_types.name_to_id["person"]
+    scope_ids = [enums.scopes.name_to_id[s] for s in scopes]
+
+    row = await db_pool.fetchrow(
+        """
+        INSERT INTO entities (name, type_id, status_id, privacy_scope_ids, tags, metadata)
+        VALUES ($1, $2, $3, $4, $5, $6::jsonb)
+        RETURNING *
+        """,
+        name,
+        type_id,
+        status_id,
+        scope_ids,
+        ["test"],
+        json.dumps({"note": "public"}),
+    )
+    return dict(row)
+
+
+async def _make_job(db_pool, enums, title, agent_id):
+    """Insert a test job for relationship job scenarios."""
+
+    status_id = enums.statuses.name_to_id["active"]
+
+    row = await db_pool.fetchrow(
+        """
+        INSERT INTO jobs (title, status_id, agent_id, metadata)
+        VALUES ($1, $2, $3, $4::jsonb)
+        RETURNING *
+        """,
+        title,
+        status_id,
+        agent_id,
+        json.dumps({"secret": "job"}),
+    )
+    return dict(row)
+
+
+async def _make_relationship(db_pool, enums, source_type, source_id, target_type, target_id):
+    """Insert a relationship linking entities/jobs for access checks."""
+
+    status_id = enums.statuses.name_to_id["active"]
+    type_id = enums.relationship_types.name_to_id["related-to"]
+
+    row = await db_pool.fetchrow(
+        """
+        INSERT INTO relationships (source_type, source_id, target_type, target_id, type_id, status_id, properties)
+        VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
+        RETURNING *
+        """,
+        source_type,
+        source_id,
+        target_type,
+        target_id,
+        type_id,
+        status_id,
+        json.dumps({"note": "job-link"}),
+    )
+    return dict(row)
+
+
+@pytest.mark.asyncio
+async def test_get_relationships_hides_foreign_job_links(db_pool, enums):
+    """Agents should not see job relationships for other agents."""
+
+    owner = await _make_agent(db_pool, enums, "rel-owner", ["public"])
+    viewer = await _make_agent(db_pool, enums, "rel-viewer", ["public"])
+    entity = await _make_entity(db_pool, enums, "Public Node", ["public"])
+    job = await _make_job(db_pool, enums, "Private Job", owner["id"])
+    rel = await _make_relationship(
+        db_pool, enums, "entity", str(entity["id"]), "job", job["id"]
+    )
+
+    ctx = _make_context(db_pool, enums, viewer)
+    payload = GetRelationshipsInput(
+        source_type="entity",
+        source_id=str(entity["id"]),
+        direction="both",
+        relationship_type=None,
+    )
+    results = await get_relationships(payload, ctx)
+    ids = {row["id"] for row in results}
+
+    assert rel["id"] not in ids
+
+
+@pytest.mark.asyncio
+@pytest.mark.xfail(reason="job relationships should not be queryable by other agents")
+async def test_query_relationships_hides_foreign_job_links(db_pool, enums):
+    """Querying relationships should not expose other agents' jobs."""
+
+    owner = await _make_agent(db_pool, enums, "rel-owner-2", ["public"])
+    viewer = await _make_agent(db_pool, enums, "rel-viewer-2", ["public"])
+    entity = await _make_entity(db_pool, enums, "Public Node 2", ["public"])
+    job = await _make_job(db_pool, enums, "Private Job 2", owner["id"])
+    rel = await _make_relationship(
+        db_pool, enums, "job", job["id"], "entity", str(entity["id"])
+    )
+
+    ctx = _make_context(db_pool, enums, viewer)
+    payload = QueryRelationshipsInput(
+        source_type=None,
+        target_type=None,
+        relationship_types=None,
+        status_category="active",
+        limit=50,
+    )
+    results = await query_relationships(payload, ctx)
+    ids = {row["id"] for row in results}
+
+    assert rel["id"] not in ids
