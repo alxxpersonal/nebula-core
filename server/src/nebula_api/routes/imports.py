@@ -6,6 +6,7 @@ from typing import Any, Callable
 # Third-Party
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
+from starlette.responses import JSONResponse
 
 # Local
 from nebula_api.auth import maybe_check_agent_approval, require_auth
@@ -16,6 +17,7 @@ from nebula_mcp.executors import (
     execute_create_knowledge,
     execute_create_relationship,
 )
+from nebula_mcp.helpers import create_approval_request, ensure_approval_capacity
 from nebula_mcp.imports import (
     extract_items,
     normalize_entity,
@@ -68,6 +70,40 @@ async def _run_import(
     enums = request.app.state.enums
 
     items = extract_items(payload.format, payload.data, payload.items)
+    if auth["caller_type"] == "agent" and auth["agent"].get("requires_approval", True):
+        agent = auth["agent"]
+        try:
+            await ensure_approval_capacity(pool, agent["id"], len(items))
+        except ValueError as exc:
+            return JSONResponse(
+                status_code=429,
+                content={"status": "rate_limited", "message": str(exc)},
+            )
+        approvals: list[dict[str, Any]] = []
+        errors: list[dict[str, Any]] = []
+        for idx, item in enumerate(items, start=1):
+            try:
+                normalized = normalizer(item, payload.defaults)
+                approval = await create_approval_request(
+                    pool,
+                    agent["id"],
+                    approval_action,
+                    normalized,
+                )
+                approvals.append({"row": idx, "approval_id": str(approval["id"])})
+            except Exception as exc:
+                errors.append({"row": idx, "error": str(exc)})
+        return JSONResponse(
+            status_code=202,
+            content={
+                "status": "approval_required",
+                "created": 0,
+                "failed": len(errors),
+                "errors": errors,
+                "approvals": approvals,
+            },
+        )
+
     if resp := await maybe_check_agent_approval(
         pool, auth, approval_action, {"format": payload.format, "items": items}
     ):

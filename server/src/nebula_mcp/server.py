@@ -51,7 +51,9 @@ from nebula_mcp.helpers import (
     bulk_update_entity_tags as do_bulk_update_entity_tags,
 )
 from nebula_mcp.helpers import (
+    create_approval_request,
     enforce_scope_subset,
+    ensure_approval_capacity,
     filter_context_segments,
     normalize_bulk_operation,
     scope_names_from_ids,
@@ -253,14 +255,36 @@ async def _run_bulk_import(
     """
     pool, enums, agent = await require_context(ctx)
     items = extract_items(payload.format, payload.data, payload.items)
-    if approval := await maybe_require_approval(
-        pool, agent, action, {"format": payload.format, "items": items}
-    ):
-        return approval
-
     allowed_scopes = scope_names_from_ids(agent.get("scopes", []), enums)
     created: list[dict] = []
     errors: list[dict] = []
+
+    if agent.get("requires_approval", True):
+        await ensure_approval_capacity(pool, agent["id"], len(items))
+        approvals: list[dict] = []
+        for idx, item in enumerate(items, start=1):
+            try:
+                normalized = normalizer(item, payload.defaults)
+                if "scopes" in normalized:
+                    normalized["scopes"] = enforce_scope_subset(
+                        normalized["scopes"], allowed_scopes
+                    )
+                approval = await create_approval_request(
+                    pool,
+                    agent["id"],
+                    action,
+                    normalized,
+                )
+                approvals.append({"row": idx, "approval_id": str(approval["id"])})
+            except Exception as exc:
+                errors.append({"row": idx, "error": str(exc)})
+        return {
+            "created": 0,
+            "failed": len(errors),
+            "errors": errors,
+            "approvals": approvals,
+            "status": "approval_required",
+        }
 
     async with pool.acquire() as conn:
         async with conn.transaction():

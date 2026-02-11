@@ -78,7 +78,9 @@ def filter_context_segments(metadata: dict | str, agent_scopes: list[str]) -> di
 MAX_PENDING_APPROVALS = 100
 
 
-async def ensure_approval_capacity(pool: Pool, agent_id: str) -> None:
+async def ensure_approval_capacity(
+    pool: Pool, agent_id: str, requested: int = 1
+) -> None:
     """Raise if agent has too many pending approvals."""
 
     count = await pool.fetchval(
@@ -94,7 +96,9 @@ async def ensure_approval_capacity(pool: Pool, agent_id: str) -> None:
         count_value = int(count)
     except (TypeError, ValueError):
         return
-    if count_value >= MAX_PENDING_APPROVALS:
+    if requested < 1:
+        return
+    if count_value + requested > MAX_PENDING_APPROVALS:
         raise ValueError("Approval queue limit reached")
 
 
