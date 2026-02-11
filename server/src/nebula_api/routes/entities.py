@@ -77,15 +77,15 @@ def _has_write_scopes(agent_scopes: list, node_scopes: list) -> bool:
 async def _require_entity_write_access(
     pool: Any, enums: Any, auth: dict, entity_ids: list[str]
 ) -> None:
-    if auth["caller_type"] != "agent":
-        return
-    if _is_admin(auth, enums):
-        return
     for entity_id in entity_ids:
         try:
             UUID(entity_id)
         except ValueError:
             api_error("INVALID_INPUT", "Invalid entity id", 400)
+    if auth["caller_type"] != "agent":
+        return
+    if _is_admin(auth, enums):
+        return
     rows = await pool.fetch(QUERIES["entities/scopes_by_ids"], entity_ids)
     if len(rows) != len(set(entity_ids)):
         api_error("NOT_FOUND", "Entity not found", 404)

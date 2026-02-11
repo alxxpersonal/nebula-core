@@ -2,6 +2,7 @@
 
 # Standard Library
 import os
+from uuid import UUID
 
 # Third-Party
 from fastapi import APIRouter, Depends, Query, Request
@@ -33,6 +34,13 @@ def _require_admin_scope(auth: dict, enums: EnumRegistry) -> None:
     }
     if not scope_ids.intersection(allowed_ids):
         api_error("FORBIDDEN", "Admin scope required", 403)
+
+
+def _require_uuid(value: str, label: str) -> None:
+    try:
+        UUID(str(value))
+    except ValueError:
+        api_error("INVALID_INPUT", f"Invalid {label} id", 400)
 
 
 @router.get("/")
@@ -68,6 +76,12 @@ async def list_audit_log(
     pool = request.app.state.pool
     enums = request.app.state.enums
     _require_admin_scope(auth, enums)
+    if actor_id:
+        _require_uuid(actor_id, "actor")
+    if record_id:
+        _require_uuid(record_id, "record")
+    if scope_id:
+        _require_uuid(scope_id, "scope")
     rows = await query_audit_log(
         pool,
         table,

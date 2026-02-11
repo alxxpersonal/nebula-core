@@ -195,6 +195,8 @@ def _require_job_owner(agent: dict, enums: Any, job: dict) -> None:
 async def _require_entity_write_access(
     pool: Pool, enums: Any, agent: dict, entity_ids: list[str]
 ) -> None:
+    for entity_id in entity_ids:
+        _require_uuid(entity_id, "entity")
     if _is_admin(agent, enums):
         return
     if not entity_ids:
@@ -229,18 +231,14 @@ async def _has_hidden_relationships(
                 rel_type = rel[f"{side}_type"]
                 rel_id = rel[f"{side}_id"]
                 if rel_type == "entity":
-                    row = await pool.fetchrow(
-                        QUERIES["entities/get_by_id"], rel_id
-                    )
+                    row = await pool.fetchrow(QUERIES["entities/get_by_id"], rel_id)
                     if not row:
                         return True
                     scopes = row.get("privacy_scope_ids") or []
                     if scopes and not any(s in scope_ids for s in scopes):
                         return True
                 if rel_type == "knowledge":
-                    row = await pool.fetchrow(
-                        QUERIES["knowledge/get"], rel_id, None
-                    )
+                    row = await pool.fetchrow(QUERIES["knowledge/get"], rel_id, None)
                     if not row:
                         return True
                     scopes = row.get("privacy_scope_ids") or []
@@ -303,6 +301,8 @@ async def _validate_relationship_node(
     label: str,
     require_write: bool = False,
 ) -> None:
+    if node_type in {"entity", "knowledge", "job", "file", "log"}:
+        _require_uuid(node_id, label.lower())
     if node_type == "entity":
         row = await pool.fetchrow(QUERIES["entities/get_by_id"], node_id)
         if not row:
@@ -526,9 +526,8 @@ async def get_approval_diff(payload: GetApprovalDiffInput, ctx: Context) -> dict
     """Compute diff for an approval request."""
 
     pool, enums, agent = await require_context(ctx)
-    row = await pool.fetchrow(
-        QUERIES["approvals/get_request"], payload.approval_id
-    )
+    _require_uuid(payload.approval_id, "approval")
+    row = await pool.fetchrow(QUERIES["approvals/get_request"], payload.approval_id)
     if not row:
         raise ValueError("Approval request not found")
     if not _is_admin(agent, enums) and row.get("requested_by") != agent.get("id"):
@@ -804,6 +803,12 @@ async def query_audit_log(payload: QueryAuditLogInput, ctx: Context) -> list[dic
     _require_admin(agent, enums)
     limit = _clamp_limit(payload.limit)
     offset = max(0, payload.offset)
+    if payload.actor_id:
+        _require_uuid(payload.actor_id, "actor")
+    if payload.record_id:
+        _require_uuid(payload.record_id, "record")
+    if payload.scope_id:
+        _require_uuid(payload.scope_id, "scope")
     return await fetch_audit_log(
         pool,
         payload.table_name,
@@ -997,9 +1002,7 @@ async def query_logs(payload: QueryLogsInput, ctx: Context) -> list[dict]:
     )
     results = []
     for row in rows:
-        if await _has_hidden_relationships(
-            pool, enums, agent, "log", str(row["id"])
-        ):
+        if await _has_hidden_relationships(pool, enums, agent, "log", str(row["id"])):
             continue
         results.append(dict(row))
     return results
@@ -1281,9 +1284,7 @@ async def create_job(payload: CreateJobInput, ctx: Context) -> dict:
         agent_id = agent.get("id")
         data["agent_id"] = str(agent_id) if agent_id else None
 
-    if resp := await maybe_require_approval(
-        pool, agent, "create_job", data
-    ):
+    if resp := await maybe_require_approval(pool, agent, "create_job", data):
         return resp
 
     return await execute_create_job(pool, enums, data)
@@ -1306,6 +1307,8 @@ async def query_jobs(payload: QueryJobsInput, ctx: Context) -> list[dict]:
 
     pool, enums, agent = await require_context(ctx)
     limit = _clamp_limit(payload.limit)
+    if payload.assigned_to:
+        _require_uuid(payload.assigned_to, "assignee")
     agent_id = payload.agent_id
     if not _is_admin(agent, enums):
         agent_id = agent.get("id")

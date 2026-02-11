@@ -3,6 +3,7 @@
 # Standard Library
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 # Third-Party
 from fastapi import APIRouter, Depends, Request
@@ -17,6 +18,13 @@ from nebula_mcp.query_loader import QueryLoader
 QUERIES = QueryLoader(Path(__file__).resolve().parents[2] / "queries")
 
 router = APIRouter()
+
+
+def _require_uuid(value: str, label: str) -> None:
+    try:
+        UUID(str(value))
+    except ValueError:
+        api_error("INVALID_INPUT", f"Invalid {label} id", 400)
 
 
 class LoginInput(BaseModel):
@@ -193,6 +201,7 @@ async def revoke_key(
     """
 
     pool = request.app.state.pool
+    _require_uuid(key_id, "key")
 
     result = await pool.execute(
         QUERIES["api_keys/revoke"],

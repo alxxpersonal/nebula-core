@@ -4,6 +4,7 @@
 import os
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 # Third-Party
 from fastapi import APIRouter, Depends, Request
@@ -32,6 +33,13 @@ def _has_admin_scope(auth: dict, enums: EnumRegistry) -> bool:
         if enums.scopes.name_to_id.get(name)
     }
     return bool(scope_ids.intersection(allowed_ids))
+
+
+def _require_uuid(value: str, label: str) -> None:
+    try:
+        UUID(str(value))
+    except ValueError:
+        api_error("INVALID_INPUT", f"Invalid {label} id", 400)
 
 
 def _require_admin_scope(auth: dict, enums: EnumRegistry) -> None:
@@ -166,9 +174,9 @@ async def update_agent(
     pool = request.app.state.pool
     enums = request.app.state.enums
 
-    is_self = auth.get("caller_type") == "agent" and str(
-        auth.get("agent_id")
-    ) == str(agent_id)
+    is_self = auth.get("caller_type") == "agent" and str(auth.get("agent_id")) == str(
+        agent_id
+    )
     strict_admin = os.getenv("NEBULA_STRICT_ADMIN") == "1"
     if strict_admin:
         if not is_self and not _has_admin_scope(auth, enums):

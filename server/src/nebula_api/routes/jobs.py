@@ -3,6 +3,7 @@
 # Standard Library
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 # Third-Party
 from fastapi import APIRouter, Depends, Query, Request
@@ -38,6 +39,13 @@ def _require_job_owner(auth: dict, enums: Any, job: dict) -> None:
         return
     if job.get("agent_id") != auth.get("agent_id"):
         api_error("FORBIDDEN", "Job not in your scope", 403)
+
+
+def _require_uuid(value: str, label: str) -> None:
+    try:
+        UUID(str(value))
+    except ValueError:
+        api_error("INVALID_INPUT", f"Invalid {label} id", 400)
 
 
 class CreateJobBody(BaseModel):
@@ -207,6 +215,8 @@ async def query_jobs(
     enums = request.app.state.enums
 
     status_list = status_names.split(",") if status_names else None
+    if assigned_to:
+        _require_uuid(assigned_to, "assignee")
     agent_filter = agent_id
     if auth["caller_type"] == "agent" and not _is_admin(auth, enums):
         agent_filter = auth.get("agent_id")

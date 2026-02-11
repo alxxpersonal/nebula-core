@@ -4,6 +4,7 @@
 import os
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 # Third-Party
 from fastapi import APIRouter, Depends, Request
@@ -43,6 +44,13 @@ def _require_admin_scope(auth: dict, enums: Any) -> None:
     }
     if not scope_ids.intersection(allowed_ids):
         api_error("FORBIDDEN", "Admin scope required", 403)
+
+
+def _require_uuid(value: str, label: str) -> None:
+    try:
+        UUID(str(value))
+    except ValueError:
+        api_error("INVALID_INPUT", f"Invalid {label} id", 400)
 
 
 class RejectBody(BaseModel):
@@ -94,6 +102,7 @@ async def get_approval(
     pool = request.app.state.pool
     enums = request.app.state.enums
     _require_admin_scope(auth, enums)
+    _require_uuid(approval_id, "approval")
 
     row = await pool.fetchrow(QUERIES["approvals/get_request"], approval_id)
     if not row:
@@ -121,6 +130,7 @@ async def approve(
     pool = request.app.state.pool
     enums = request.app.state.enums
     _require_admin_scope(auth, enums)
+    _require_uuid(approval_id, "approval")
 
     result = await do_approve(pool, enums, approval_id, str(auth["entity_id"]))
     return success(result)
@@ -147,6 +157,7 @@ async def reject(
     pool = request.app.state.pool
     enums = request.app.state.enums
     _require_admin_scope(auth, enums)
+    _require_uuid(approval_id, "approval")
 
     result = await do_reject(
         pool, approval_id, str(auth["entity_id"]), payload.review_notes
@@ -173,5 +184,6 @@ async def get_diff(
     pool = request.app.state.pool
     enums = request.app.state.enums
     _require_admin_scope(auth, enums)
+    _require_uuid(approval_id, "approval")
     result = await compute_approval_diff(pool, approval_id)
     return success(result)
