@@ -146,7 +146,6 @@ async def test_get_relationships_hides_foreign_job_links(db_pool, enums):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="relationship queries should not expose other agents' jobs")
 async def test_query_relationships_hides_foreign_job_links(db_pool, enums):
     """Query relationships should not leak job relationships to other agents."""
 
@@ -162,8 +161,10 @@ async def test_query_relationships_hides_foreign_job_links(db_pool, enums):
     app.state.pool = db_pool
     app.state.enums = enums
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        resp = await client.get("/api/relationships")
+    async with AsyncClient(
+        transport=transport, base_url="http://test", follow_redirects=True
+    ) as client:
+        resp = await client.get("/api/relationships/")
     app.dependency_overrides.pop(require_auth, None)
 
     assert resp.status_code == 200
