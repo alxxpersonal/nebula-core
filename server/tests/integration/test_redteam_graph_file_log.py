@@ -131,7 +131,6 @@ async def _attach_relationship(db_pool, enums, source_type, source_id, target_ty
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="graph neighbors should hide files linked to private entities")
 async def test_graph_neighbors_hides_hidden_file(db_pool, enums):
     """Graph neighbors should not expose files with hidden relationships."""
 
@@ -174,7 +173,6 @@ async def test_graph_neighbors_hides_hidden_file(db_pool, enums):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="graph neighbors should hide logs linked to private entities")
 async def test_graph_neighbors_hides_hidden_log(db_pool, enums):
     """Graph neighbors should not expose logs with hidden relationships."""
 
@@ -217,7 +215,6 @@ async def test_graph_neighbors_hides_hidden_log(db_pool, enums):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="shortest path should hide files linked to private entities")
 async def test_graph_shortest_path_hides_hidden_file(db_pool, enums):
     """Shortest path should not expose files with hidden relationships."""
 
@@ -260,7 +257,6 @@ async def test_graph_shortest_path_hides_hidden_file(db_pool, enums):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="shortest path should hide logs linked to private entities")
 async def test_graph_shortest_path_hides_hidden_log(db_pool, enums):
     """Shortest path should not expose logs with hidden relationships."""
 
