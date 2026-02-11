@@ -78,7 +78,6 @@ def _auth_override(agent_id, enums):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="query_knowledge should filter context segments by auth scopes")
 async def test_api_query_knowledge_filters_context_segments(db_pool, enums):
     """API query results should not include context segments outside scopes."""
 
@@ -95,8 +94,10 @@ async def test_api_query_knowledge_filters_context_segments(db_pool, enums):
     app.state.pool = db_pool
     app.state.enums = enums
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        resp = await client.get("/api/knowledge")
+    async with AsyncClient(
+        transport=transport, base_url="http://test", follow_redirects=True
+    ) as client:
+        resp = await client.get("/api/knowledge/")
     app.dependency_overrides.pop(require_auth, None)
 
     assert resp.status_code == 200
