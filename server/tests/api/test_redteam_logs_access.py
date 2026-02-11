@@ -164,7 +164,7 @@ async def test_api_query_logs_hides_private_entity_logs(db_pool, enums):
     app.state.enums = enums
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        resp = await client.get("/api/logs")
+        resp = await client.get("/api/logs/")
     app.dependency_overrides.pop(require_auth, None)
 
     assert resp.status_code == 200
