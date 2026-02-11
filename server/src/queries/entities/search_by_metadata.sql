@@ -13,5 +13,6 @@ JOIN entity_types et ON e.type_id = et.id
 JOIN statuses s ON e.status_id = s.id
 WHERE 
     e.metadata @> $1::jsonb
+    AND e.privacy_scope_ids && $3::uuid[]
     AND s.category = 'active'
 LIMIT $2;

@@ -12,13 +12,26 @@ from starlette.responses import JSONResponse
 # Local
 from nebula_api.auth import require_auth
 from nebula_api.response import api_error, success
-from nebula_mcp.enums import load_enums, require_scopes
+from nebula_mcp.enums import EnumRegistry, load_enums, require_scopes
 from nebula_mcp.helpers import create_approval_request
 from nebula_mcp.query_loader import QueryLoader
 
 QUERIES = QueryLoader(Path(__file__).resolve().parents[2] / "queries")
 
 router = APIRouter()
+
+ADMIN_SCOPE_NAMES = {"vault-only", "sensitive"}
+
+
+def _require_admin_scope(auth: dict, enums: EnumRegistry) -> None:
+    scope_ids = set(auth.get("scopes", []))
+    allowed_ids = {
+        enums.scopes.name_to_id.get(name)
+        for name in ADMIN_SCOPE_NAMES
+        if enums.scopes.name_to_id.get(name)
+    }
+    if not scope_ids.intersection(allowed_ids):
+        api_error("FORBIDDEN", "Admin scope required", 403)
 
 
 class RegisterAgentBody(BaseModel):

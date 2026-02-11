@@ -117,11 +117,14 @@ func metadataInputLines(data map[string]any, indent int) []string {
 	for _, k := range keys {
 		switch typed := data[k].(type) {
 		case map[string]any:
-			lines = append(lines, pad+k+":")
+			lines = append(lines, pad+components.SanitizeText(k)+":")
 			lines = append(lines, metadataInputLines(typed, indent+2)...)
 		default:
 			value := formatMetadataValue(typed)
-			lines = append(lines, fmt.Sprintf("%s%s: %s", pad, k, value))
+			lines = append(
+				lines,
+				fmt.Sprintf("%s%s: %s", pad, components.SanitizeText(k), value),
+			)
 		}
 	}
 	return lines
@@ -136,22 +139,24 @@ func formatMetadataValue(value any) string {
 		}
 		return "[" + strings.Join(parts, ", ") + "]"
 	case map[string]any:
-		b, err := json.Marshal(typed)
+		b, err := json.Marshal(sanitizeMetadataValue(typed))
 		if err != nil {
-			return fmt.Sprintf("%v", typed)
+			return components.SanitizeText(fmt.Sprintf("%v", typed))
 		}
-		return string(b)
+		return components.SanitizeText(string(b))
+	case string:
+		return components.SanitizeText(typed)
 	default:
-		return fmt.Sprintf("%v", typed)
+		return components.SanitizeText(fmt.Sprintf("%v", typed))
 	}
 }
 
 func formatMetadataInline(value any) string {
 	switch typed := value.(type) {
 	case string:
-		return typed
+		return components.SanitizeText(typed)
 	default:
-		return fmt.Sprintf("%v", typed)
+		return components.SanitizeText(fmt.Sprintf("%v", typed))
 	}
 }
 
@@ -170,13 +175,14 @@ func renderMetadataInput(input string) string {
 
 		if strings.HasPrefix(content, "- ") {
 			value := strings.TrimSpace(strings.TrimPrefix(content, "- "))
-			lines[i] = pad + MetaPunctStyle.Render("- ") + MetaValueStyle.Render(value)
+			lines[i] = pad + MetaPunctStyle.Render("- ") +
+				MetaValueStyle.Render(components.SanitizeText(value))
 			continue
 		}
 
 		if idx := strings.Index(content, ":"); idx != -1 {
-			key := strings.TrimSpace(content[:idx])
-			rest := strings.TrimSpace(content[idx+1:])
+			key := components.SanitizeText(strings.TrimSpace(content[:idx]))
+			rest := components.SanitizeText(strings.TrimSpace(content[idx+1:]))
 			rendered := MetaKeyStyle.Render(key) + MetaPunctStyle.Render(":")
 			if rest != "" {
 				rendered += " " + MetaValueStyle.Render(rest)
@@ -185,7 +191,7 @@ func renderMetadataInput(input string) string {
 			continue
 		}
 
-		lines[i] = pad + MetaValueStyle.Render(content)
+		lines[i] = pad + MetaValueStyle.Render(components.SanitizeText(content))
 	}
 	return strings.Join(lines, "\n")
 }
@@ -230,15 +236,36 @@ func metadataValuePreview(value any, maxLen int) string {
 	}
 	switch typed := value.(type) {
 	case string:
-		return truncateString(strings.TrimSpace(typed), maxLen)
+		return truncateString(strings.TrimSpace(components.SanitizeText(typed)), maxLen)
 	case []any:
 		parts := make([]string, 0, len(typed))
 		for _, item := range typed {
-			parts = append(parts, fmt.Sprintf("%v", item))
+			parts = append(parts, components.SanitizeText(fmt.Sprintf("%v", item)))
 		}
 		return truncateString(strings.Join(parts, ", "), maxLen)
 	default:
-		return truncateString(fmt.Sprintf("%v", value), maxLen)
+		return truncateString(components.SanitizeText(fmt.Sprintf("%v", value)), maxLen)
+	}
+}
+
+func sanitizeMetadataValue(value any) any {
+	switch typed := value.(type) {
+	case string:
+		return components.SanitizeText(typed)
+	case map[string]any:
+		cleaned := make(map[string]any, len(typed))
+		for key, val := range typed {
+			cleaned[components.SanitizeText(key)] = sanitizeMetadataValue(val)
+		}
+		return cleaned
+	case []any:
+		out := make([]any, 0, len(typed))
+		for _, item := range typed {
+			out = append(out, sanitizeMetadataValue(item))
+		}
+		return out
+	default:
+		return value
 	}
 }
 
@@ -270,11 +297,24 @@ func metadataLinesStyled(data map[string]any, indent int) []string {
 	for _, k := range keys {
 		switch typed := data[k].(type) {
 		case map[string]any:
-			lines = append(lines, pad+MetaKeyStyle.Render(k)+MetaPunctStyle.Render(":"))
+			lines = append(
+				lines,
+				pad+MetaKeyStyle.Render(components.SanitizeText(k))+
+					MetaPunctStyle.Render(":"),
+			)
 			lines = append(lines, metadataLinesStyled(typed, indent+2)...)
 		default:
 			value := formatMetadataValue(typed)
-			lines = append(lines, fmt.Sprintf("%s%s%s %s", pad, MetaKeyStyle.Render(k), MetaPunctStyle.Render(":"), MetaValueStyle.Render(value)))
+			lines = append(
+				lines,
+				fmt.Sprintf(
+					"%s%s%s %s",
+					pad,
+					MetaKeyStyle.Render(components.SanitizeText(k)),
+					MetaPunctStyle.Render(":"),
+					MetaValueStyle.Render(value),
+				),
+			)
 		}
 	}
 	return lines
@@ -292,10 +332,18 @@ func metadataLinesPlain(data map[string]any, indent int) []string {
 	for _, k := range keys {
 		switch typed := data[k].(type) {
 		case map[string]any:
-			lines = append(lines, pad+k+":")
+			lines = append(lines, pad+components.SanitizeText(k)+":")
 			lines = append(lines, metadataLinesPlain(typed, indent+2)...)
 		default:
-			lines = append(lines, fmt.Sprintf("%s%s: %s", pad, k, formatMetadataValue(typed)))
+			lines = append(
+				lines,
+				fmt.Sprintf(
+					"%s%s: %s",
+					pad,
+					components.SanitizeText(k),
+					formatMetadataValue(typed),
+				),
+			)
 		}
 	}
 	return lines

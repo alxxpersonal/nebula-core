@@ -27,6 +27,8 @@ MIGRATION_FILES = [
     "007_schema_fixes.sql",
     "008_api_keys.sql",
     "009_agent_api_keys.sql",
+    "010_add_work_scope.sql",
+    "011_security_hardening.sql",
 ]
 
 TEST_DB = "nebula_test"

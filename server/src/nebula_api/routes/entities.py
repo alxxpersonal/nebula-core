@@ -7,7 +7,7 @@ from typing import Any
 
 # Third-Party
 from fastapi import APIRouter, Depends, Query, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 # Local
 from nebula_api.auth import maybe_check_agent_approval, require_auth
@@ -21,8 +21,10 @@ from nebula_mcp.helpers import (
     bulk_update_entity_tags as do_bulk_update_entity_tags,
 )
 from nebula_mcp.helpers import (
+    enforce_scope_subset,
     filter_context_segments,
     normalize_bulk_operation,
+    scope_names_from_ids,
 )
 from nebula_mcp.helpers import (
     get_entity_history as fetch_entity_history,
@@ -30,11 +32,24 @@ from nebula_mcp.helpers import (
 from nebula_mcp.helpers import (
     revert_entity as do_revert_entity,
 )
+from nebula_mcp.models import MAX_TAG_LENGTH, MAX_TAGS
 from nebula_mcp.query_loader import QueryLoader
 
 QUERIES = QueryLoader(Path(__file__).resolve().parents[2] / "queries")
 
 router = APIRouter()
+
+
+def _validate_tag_list(tags: list[str] | None) -> list[str] | None:
+    if tags is None:
+        return None
+    cleaned = [t.strip() for t in tags if t and t.strip()]
+    if len(cleaned) > MAX_TAGS:
+        raise ValueError("Too many tags")
+    for tag in cleaned:
+        if len(tag) > MAX_TAG_LENGTH:
+            raise ValueError("Tag too long")
+    return cleaned
 
 
 class CreateEntityBody(BaseModel):
@@ -58,6 +73,11 @@ class CreateEntityBody(BaseModel):
     metadata: dict | None = None
     vault_file_path: str | None = None
 
+    @field_validator("tags", mode="before")
+    @classmethod
+    def _clean_tags(cls, v: list[str] | None) -> list[str] | None:
+        return _validate_tag_list(v)
+
 
 class UpdateEntityBody(BaseModel):
     """Payload for updating an entity.
@@ -74,6 +94,11 @@ class UpdateEntityBody(BaseModel):
     status: str | None = None
     status_reason: str | None = None
 
+    @field_validator("tags", mode="before")
+    @classmethod
+    def _clean_tags(cls, v: list[str] | None) -> list[str] | None:
+        return _validate_tag_list(v)
+
 
 class MetadataSearchBody(BaseModel):
     """Payload for metadata search.
@@ -84,7 +109,7 @@ class MetadataSearchBody(BaseModel):
     """
 
     metadata_query: dict
-    limit: int = 50
+    limit: int = Field(default=50, ge=1, le=1000)
 
 
 class RevertEntityBody(BaseModel):
@@ -109,6 +134,11 @@ class BulkUpdateTagsBody(BaseModel):
     entity_ids: list[str]
     tags: list[str] = []
     op: str = "add"
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def _clean_tags(cls, v: list[str] | None) -> list[str] | None:
+        return _validate_tag_list(v)
 
 
 class BulkUpdateScopesBody(BaseModel):
@@ -147,6 +177,9 @@ async def create_entity(
     data.setdefault("metadata", {})
     if data["metadata"] is None:
         data["metadata"] = {}
+    if auth["caller_type"] == "agent":
+        allowed = scope_names_from_ids(auth.get("scopes", []), enums)
+        data["scopes"] = enforce_scope_subset(data["scopes"], allowed)
     if resp := await maybe_check_agent_approval(pool, auth, "create_entity", data):
         return resp
     result = await execute_create_entity(pool, enums, data)
@@ -311,13 +344,20 @@ async def bulk_update_entity_scopes(
 
     pool = request.app.state.pool
     enums = request.app.state.enums
+
+    scopes = payload.scopes
+    if auth["caller_type"] == "agent":
+        allowed = scope_names_from_ids(auth.get("scopes", []), enums)
+        scopes = enforce_scope_subset(scopes, allowed)
+    data = payload.model_dump()
+    data["scopes"] = scopes
     if resp := await maybe_check_agent_approval(
-        pool, auth, "bulk_update_entity_scopes", payload.model_dump()
+        pool, auth, "bulk_update_entity_scopes", data
     ):
         return resp
 
     updated = await do_bulk_update_entity_scopes(
-        pool, enums, payload.entity_ids, payload.scopes, op
+        pool, enums, payload.entity_ids, scopes, op
     )
     return success({"updated": len(updated), "entity_ids": updated})
 
@@ -417,10 +457,12 @@ async def search_by_metadata(
         API response with matching entities.
     """
     pool = request.app.state.pool
+    scope_ids = auth.get("scopes", [])
 
     rows = await pool.fetch(
         QUERIES["entities/search_by_metadata"],
         json.dumps(payload.metadata_query),
         payload.limit,
+        scope_ids,
     )
     return success([dict(r) for r in rows])

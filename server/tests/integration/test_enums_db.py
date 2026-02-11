@@ -31,9 +31,9 @@ async def test_statuses_count(enums):
 
 
 async def test_scopes_count(enums):
-    """Scopes section should contain exactly 9 entries."""
+    """Scopes section should contain exactly 10 entries."""
 
-    assert len(enums.scopes.name_to_id) == 9
+    assert len(enums.scopes.name_to_id) == 10
 
 
 async def test_relationship_types_count(enums):

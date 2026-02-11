@@ -14,6 +14,32 @@ from .query_loader import QueryLoader
 QUERIES = QueryLoader(Path(__file__).resolve().parents[1] / "queries")
 
 
+def scope_names_from_ids(scope_ids: list, enums: EnumRegistry) -> list[str]:
+    """Resolve scope UUIDs to names."""
+
+    names: list[str] = []
+    for scope_id in scope_ids or []:
+        name = enums.scopes.id_to_name.get(scope_id)
+        if name:
+            names.append(name)
+    return names
+
+
+def enforce_scope_subset(requested: list[str], allowed: list[str]) -> list[str]:
+    """Ensure requested scopes are within allowed scope names."""
+
+    if not requested:
+        return list(allowed)
+    requested_set = set(requested)
+    allowed_set = set(allowed)
+    if not requested_set.issubset(allowed_set):
+        missing = sorted(requested_set - allowed_set)
+        raise ValueError(
+            f"Requested scopes exceed allowed scopes: {', '.join(missing)}"
+        )
+    return list(requested)
+
+
 # --- Privacy Filtering ---
 
 

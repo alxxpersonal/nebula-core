@@ -1,6 +1,7 @@
 """Pydantic models for Nebula MCP."""
 
 # Standard Library
+import unicodedata
 from datetime import datetime
 from typing import Self
 
@@ -13,6 +14,74 @@ from pydantic import (
     field_validator,
     model_validator,
 )
+
+MAX_TAGS = 50
+MAX_TAG_LENGTH = 64
+MAX_PAGE_LIMIT = 1000
+MAX_GRAPH_HOPS = 6
+
+BASIC_NODE_TYPES = {
+    "entity",
+    "knowledge",
+    "log",
+    "job",
+    "agent",
+    "file",
+    "protocol",
+}
+
+BIDI_CONTROLS = {
+    "\u202a",
+    "\u202b",
+    "\u202c",
+    "\u202d",
+    "\u202e",
+    "\u2066",
+    "\u2067",
+    "\u2068",
+    "\u2069",
+    "\u200e",
+    "\u200f",
+}
+
+
+def _strip_control(text: str) -> str:
+    cleaned: list[str] = []
+    for ch in text:
+        if ch in BIDI_CONTROLS:
+            continue
+        if unicodedata.category(ch).startswith("C"):
+            continue
+        cleaned.append(ch)
+    return "".join(cleaned).strip()
+
+
+def _sanitize_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    return _strip_control(value)
+
+
+def _sanitize_tags(tags: list[str] | None) -> list[str] | None:
+    if tags is None:
+        return None
+    cleaned = [_strip_control(t) for t in tags]
+    cleaned = [t for t in cleaned if t]
+    if len(cleaned) > MAX_TAGS:
+        raise ValueError("Too many tags")
+    for tag in cleaned:
+        if len(tag) > MAX_TAG_LENGTH:
+            raise ValueError("Tag too long")
+    return cleaned
+
+
+def _validate_node_type(value: str | None) -> str | None:
+    if value is None:
+        return None
+    cleaned = _strip_control(value)
+    if cleaned not in BASIC_NODE_TYPES:
+        raise ValueError("Invalid node type")
+    return cleaned
 
 
 # --- Core Input Models ---
@@ -28,6 +97,16 @@ class CreateEntityInput(BaseModel):
         default_factory=dict, description="Flexible metadata payload"
     )
     vault_file_path: str | None = Field(default=None, description="Source vault path")
+
+    @field_validator("name", "type", mode="before")
+    @classmethod
+    def _clean_text_fields(cls, v: str | None) -> str | None:
+        return _sanitize_text(v)
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def _clean_tags(cls, v: list[str] | None) -> list[str] | None:
+        return _sanitize_tags(v)
 
 
 # --- Shared Metadata Models ---
@@ -265,8 +344,20 @@ class QueryEntitiesInput(BaseModel):
     search_text: str | None = Field(default=None, description="Full-text search query")
     status_category: str = Field(default="active", description="active or archived")
     scopes: list[str] = Field(default_factory=list, description="Privacy scope filters")
-    limit: int = Field(default=50, description="Max results to return")
+    limit: int = Field(
+        default=50, ge=1, le=MAX_PAGE_LIMIT, description="Max results to return"
+    )
     offset: int = Field(default=0, description="Pagination offset")
+
+    @field_validator("type", "search_text", mode="before")
+    @classmethod
+    def _clean_query_text(cls, v: str | None) -> str | None:
+        return _sanitize_text(v)
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def _clean_query_tags(cls, v: list[str] | None) -> list[str] | None:
+        return _sanitize_tags(v)
 
 
 class UpdateEntityInput(BaseModel):
@@ -280,6 +371,11 @@ class UpdateEntityInput(BaseModel):
         default=None, description="Reason for status change"
     )
 
+    @field_validator("tags", mode="before")
+    @classmethod
+    def _clean_update_tags(cls, v: list[str] | None) -> list[str] | None:
+        return _sanitize_tags(v)
+
 
 class BulkUpdateEntityTagsInput(BaseModel):
     """Input payload for bulk updating entity tags."""
@@ -287,6 +383,11 @@ class BulkUpdateEntityTagsInput(BaseModel):
     entity_ids: list[str] = Field(..., description="Entity UUIDs to update")
     tags: list[str] = Field(default_factory=list, description="Tag values")
     op: str = Field(default="add", description="add, remove, or set")
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def _clean_bulk_tags(cls, v: list[str] | None) -> list[str] | None:
+        return _sanitize_tags(v)
 
 
 class BulkUpdateEntityScopesInput(BaseModel):
@@ -301,7 +402,9 @@ class GetEntityHistoryInput(BaseModel):
     """Input payload for listing entity audit history."""
 
     entity_id: str = Field(..., description="Entity UUID")
-    limit: int = Field(default=50, description="Max results to return")
+    limit: int = Field(
+        default=50, ge=1, le=MAX_PAGE_LIMIT, description="Max results to return"
+    )
     offset: int = Field(default=0, description="Pagination offset")
 
 
@@ -321,7 +424,9 @@ class QueryAuditLogInput(BaseModel):
     actor_id: str | None = Field(default=None, description="Actor UUID")
     record_id: str | None = Field(default=None, description="Record id filter")
     scope_id: str | None = Field(default=None, description="Scope UUID filter")
-    limit: int = Field(default=50, description="Max results to return")
+    limit: int = Field(
+        default=50, ge=1, le=MAX_PAGE_LIMIT, description="Max results to return"
+    )
     offset: int = Field(default=0, description="Pagination offset")
 
 
@@ -329,7 +434,9 @@ class SearchEntitiesByMetadataInput(BaseModel):
     """Input payload for searching entities by metadata fields."""
 
     metadata_query: dict = Field(..., description="JSONB query object")
-    limit: int = Field(default=50, description="Max results to return")
+    limit: int = Field(
+        default=50, ge=1, le=MAX_PAGE_LIMIT, description="Max results to return"
+    )
 
 
 # --- Knowledge Input Models ---
@@ -346,6 +453,16 @@ class CreateKnowledgeInput(BaseModel):
     tags: list[str] = Field(default_factory=list, description="Kebab-case tags")
     metadata: dict = Field(default_factory=dict, description="Additional metadata")
 
+    @field_validator("title", "source_type", mode="before")
+    @classmethod
+    def _clean_knowledge_text(cls, v: str | None) -> str | None:
+        return _sanitize_text(v)
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def _clean_knowledge_tags(cls, v: list[str] | None) -> list[str] | None:
+        return _sanitize_tags(v)
+
 
 class QueryKnowledgeInput(BaseModel):
     """Input payload for searching knowledge items."""
@@ -354,8 +471,15 @@ class QueryKnowledgeInput(BaseModel):
     tags: list[str] = Field(default_factory=list, description="Tag filters")
     search_text: str | None = Field(default=None, description="Full-text search query")
     scopes: list[str] = Field(default_factory=list, description="Privacy scope filters")
-    limit: int = Field(default=50, description="Max results to return")
+    limit: int = Field(
+        default=50, ge=1, le=MAX_PAGE_LIMIT, description="Max results to return"
+    )
     offset: int = Field(default=0, description="Pagination offset")
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def _clean_knowledge_query_tags(cls, v: list[str] | None) -> list[str] | None:
+        return _sanitize_tags(v)
 
 
 class LinkKnowledgeInput(BaseModel):
@@ -379,6 +503,16 @@ class CreateLogInput(BaseModel):
     tags: list[str] = Field(default_factory=list, description="Kebab-case tags")
     metadata: dict = Field(default_factory=dict, description="Additional metadata")
 
+    @field_validator("log_type", mode="before")
+    @classmethod
+    def _clean_log_type(cls, v: str | None) -> str | None:
+        return _sanitize_text(v)
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def _clean_log_tags(cls, v: list[str] | None) -> list[str] | None:
+        return _sanitize_tags(v)
+
 
 class GetLogInput(BaseModel):
     """Input payload for retrieving a log entry."""
@@ -392,8 +526,15 @@ class QueryLogsInput(BaseModel):
     log_type: str | None = Field(default=None, description="Filter by log type")
     tags: list[str] = Field(default_factory=list, description="Tag filters")
     status_category: str = Field(default="active", description="active or archived")
-    limit: int = Field(default=50, description="Max results to return")
+    limit: int = Field(
+        default=50, ge=1, le=MAX_PAGE_LIMIT, description="Max results to return"
+    )
     offset: int = Field(default=0, description="Pagination offset")
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def _clean_log_query_tags(cls, v: list[str] | None) -> list[str] | None:
+        return _sanitize_tags(v)
 
 
 class UpdateLogInput(BaseModel):
@@ -406,6 +547,11 @@ class UpdateLogInput(BaseModel):
     status: str | None = Field(default=None, description="Status name")
     tags: list[str] | None = Field(default=None, description="Tags")
     metadata: dict | None = Field(default=None, description="Metadata")
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def _clean_update_log_tags(cls, v: list[str] | None) -> list[str] | None:
+        return _sanitize_tags(v)
 
 
 # --- Relationship Input Models ---
@@ -425,6 +571,16 @@ class CreateRelationshipInput(BaseModel):
     relationship_type: str = Field(..., description="Relationship type name")
     properties: dict = Field(default_factory=dict, description="Additional properties")
 
+    @field_validator("source_type", "target_type", mode="before")
+    @classmethod
+    def _clean_rel_types(cls, v: str | None) -> str | None:
+        return _validate_node_type(v)
+
+    @field_validator("relationship_type", mode="before")
+    @classmethod
+    def _clean_rel_name(cls, v: str | None) -> str | None:
+        return _sanitize_text(v)
+
 
 class GetRelationshipsInput(BaseModel):
     """Input payload for retrieving relationships."""
@@ -438,6 +594,11 @@ class GetRelationshipsInput(BaseModel):
     )
     direction: str = Field(default="both", description="outgoing, incoming, or both")
 
+    @field_validator("source_type", mode="before")
+    @classmethod
+    def _clean_get_rel_type(cls, v: str | None) -> str | None:
+        return _validate_node_type(v)
+
 
 class QueryRelationshipsInput(BaseModel):
     """Input payload for searching relationships."""
@@ -448,7 +609,14 @@ class QueryRelationshipsInput(BaseModel):
         default_factory=list, description="Filter by relationship types"
     )
     status_category: str = Field(default="active", description="active or archived")
-    limit: int = Field(default=50, description="Max results to return")
+    limit: int = Field(
+        default=50, ge=1, le=MAX_PAGE_LIMIT, description="Max results to return"
+    )
+
+    @field_validator("source_type", "target_type", mode="before")
+    @classmethod
+    def _clean_query_rel_types(cls, v: str | None) -> str | None:
+        return _validate_node_type(v)
 
 
 class UpdateRelationshipInput(BaseModel):
@@ -466,8 +634,18 @@ class GraphNeighborsInput(BaseModel):
         ..., description="entity, knowledge, log, job, agent, file, protocol"
     )
     source_id: str = Field(..., description="Source item UUID")
-    max_hops: int = Field(default=2, description="Max hop depth")
-    limit: int = Field(default=100, description="Max results to return")
+    max_hops: int = Field(
+        default=2, ge=1, le=MAX_GRAPH_HOPS, description="Max hop depth"
+    )
+
+    @field_validator("source_type", mode="before")
+    @classmethod
+    def _clean_graph_source_type(cls, v: str | None) -> str | None:
+        return _validate_node_type(v)
+
+    limit: int = Field(
+        default=100, ge=1, le=MAX_PAGE_LIMIT, description="Max results to return"
+    )
 
 
 class GraphShortestPathInput(BaseModel):
@@ -481,7 +659,14 @@ class GraphShortestPathInput(BaseModel):
         ..., description="entity, knowledge, log, job, agent, file, protocol"
     )
     target_id: str = Field(..., description="Target item UUID")
-    max_hops: int = Field(default=6, description="Max hop depth")
+    max_hops: int = Field(
+        default=6, ge=1, le=MAX_GRAPH_HOPS, description="Max hop depth"
+    )
+
+    @field_validator("source_type", "target_type", mode="before")
+    @classmethod
+    def _clean_graph_types(cls, v: str | None) -> str | None:
+        return _validate_node_type(v)
 
 
 # --- Job Input Models ---
@@ -528,7 +713,9 @@ class QueryJobsInput(BaseModel):
         default=False, description="Only overdue incomplete jobs"
     )
     parent_job_id: str | None = Field(default=None, description="Filter by parent job")
-    limit: int = Field(default=50, description="Max results to return")
+    limit: int = Field(
+        default=50, ge=1, le=MAX_PAGE_LIMIT, description="Max results to return"
+    )
 
 
 class UpdateJobStatusInput(BaseModel):
@@ -569,6 +756,16 @@ class CreateFileInput(BaseModel):
     tags: list[str] = Field(default_factory=list, description="File tags")
     metadata: dict = Field(default_factory=dict, description="Additional metadata")
 
+    @field_validator("filename", mode="before")
+    @classmethod
+    def _clean_filename(cls, v: str | None) -> str | None:
+        return _sanitize_text(v)
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def _clean_file_tags(cls, v: list[str] | None) -> list[str] | None:
+        return _sanitize_tags(v)
+
 
 class GetFileInput(BaseModel):
     """Input payload for retrieving a file record."""
@@ -582,8 +779,15 @@ class QueryFilesInput(BaseModel):
     tags: list[str] = Field(default_factory=list, description="Tag filters")
     mime_type: str | None = Field(default=None, description="Filter by MIME type")
     status_category: str = Field(default="active", description="active or archived")
-    limit: int = Field(default=50, description="Max results to return")
+    limit: int = Field(
+        default=50, ge=1, le=MAX_PAGE_LIMIT, description="Max results to return"
+    )
     offset: int = Field(default=0, description="Pagination offset")
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def _clean_file_query_tags(cls, v: list[str] | None) -> list[str] | None:
+        return _sanitize_tags(v)
 
 
 class UpdateFileInput(BaseModel):
@@ -601,6 +805,16 @@ class UpdateFileInput(BaseModel):
     status: str | None = Field(default=None, description="Status name")
     tags: list[str] | None = Field(default=None, description="File tags")
     metadata: dict | None = Field(default=None, description="Additional metadata")
+
+    @field_validator("filename", mode="before")
+    @classmethod
+    def _clean_update_filename(cls, v: str | None) -> str | None:
+        return _sanitize_text(v)
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def _clean_update_file_tags(cls, v: list[str] | None) -> list[str] | None:
+        return _sanitize_tags(v)
 
 
 class AttachFileInput(BaseModel):
@@ -635,6 +849,17 @@ class CreateProtocolInput(BaseModel):
     tags: list[str] = Field(default_factory=list, description="Tags")
     metadata: dict = Field(default_factory=dict, description="Metadata")
     vault_file_path: str | None = Field(default=None, description="Vault file path")
+    trusted: bool = Field(default=False, description="Trusted for prompt use")
+
+    @field_validator("name", "title", "protocol_type", mode="before")
+    @classmethod
+    def _clean_protocol_text(cls, v: str | None) -> str | None:
+        return _sanitize_text(v)
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def _clean_protocol_tags(cls, v: list[str] | None) -> list[str] | None:
+        return _sanitize_tags(v)
 
 
 class UpdateProtocolInput(BaseModel):
@@ -650,6 +875,17 @@ class UpdateProtocolInput(BaseModel):
     tags: list[str] | None = Field(default=None, description="Tags")
     metadata: dict | None = Field(default=None, description="Metadata")
     vault_file_path: str | None = Field(default=None, description="Vault file path")
+    trusted: bool | None = Field(default=None, description="Trusted for prompt use")
+
+    @field_validator("name", "title", "protocol_type", mode="before")
+    @classmethod
+    def _clean_update_protocol_text(cls, v: str | None) -> str | None:
+        return _sanitize_text(v)
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def _clean_update_protocol_tags(cls, v: list[str] | None) -> list[str] | None:
+        return _sanitize_tags(v)
 
 
 # --- Agent Input Models ---

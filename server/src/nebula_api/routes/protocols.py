@@ -6,18 +6,43 @@ from typing import Any
 
 # Third-Party
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 # Local
 from nebula_api.auth import maybe_check_agent_approval, require_auth
 from nebula_api.response import paginated, success
 from nebula_mcp.enums import require_status
 from nebula_mcp.executors import execute_create_protocol, execute_update_protocol
+from nebula_mcp.models import MAX_TAG_LENGTH, MAX_TAGS
 from nebula_mcp.query_loader import QueryLoader
 
 QUERIES = QueryLoader(Path(__file__).resolve().parents[2] / "queries")
 
 router = APIRouter()
+
+ADMIN_SCOPE_NAMES = {"vault-only", "sensitive"}
+
+
+def _is_admin(auth: dict, enums: Any) -> bool:
+    scope_ids = set(auth.get("scopes", []))
+    allowed_ids = {
+        enums.scopes.name_to_id.get(name)
+        for name in ADMIN_SCOPE_NAMES
+        if enums.scopes.name_to_id.get(name)
+    }
+    return bool(scope_ids.intersection(allowed_ids))
+
+
+def _validate_tag_list(tags: list[str] | None) -> list[str] | None:
+    if tags is None:
+        return None
+    cleaned = [t.strip() for t in tags if t and t.strip()]
+    if len(cleaned) > MAX_TAGS:
+        raise ValueError("Too many tags")
+    for tag in cleaned:
+        if len(tag) > MAX_TAG_LENGTH:
+            raise ValueError("Tag too long")
+    return cleaned
 
 
 class CreateProtocolBody(BaseModel):
@@ -33,6 +58,12 @@ class CreateProtocolBody(BaseModel):
     tags: list[str] = []
     metadata: dict | None = None
     vault_file_path: str | None = None
+    trusted: bool = False
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def _clean_tags(cls, v: list[str] | None) -> list[str] | None:
+        return _validate_tag_list(v)
 
 
 class UpdateProtocolBody(BaseModel):
@@ -47,6 +78,12 @@ class UpdateProtocolBody(BaseModel):
     tags: list[str] | None = None
     metadata: dict | None = None
     vault_file_path: str | None = None
+    trusted: bool | None = None
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def _clean_tags(cls, v: list[str] | None) -> list[str] | None:
+        return _validate_tag_list(v)
 
 
 @router.get("/")
@@ -99,6 +136,8 @@ async def create_protocol(
     data = payload.model_dump()
     if data["metadata"] is None:
         data["metadata"] = {}
+    if auth["caller_type"] == "agent" and not _is_admin(auth, enums):
+        data["trusted"] = False
     if resp := await maybe_check_agent_approval(pool, auth, "create_protocol", data):
         return resp
     result = await execute_create_protocol(pool, enums, data)
@@ -120,6 +159,8 @@ async def update_protocol(
     data["name"] = protocol_name
     if data.get("status") is not None:
         require_status(data["status"], enums)
+    if auth["caller_type"] == "agent" and not _is_admin(auth, enums):
+        data["trusted"] = None
     if resp := await maybe_check_agent_approval(pool, auth, "update_protocol", data):
         return resp
     result = await execute_update_protocol(pool, enums, data)

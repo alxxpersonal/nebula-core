@@ -7,8 +7,10 @@ SELECT
     p.protocol_type,
     p.applies_to,
     p.tags,
+    p.trusted,
     p.created_at
 FROM protocols p
 JOIN statuses s ON p.status_id = s.id
 WHERE s.category = 'active'
+  AND p.trusted IS TRUE
 ORDER BY p.name;

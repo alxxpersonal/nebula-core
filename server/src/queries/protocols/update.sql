@@ -8,8 +8,9 @@ SET
     applies_to = COALESCE($6, applies_to),
     status_id = COALESCE($7, status_id),
     tags = COALESCE($8, tags),
-    metadata = COALESCE($9::jsonb, metadata),
-    vault_file_path = COALESCE($10, vault_file_path)
+    trusted = COALESCE($9, trusted),
+    metadata = COALESCE($10::jsonb, metadata),
+    vault_file_path = COALESCE($11, vault_file_path)
 WHERE name = $1
 RETURNING
     id,
@@ -21,6 +22,7 @@ RETURNING
     applies_to,
     status_id,
     tags,
+    trusted,
     metadata,
     vault_file_path,
     created_at,

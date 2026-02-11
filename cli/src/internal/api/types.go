@@ -151,6 +151,7 @@ type Protocol struct {
 	AppliesTo    []string  `json:"applies_to,omitempty"`
 	Status       string    `json:"status,omitempty"`
 	Tags         []string  `json:"tags,omitempty"`
+	Trusted      *bool     `json:"trusted,omitempty"`
 	Metadata     JSONMap   `json:"metadata"`
 	VaultFile    *string   `json:"vault_file_path,omitempty"`
 	CreatedAt    time.Time `json:"created_at"`
@@ -167,6 +168,7 @@ type CreateProtocolInput struct {
 	AppliesTo    []string       `json:"applies_to,omitempty"`
 	Status       string         `json:"status,omitempty"`
 	Tags         []string       `json:"tags,omitempty"`
+	Trusted      bool           `json:"trusted,omitempty"`
 	Metadata     map[string]any `json:"metadata,omitempty"`
 	VaultFile    *string        `json:"vault_file_path,omitempty"`
 }
@@ -180,6 +182,7 @@ type UpdateProtocolInput struct {
 	AppliesTo    *[]string      `json:"applies_to,omitempty"`
 	Status       *string        `json:"status,omitempty"`
 	Tags         *[]string      `json:"tags,omitempty"`
+	Trusted      *bool          `json:"trusted,omitempty"`
 	Metadata     map[string]any `json:"metadata,omitempty"`
 	VaultFile    *string        `json:"vault_file_path,omitempty"`
 }

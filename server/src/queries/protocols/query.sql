@@ -8,6 +8,7 @@ SELECT
     p.applies_to,
     s.name AS status,
     p.tags,
+    p.trusted,
     p.vault_file_path,
     p.created_at,
     p.updated_at

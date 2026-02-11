@@ -50,8 +50,10 @@ from nebula_mcp.helpers import (
     bulk_update_entity_tags as do_bulk_update_entity_tags,
 )
 from nebula_mcp.helpers import (
+    enforce_scope_subset,
     filter_context_segments,
     normalize_bulk_operation,
+    scope_names_from_ids,
 )
 from nebula_mcp.helpers import (
     get_approval_diff as compute_approval_diff,
@@ -73,6 +75,8 @@ from nebula_mcp.imports import (
     normalize_relationship,
 )
 from nebula_mcp.models import (
+    MAX_GRAPH_HOPS,
+    MAX_PAGE_LIMIT,
     AttachFileInput,
     BulkImportInput,
     BulkUpdateEntityScopesInput,
@@ -118,6 +122,35 @@ from nebula_mcp.query_loader import QueryLoader
 QUERIES = QueryLoader(Path(__file__).resolve().parents[1] / "queries")
 
 load_dotenv()
+
+ADMIN_SCOPES = {"vault-only", "sensitive"}
+
+
+def _clamp_limit(value: int) -> int:
+    if value < 1:
+        return 1
+    if value > MAX_PAGE_LIMIT:
+        return MAX_PAGE_LIMIT
+    return value
+
+
+def _clamp_hops(value: int) -> int:
+    if value < 1:
+        return 1
+    if value > MAX_GRAPH_HOPS:
+        return MAX_GRAPH_HOPS
+    return value
+
+
+def _require_admin(agent: dict, enums: Any) -> None:
+    scope_names = scope_names_from_ids(agent.get("scopes", []), enums)
+    if not any(scope in ADMIN_SCOPES for scope in scope_names):
+        raise ValueError("Admin scope required")
+
+
+def _is_admin(agent: dict, enums: Any) -> bool:
+    scope_names = scope_names_from_ids(agent.get("scopes", []), enums)
+    return any(scope in ADMIN_SCOPES for scope in scope_names)
 
 
 @asynccontextmanager
@@ -169,6 +202,7 @@ async def _run_bulk_import(
     ):
         return approval
 
+    allowed_scopes = scope_names_from_ids(agent.get("scopes", []), enums)
     created: list[dict] = []
     errors: list[dict] = []
 
@@ -184,6 +218,10 @@ async def _run_bulk_import(
             for idx, item in enumerate(items, start=1):
                 try:
                     normalized = normalizer(item, payload.defaults)
+                    if "scopes" in normalized:
+                        normalized["scopes"] = enforce_scope_subset(
+                            normalized["scopes"], allowed_scopes
+                        )
                     result = await executor(conn, enums, normalized)
                     created.append(result)
                 except Exception as exc:
@@ -347,9 +385,11 @@ async def query_entities(payload: QueryEntitiesInput, ctx: Context) -> list[dict
     pool, enums, agent = await require_context(ctx)
 
     type_id = require_entity_type(payload.type, enums) if payload.type else None
-    scope_ids = (
-        require_scopes(payload.scopes, enums) if payload.scopes else agent.get("scopes")
-    )
+    allowed_scopes = scope_names_from_ids(agent.get("scopes", []), enums)
+    requested_scopes = enforce_scope_subset(payload.scopes, allowed_scopes)
+    scope_ids = require_scopes(requested_scopes, enums)
+    limit = _clamp_limit(payload.limit)
+    offset = max(0, payload.offset)
 
     rows = await pool.fetch(
         QUERIES["entities/query"],
@@ -358,8 +398,8 @@ async def query_entities(payload: QueryEntitiesInput, ctx: Context) -> list[dict
         payload.search_text,
         payload.status_category,
         scope_ids,
-        payload.limit,
-        payload.offset,
+        limit,
+        offset,
     )
     return [dict(r) for r in rows]
 
@@ -406,14 +446,17 @@ async def bulk_update_entity_scopes(
 
     pool, enums, agent = await require_context(ctx)
 
+    op = normalize_bulk_operation(payload.op)
+    allowed_scopes = scope_names_from_ids(agent.get("scopes", []), enums)
+    requested_scopes = enforce_scope_subset(payload.scopes, allowed_scopes)
+    data = payload.model_dump()
+    data["scopes"] = requested_scopes
     if resp := await maybe_require_approval(
-        pool, agent, "bulk_update_entity_scopes", payload.model_dump()
+        pool, agent, "bulk_update_entity_scopes", data
     ):
         return resp
-
-    op = normalize_bulk_operation(payload.op)
     updated = await do_bulk_update_entity_scopes(
-        pool, enums, payload.entity_ids, payload.scopes, op
+        pool, enums, payload.entity_ids, requested_scopes, op
     )
     return {"updated": len(updated), "entity_ids": updated}
 
@@ -425,11 +468,14 @@ async def search_entities_by_metadata(
     """Search entities by JSONB metadata containment."""
 
     pool, enums, agent = await require_context(ctx)
+    scope_ids = agent.get("scopes", [])
+    limit = _clamp_limit(payload.limit)
 
     rows = await pool.fetch(
         QUERIES["entities/search_by_metadata"],
         json.dumps(payload.metadata_query),
-        payload.limit,
+        limit,
+        scope_ids,
     )
     return [dict(r) for r in rows]
 
@@ -439,13 +485,15 @@ async def create_entity(payload: CreateEntityInput, ctx: Context) -> dict:
     """Create an entity in the Nebula database."""
 
     pool, enums, agent = await require_context(ctx)
+    allowed_scopes = scope_names_from_ids(agent.get("scopes", []), enums)
+    requested_scopes = enforce_scope_subset(payload.scopes, allowed_scopes)
+    data = payload.model_dump()
+    data["scopes"] = requested_scopes
 
-    if resp := await maybe_require_approval(
-        pool, agent, "create_entity", payload.model_dump()
-    ):
+    if resp := await maybe_require_approval(pool, agent, "create_entity", data):
         return resp
 
-    return await execute_create_entity(pool, enums, payload.model_dump())
+    return await execute_create_entity(pool, enums, data)
 
 
 @mcp.tool()
@@ -455,9 +503,9 @@ async def get_entity_history(
     """List audit history entries for an entity."""
 
     pool, enums, agent = await require_context(ctx)
-    return await fetch_entity_history(
-        pool, payload.entity_id, payload.limit, payload.offset
-    )
+    limit = _clamp_limit(payload.limit)
+    offset = max(0, payload.offset)
+    return await fetch_entity_history(pool, payload.entity_id, limit, offset)
 
 
 @mcp.tool()
@@ -465,6 +513,8 @@ async def query_audit_log(payload: QueryAuditLogInput, ctx: Context) -> list[dic
     """Query audit log entries with filters."""
 
     pool, enums, agent = await require_context(ctx)
+    limit = _clamp_limit(payload.limit)
+    offset = max(0, payload.offset)
     return await fetch_audit_log(
         pool,
         payload.table_name,
@@ -473,8 +523,8 @@ async def query_audit_log(payload: QueryAuditLogInput, ctx: Context) -> list[dic
         payload.actor_id,
         payload.record_id,
         payload.scope_id,
-        payload.limit,
-        payload.offset,
+        limit,
+        offset,
     )
 
 
@@ -507,13 +557,15 @@ async def create_knowledge(payload: CreateKnowledgeInput, ctx: Context) -> dict:
     """Create a knowledge item."""
 
     pool, enums, agent = await require_context(ctx)
+    allowed_scopes = scope_names_from_ids(agent.get("scopes", []), enums)
+    requested_scopes = enforce_scope_subset(payload.scopes, allowed_scopes)
+    data = payload.model_dump()
+    data["scopes"] = requested_scopes
 
-    if resp := await maybe_require_approval(
-        pool, agent, "create_knowledge", payload.model_dump()
-    ):
+    if resp := await maybe_require_approval(pool, agent, "create_knowledge", data):
         return resp
 
-    return await execute_create_knowledge(pool, enums, payload.model_dump())
+    return await execute_create_knowledge(pool, enums, data)
 
 
 @mcp.tool()
@@ -522,9 +574,11 @@ async def query_knowledge(payload: QueryKnowledgeInput, ctx: Context) -> list[di
 
     pool, enums, agent = await require_context(ctx)
 
-    scope_ids = (
-        require_scopes(payload.scopes, enums) if payload.scopes else agent.get("scopes")
-    )
+    allowed_scopes = scope_names_from_ids(agent.get("scopes", []), enums)
+    requested_scopes = enforce_scope_subset(payload.scopes, allowed_scopes)
+    scope_ids = require_scopes(requested_scopes, enums)
+    limit = _clamp_limit(payload.limit)
+    offset = max(0, payload.offset)
 
     rows = await pool.fetch(
         QUERIES["knowledge/query"],
@@ -532,8 +586,8 @@ async def query_knowledge(payload: QueryKnowledgeInput, ctx: Context) -> list[di
         payload.tags or None,
         payload.search_text,
         scope_ids,
-        payload.limit,
-        payload.offset,
+        limit,
+        offset,
     )
     return [dict(r) for r in rows]
 
@@ -594,13 +648,15 @@ async def query_logs(payload: QueryLogsInput, ctx: Context) -> list[dict]:
     if payload.log_type:
         log_type_id = require_log_type(payload.log_type, enums)
     tags = payload.tags if payload.tags else None
+    limit = _clamp_limit(payload.limit)
+    offset = max(0, payload.offset)
     rows = await pool.fetch(
         QUERIES["logs/query"],
         log_type_id,
         tags,
         payload.status_category,
-        payload.limit,
-        payload.offset,
+        limit,
+        offset,
     )
     return [dict(r) for r in rows]
 
@@ -657,6 +713,7 @@ async def query_relationships(
     """Search relationships with filters."""
 
     pool, enums, agent = await require_context(ctx)
+    limit = _clamp_limit(payload.limit)
 
     rows = await pool.fetch(
         QUERIES["relationships/query"],
@@ -664,7 +721,7 @@ async def query_relationships(
         payload.target_type,
         payload.relationship_types or None,
         payload.status_category,
-        payload.limit,
+        limit,
     )
     return [dict(r) for r in rows]
 
@@ -719,13 +776,15 @@ async def graph_neighbors(payload: GraphNeighborsInput, ctx: Context) -> list[di
     """Return neighbors within max hops."""
 
     pool, enums, agent = await require_context(ctx)
+    max_hops = _clamp_hops(payload.max_hops)
+    limit = _clamp_limit(payload.limit)
 
     rows = await pool.fetch(
         QUERIES["graph/neighbors"],
         payload.source_type,
         payload.source_id,
-        payload.max_hops,
-        payload.limit,
+        max_hops,
+        limit,
     )
     results = []
     for row in rows:
@@ -745,6 +804,7 @@ async def graph_shortest_path(payload: GraphShortestPathInput, ctx: Context) -> 
     """Return shortest path between two nodes."""
 
     pool, enums, agent = await require_context(ctx)
+    max_hops = _clamp_hops(payload.max_hops)
 
     row = await pool.fetchrow(
         QUERIES["graph/shortest_path"],
@@ -752,7 +812,7 @@ async def graph_shortest_path(payload: GraphShortestPathInput, ctx: Context) -> 
         payload.source_id,
         payload.target_type,
         payload.target_id,
-        payload.max_hops,
+        max_hops,
     )
     if not row:
         raise ValueError("No path found")
@@ -795,6 +855,7 @@ async def query_jobs(payload: QueryJobsInput, ctx: Context) -> list[dict]:
     """Search jobs with multiple filters."""
 
     pool, enums, agent = await require_context(ctx)
+    limit = _clamp_limit(payload.limit)
 
     rows = await pool.fetch(
         QUERIES["jobs/query"],
@@ -806,7 +867,7 @@ async def query_jobs(payload: QueryJobsInput, ctx: Context) -> list[dict]:
         payload.due_after,
         payload.overdue_only,
         payload.parent_job_id,
-        payload.limit,
+        limit,
     )
     return [dict(r) for r in rows]
 
@@ -892,14 +953,16 @@ async def list_files(payload: QueryFilesInput, ctx: Context) -> list[dict]:
     """List files with filters."""
 
     pool, enums, agent = await require_context(ctx)
+    limit = _clamp_limit(payload.limit)
+    offset = max(0, payload.offset)
 
     rows = await pool.fetch(
         QUERIES["files/list"],
         payload.tags or None,
         payload.mime_type,
         payload.status_category,
-        payload.limit,
-        payload.offset,
+        limit,
+        offset,
     )
     return [dict(r) for r in rows]
 
@@ -985,11 +1048,12 @@ async def create_protocol(payload: CreateProtocolInput, ctx: Context) -> dict:
     """Create a protocol."""
 
     pool, enums, agent = await require_context(ctx)
-    if resp := await maybe_require_approval(
-        pool, agent, "create_protocol", payload.model_dump()
-    ):
+    data = payload.model_dump()
+    if not _is_admin(agent, enums):
+        data["trusted"] = False
+    if resp := await maybe_require_approval(pool, agent, "create_protocol", data):
         return resp
-    return await execute_create_protocol(pool, enums, payload.model_dump())
+    return await execute_create_protocol(pool, enums, data)
 
 
 @mcp.tool()
@@ -997,11 +1061,12 @@ async def update_protocol(payload: UpdateProtocolInput, ctx: Context) -> dict:
     """Update a protocol."""
 
     pool, enums, agent = await require_context(ctx)
-    if resp := await maybe_require_approval(
-        pool, agent, "update_protocol", payload.model_dump()
-    ):
+    data = payload.model_dump()
+    if not _is_admin(agent, enums):
+        data["trusted"] = None
+    if resp := await maybe_require_approval(pool, agent, "update_protocol", data):
         return resp
-    return await execute_update_protocol(pool, enums, payload.model_dump())
+    return await execute_update_protocol(pool, enums, data)
 
 
 @mcp.tool()
@@ -1020,7 +1085,8 @@ async def list_active_protocols(ctx: Context) -> list[dict]:
 async def get_agent_info(payload: GetAgentInfoInput, ctx: Context) -> dict:
     """Retrieve agent configuration including system_prompt."""
 
-    pool = await require_pool(ctx)
+    pool, enums, agent = await require_context(ctx)
+    _require_admin(agent, enums)
 
     row = await pool.fetchrow(QUERIES["agents/get_info"], payload.name)
     if not row:
@@ -1033,7 +1099,8 @@ async def get_agent_info(payload: GetAgentInfoInput, ctx: Context) -> dict:
 async def list_agents(payload: ListAgentsInput, ctx: Context) -> list[dict]:
     """List agents by status category."""
 
-    pool = await require_pool(ctx)
+    pool, enums, agent = await require_context(ctx)
+    _require_admin(agent, enums)
     rows = await pool.fetch(QUERIES["agents/list"], payload.status_category)
     return [dict(r) for r in rows]
 

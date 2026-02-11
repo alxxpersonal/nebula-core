@@ -6,18 +6,32 @@ from typing import Any
 
 # Third-Party
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 # Local
 from nebula_api.auth import maybe_check_agent_approval, require_auth
 from nebula_api.response import paginated, success
 from nebula_mcp.enums import require_status
 from nebula_mcp.executors import execute_create_knowledge, execute_create_relationship
+from nebula_mcp.helpers import enforce_scope_subset, scope_names_from_ids
+from nebula_mcp.models import MAX_PAGE_LIMIT, MAX_TAG_LENGTH, MAX_TAGS
 from nebula_mcp.query_loader import QueryLoader
 
 QUERIES = QueryLoader(Path(__file__).resolve().parents[2] / "queries")
 
 router = APIRouter()
+
+
+def _validate_tag_list(tags: list[str] | None) -> list[str] | None:
+    if tags is None:
+        return None
+    cleaned = [t.strip() for t in tags if t and t.strip()]
+    if len(cleaned) > MAX_TAGS:
+        raise ValueError("Too many tags")
+    for tag in cleaned:
+        if len(tag) > MAX_TAG_LENGTH:
+            raise ValueError("Tag too long")
+    return cleaned
 
 
 class CreateKnowledgeBody(BaseModel):
@@ -40,6 +54,11 @@ class CreateKnowledgeBody(BaseModel):
     scopes: list[str] = []
     tags: list[str] = []
     metadata: dict | None = None
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def _clean_tags(cls, v: list[str] | None) -> list[str] | None:
+        return _validate_tag_list(v)
 
 
 class LinkKnowledgeBody(BaseModel):
@@ -77,6 +96,11 @@ class UpdateKnowledgeBody(BaseModel):
     scopes: list[str] | None = None
     metadata: dict | None = None
 
+    @field_validator("tags", mode="before")
+    @classmethod
+    def _clean_tags(cls, v: list[str] | None) -> list[str] | None:
+        return _validate_tag_list(v)
+
 
 @router.post("/")
 async def create_knowledge(
@@ -100,6 +124,9 @@ async def create_knowledge(
     data.setdefault("metadata", {})
     if data["metadata"] is None:
         data["metadata"] = {}
+    if auth["caller_type"] == "agent":
+        allowed = scope_names_from_ids(auth.get("scopes", []), enums)
+        data["scopes"] = enforce_scope_subset(data["scopes"], allowed)
     if resp := await maybe_check_agent_approval(pool, auth, "create_knowledge", data):
         return resp
     result = await execute_create_knowledge(pool, enums, data)
@@ -113,7 +140,7 @@ async def query_knowledge(
     source_type: str | None = None,
     tags: str | None = None,
     search_text: str | None = None,
-    limit: int = Query(50, le=100),
+    limit: int = Query(50, le=MAX_PAGE_LIMIT),
     offset: int = 0,
 ) -> dict[str, Any]:
     """Query knowledge items with filters.
@@ -238,6 +265,9 @@ async def update_knowledge(
         status_id = require_status(data["status"], enums)
     if data.get("metadata") is None:
         data.pop("metadata", None)
+    if auth["caller_type"] == "agent" and data.get("scopes") is not None:
+        allowed = scope_names_from_ids(auth.get("scopes", []), enums)
+        data["scopes"] = enforce_scope_subset(data["scopes"], allowed)
     change = {"knowledge_id": knowledge_id, **data}
     if resp := await maybe_check_agent_approval(pool, auth, "update_knowledge", change):
         return resp

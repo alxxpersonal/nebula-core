@@ -20,6 +20,17 @@ from .query_loader import QueryLoader
 
 QUERIES = QueryLoader(Path(__file__).resolve().parents[1] / "queries")
 
+CYCLE_SENSITIVE_REL_TYPES = {
+    "owns",
+    "manages",
+    "reports-to",
+    "depends-on",
+    "blocks",
+    "supersedes",
+    "applies-to",
+    "manages-agent",
+}
+
 
 async def execute_create_entity(
     pool: Pool, enums: EnumRegistry, change_details: dict
@@ -178,6 +189,25 @@ async def execute_create_relationship(
 
     type_id = require_relationship_type(payload.relationship_type, enums)
     status_id = require_status("active", enums)
+    if (
+        payload.source_type == payload.target_type
+        and payload.source_id == payload.target_id
+    ):
+        raise ValueError("Self-referential relationships are not allowed")
+    if payload.relationship_type in CYCLE_SENSITIVE_REL_TYPES:
+        from .models import MAX_GRAPH_HOPS
+
+        cycle = await pool.fetchval(
+            QUERIES["relationships/check_cycle"],
+            payload.source_type,
+            payload.target_type,
+            type_id,
+            payload.target_id,
+            MAX_GRAPH_HOPS,
+            payload.source_id,
+        )
+        if cycle:
+            raise ValueError("Relationship would create a cycle")
 
     row = await pool.fetchrow(
         QUERIES["relationships/create"],
@@ -397,6 +427,7 @@ async def execute_create_protocol(
         payload.applies_to,
         status_id,
         payload.tags,
+        payload.trusted,
         json.dumps(payload.metadata) if payload.metadata else "{}",
         payload.vault_file_path,
     )
@@ -429,6 +460,7 @@ async def execute_update_protocol(
         payload.applies_to,
         status_id,
         payload.tags,
+        payload.trusted,
         json.dumps(payload.metadata) if payload.metadata else None,
         payload.vault_file_path,
     )
