@@ -3,6 +3,7 @@
 # Standard Library
 import json
 from pathlib import Path
+from typing import Any
 
 # Third-Party
 from asyncpg import Pool
@@ -79,11 +80,26 @@ MAX_PENDING_APPROVALS = 100
 
 
 async def ensure_approval_capacity(
-    pool: Pool, agent_id: str, requested: int = 1
+    pool: Pool,
+    agent_id: str,
+    requested: int = 1,
+    conn: Any | None = None,
 ) -> None:
     """Raise if agent has too many pending approvals."""
 
-    count = await pool.fetchval(
+    if conn is None:
+        async with pool.acquire() as pooled:
+            async with pooled.transaction():
+                await ensure_approval_capacity(
+                    pool, agent_id, requested=requested, conn=pooled
+                )
+        return
+
+    await conn.execute(
+        "SELECT pg_advisory_xact_lock(hashtext($1))",
+        str(agent_id),
+    )
+    count = await conn.fetchval(
         (
             "SELECT COUNT(*) FROM approval_requests "
             "WHERE status = 'pending' AND requested_by = $1"
@@ -122,18 +138,21 @@ async def create_approval_request(
         Created approval request row as dict.
     """
 
-    row = await pool.fetchrow(
-        QUERIES["approvals/create_request"],
-        request_type,
-        agent_id,
-        (
-            json.dumps(change_details)
-            if isinstance(change_details, dict)
-            else change_details
-        ),
-        job_id,
-    )
-    return dict(row) if row else {}
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await ensure_approval_capacity(pool, agent_id, conn=conn)
+            row = await conn.fetchrow(
+                QUERIES["approvals/create_request"],
+                request_type,
+                agent_id,
+                (
+                    json.dumps(change_details)
+                    if isinstance(change_details, dict)
+                    else change_details
+                ),
+                job_id,
+            )
+            return dict(row) if row else {}
 
 
 async def get_pending_approvals_all(pool: Pool) -> list[dict]:

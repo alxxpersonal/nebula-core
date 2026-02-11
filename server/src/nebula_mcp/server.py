@@ -204,6 +204,7 @@ async def _require_entity_write_access(
 async def _has_hidden_relationships(
     pool: Pool, enums: Any, agent: dict, node_type: str, node_id: str
 ) -> bool:
+    node_id = str(node_id)
     if _is_admin(agent, enums):
         return False
     scope_ids = agent.get("scopes", []) or []
@@ -215,6 +216,35 @@ async def _has_hidden_relationships(
     scoped_rows = await pool.fetch(
         QUERIES["relationships/get"], node_type, node_id, "both", None, scope_ids
     )
+    if node_type in {"file", "log"}:
+        for rel in all_rows:
+            for side in ("source", "target"):
+                rel_type = rel[f"{side}_type"]
+                rel_id = rel[f"{side}_id"]
+                if rel_type == "entity":
+                    row = await pool.fetchrow(
+                        QUERIES["entities/get_by_id"], rel_id
+                    )
+                    if not row:
+                        return True
+                    scopes = row.get("privacy_scope_ids") or []
+                    if scopes and not any(s in scope_ids for s in scopes):
+                        return True
+                if rel_type == "knowledge":
+                    row = await pool.fetchrow(
+                        QUERIES["knowledge/get"], rel_id, None
+                    )
+                    if not row:
+                        return True
+                    scopes = row.get("privacy_scope_ids") or []
+                    if scopes and not any(s in scope_ids for s in scopes):
+                        return True
+                if rel_type == "job":
+                    job_row = await pool.fetchrow(QUERIES["jobs/get"], rel_id)
+                    if job_row and job_row.get("agent_id") != agent.get("id"):
+                        return True
+        return False
+
     if len(scoped_rows) < len(all_rows):
         return True
     for rel in all_rows:
@@ -488,7 +518,14 @@ async def get_pending_approvals(ctx: Context) -> list[dict]:
 async def get_approval_diff(payload: GetApprovalDiffInput, ctx: Context) -> dict:
     """Compute diff for an approval request."""
 
-    pool = await require_pool(ctx)
+    pool, enums, agent = await require_context(ctx)
+    row = await pool.fetchrow(
+        QUERIES["approvals/get_request"], payload.approval_id
+    )
+    if not row:
+        raise ValueError("Approval request not found")
+    if not _is_admin(agent, enums) and row.get("requested_by") != agent.get("id"):
+        raise ValueError("Access denied")
     return await compute_approval_diff(pool, payload.approval_id)
 
 
@@ -818,6 +855,11 @@ async def create_knowledge(payload: CreateKnowledgeInput, ctx: Context) -> dict:
     requested_scopes = enforce_scope_subset(payload.scopes, allowed_scopes)
     data = payload.model_dump()
     data["scopes"] = requested_scopes
+    if data.get("url"):
+        url = data["url"].strip()
+        if not (url.startswith("http://") or url.startswith("https://")):
+            raise ValueError("URL must start with http:// or https://")
+        data["url"] = url
 
     if resp := await maybe_require_approval(pool, agent, "create_knowledge", data):
         return resp
@@ -944,7 +986,9 @@ async def query_logs(payload: QueryLogsInput, ctx: Context) -> list[dict]:
     )
     results = []
     for row in rows:
-        if await _has_hidden_relationships(pool, enums, agent, "log", row["id"]):
+        if await _has_hidden_relationships(
+            pool, enums, agent, "log", str(row["id"])
+        ):
             continue
         results.append(dict(row))
     return results
@@ -955,7 +999,7 @@ async def update_log(payload: UpdateLogInput, ctx: Context) -> dict:
     """Update a log entry."""
 
     pool, enums, agent = await require_context(ctx)
-    if await _has_hidden_relationships(pool, enums, agent, "log", payload.log_id):
+    if await _has_hidden_relationships(pool, enums, agent, "log", payload.id):
         raise ValueError("Access denied")
     if resp := await maybe_require_approval(
         pool, agent, "update_log", payload.model_dump()

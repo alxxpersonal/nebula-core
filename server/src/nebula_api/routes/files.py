@@ -34,6 +34,7 @@ def _is_admin(auth: dict, enums: EnumRegistry) -> bool:
 async def _file_visible(
     pool: Any, enums: EnumRegistry, auth: dict, file_id: str
 ) -> bool:
+    file_id = str(file_id)
     if auth["caller_type"] != "agent":
         return True
     if _is_admin(auth, enums):
@@ -44,19 +45,32 @@ async def _file_visible(
     )
     if not all_rows:
         return True
-    scoped_rows = await pool.fetch(
-        QUERIES["relationships/get"], "file", file_id, "both", None, scope_ids
-    )
-    if len(scoped_rows) < len(all_rows):
-        return False
     for rel in all_rows:
-        if rel["source_type"] == "job" or rel["target_type"] == "job":
-            job_id = (
-                rel["source_id"] if rel["source_type"] == "job" else rel["target_id"]
-            )
-            job_row = await pool.fetchrow(QUERIES["jobs/get"], job_id)
-            if job_row and job_row.get("agent_id") != auth.get("agent_id"):
-                return False
+        for side in ("source", "target"):
+            rel_type = rel[f"{side}_type"]
+            rel_id = rel[f"{side}_id"]
+            if rel_type == "entity":
+                row = await pool.fetchrow(
+                    QUERIES["entities/get_by_id"], rel_id
+                )
+                if not row:
+                    return False
+                scopes = row.get("privacy_scope_ids") or []
+                if scopes and not any(s in scope_ids for s in scopes):
+                    return False
+            if rel_type == "knowledge":
+                row = await pool.fetchrow(
+                    QUERIES["knowledge/get"], rel_id, None
+                )
+                if not row:
+                    return False
+                scopes = row.get("privacy_scope_ids") or []
+                if scopes and not any(s in scope_ids for s in scopes):
+                    return False
+            if rel_type == "job":
+                job_row = await pool.fetchrow(QUERIES["jobs/get"], rel_id)
+                if job_row and job_row.get("agent_id") != auth.get("agent_id"):
+                    return False
     return True
 
 

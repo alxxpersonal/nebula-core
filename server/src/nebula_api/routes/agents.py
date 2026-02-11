@@ -24,6 +24,16 @@ router = APIRouter()
 ADMIN_SCOPE_NAMES = {"vault-only", "sensitive"}
 
 
+def _has_admin_scope(auth: dict, enums: EnumRegistry) -> bool:
+    scope_ids = set(auth.get("scopes", []))
+    allowed_ids = {
+        enums.scopes.name_to_id.get(name)
+        for name in ADMIN_SCOPE_NAMES
+        if enums.scopes.name_to_id.get(name)
+    }
+    return bool(scope_ids.intersection(allowed_ids))
+
+
 def _require_admin_scope(auth: dict, enums: EnumRegistry) -> None:
     if os.getenv("NEBULA_STRICT_ADMIN") != "1":
         return
@@ -155,6 +165,12 @@ async def update_agent(
 
     pool = request.app.state.pool
     enums = request.app.state.enums
+
+    is_self = auth.get("caller_type") == "agent" and str(
+        auth.get("agent_id")
+    ) == str(agent_id)
+    if not is_self and not _has_admin_scope(auth, enums):
+        api_error("FORBIDDEN", "Admin scope required", 403)
 
     # Resolve scope names to UUIDs if provided
     scope_ids = None

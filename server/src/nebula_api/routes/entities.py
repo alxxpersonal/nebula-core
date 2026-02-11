@@ -52,6 +52,20 @@ def _is_admin(auth: dict, enums: Any) -> bool:
     return bool(scope_ids.intersection(allowed_ids))
 
 
+def _list_scope_ids(auth: dict, enums: Any) -> list:
+    """Return scopes used for list/search filtering.
+
+    For API user callers, default to public-only to avoid leaking
+    private context segments in list/search results.
+    """
+
+    scope_ids = auth.get("scopes", []) or []
+    if auth.get("caller_type") == "user":
+        public_id = enums.scopes.name_to_id.get("public")
+        return [public_id] if public_id else []
+    return scope_ids
+
+
 def _has_write_scopes(agent_scopes: list, node_scopes: list) -> bool:
     if not node_scopes:
         return True
@@ -449,7 +463,7 @@ async def query_entities(
 
     type_id = require_entity_type(type, enums) if type else None
     tag_list = tags.split(",") if tags else None
-    scope_ids = auth.get("scopes", [])
+    scope_ids = _list_scope_ids(auth, enums)
 
     rows = await pool.fetch(
         QUERIES["entities/query"],
@@ -529,7 +543,8 @@ async def search_by_metadata(
         API response with matching entities.
     """
     pool = request.app.state.pool
-    scope_ids = auth.get("scopes", [])
+    enums = request.app.state.enums
+    scope_ids = _list_scope_ids(auth, enums)
 
     rows = await pool.fetch(
         QUERIES["entities/search_by_metadata"],
@@ -537,7 +552,6 @@ async def search_by_metadata(
         payload.limit,
         scope_ids,
     )
-    enums = request.app.state.enums
     scope_names = [enums.scopes.id_to_name.get(s, "") for s in scope_ids]
     results = []
     for row in rows:
