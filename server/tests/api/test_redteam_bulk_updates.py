@@ -134,3 +134,83 @@ async def test_api_bulk_update_scopes_denies_private_entity(db_pool, enums):
     app.dependency_overrides.pop(require_auth, None)
 
     assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+@pytest.mark.xfail(reason="invalid UUIDs raise asyncpg DataError")
+async def test_api_bulk_update_tags_rejects_invalid_uuid(db_pool, enums):
+    """API bulk tag updates should reject malformed UUIDs."""
+
+    viewer = await _make_agent(db_pool, enums, "bulk-tag-invalid", ["public"], False)
+
+    auth_dict = {
+        "key_id": None,
+        "caller_type": "agent",
+        "entity_id": None,
+        "entity": None,
+        "agent_id": viewer["id"],
+        "agent": viewer,
+        "scopes": [enums.scopes.name_to_id["public"]],
+    }
+
+    async def mock_auth():
+        """Mock auth for viewer agent."""
+
+        return auth_dict
+
+    app.dependency_overrides[require_auth] = mock_auth
+    app.state.pool = db_pool
+    app.state.enums = enums
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.post(
+            "/api/entities/bulk/tags",
+            json={
+                "entity_ids": ["not-a-uuid"],
+                "tags": ["pwn"],
+                "op": "add",
+            },
+        )
+    app.dependency_overrides.pop(require_auth, None)
+
+    assert resp.status_code in {400, 404}
+
+
+@pytest.mark.asyncio
+@pytest.mark.xfail(reason="invalid UUIDs raise asyncpg DataError")
+async def test_api_bulk_update_scopes_rejects_invalid_uuid(db_pool, enums):
+    """API bulk scope updates should reject malformed UUIDs."""
+
+    viewer = await _make_agent(db_pool, enums, "bulk-scope-invalid", ["public"], False)
+
+    auth_dict = {
+        "key_id": None,
+        "caller_type": "agent",
+        "entity_id": None,
+        "entity": None,
+        "agent_id": viewer["id"],
+        "agent": viewer,
+        "scopes": [enums.scopes.name_to_id["public"]],
+    }
+
+    async def mock_auth():
+        """Mock auth for viewer agent."""
+
+        return auth_dict
+
+    app.dependency_overrides[require_auth] = mock_auth
+    app.state.pool = db_pool
+    app.state.enums = enums
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.post(
+            "/api/entities/bulk/scopes",
+            json={
+                "entity_ids": ["not-a-uuid"],
+                "scopes": ["public"],
+                "op": "add",
+            },
+        )
+    app.dependency_overrides.pop(require_auth, None)
+
+    assert resp.status_code in {400, 404}
