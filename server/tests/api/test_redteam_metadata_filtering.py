@@ -76,3 +76,21 @@ async def test_api_search_entities_filters_context_segments(api, db_pool, enums)
     segments = data[0]["metadata"].get("context_segments", [])
 
     assert all("personal" not in seg.get("scopes", []) for seg in segments)
+
+
+@pytest.mark.asyncio
+@pytest.mark.xfail(reason="metadata search should not return private-only entities")
+async def test_api_search_entities_hides_private_entities(api, db_pool, enums):
+    """API metadata search should not return private-only entities."""
+
+    metadata = {"signal": "private-only"}
+    await _make_entity(db_pool, enums, "Private Node", ["personal"], metadata)
+
+    resp = await api.post(
+        "/api/entities/search",
+        json={"metadata_query": {"signal": "private-only"}},
+    )
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+
+    assert not data

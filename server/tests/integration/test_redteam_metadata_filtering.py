@@ -97,3 +97,22 @@ async def test_search_entities_by_metadata_filters_context_segments(db_pool, enu
     segments = rows[0]["metadata"].get("context_segments", [])
 
     assert all("personal" not in seg.get("scopes", []) for seg in segments)
+
+
+@pytest.mark.asyncio
+async def test_search_entities_by_metadata_hides_private_entities(db_pool, enums):
+    """Metadata search should not return entities outside agent scopes."""
+
+    metadata = {"signal": "private-only"}
+    await _make_entity(db_pool, enums, "Private Node", ["personal"], metadata)
+
+    public_agent = {
+        "id": "public-agent",
+        "scopes": [enums.scopes.name_to_id["public"]],
+    }
+    ctx = _make_context(db_pool, enums, public_agent)
+
+    payload = SearchEntitiesByMetadataInput(metadata_query={"signal": "private-only"})
+    rows = await search_entities_by_metadata(payload, ctx)
+
+    assert not rows
