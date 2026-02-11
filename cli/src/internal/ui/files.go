@@ -92,6 +92,7 @@ type FilesModel struct {
 	editSaving    bool
 }
 
+// NewFilesModel builds the files UI model.
 func NewFilesModel(client *api.Client) FilesModel {
 	return FilesModel{
 		client: client,
@@ -973,19 +974,19 @@ func (m *FilesModel) updateSearchSuggest() {
 }
 
 func formatFileLine(f api.File) string {
-	name := f.Filename
+	name := components.SanitizeText(f.Filename)
 	if name == "" {
 		name = "file"
 	}
 	segments := []string{name}
 	if f.MimeType != nil && *f.MimeType != "" {
-		segments = append(segments, *f.MimeType)
+		segments = append(segments, components.SanitizeText(*f.MimeType))
 	}
 	if f.SizeBytes != nil {
 		segments = append(segments, formatFileSize(*f.SizeBytes))
 	}
 	if f.Status != "" {
-		segments = append(segments, f.Status)
+		segments = append(segments, components.SanitizeText(f.Status))
 	}
 	if preview := metadataPreview(map[string]any(f.Metadata), 40); preview != "" {
 		segments = append(segments, preview)

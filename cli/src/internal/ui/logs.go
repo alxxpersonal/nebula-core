@@ -93,6 +93,7 @@ type LogsModel struct {
 	editSaving    bool
 }
 
+// NewLogsModel builds the logs UI model.
 func NewLogsModel(client *api.Client) LogsModel {
 	return LogsModel{
 		client: client,
@@ -939,14 +940,14 @@ func (m *LogsModel) updateSearchSuggest() {
 }
 
 func formatLogLine(l api.Log) string {
-	label := l.LogType
+	label := components.SanitizeText(l.LogType)
 	if label == "" {
 		label = "log"
 	}
 	stamp := l.Timestamp.Format("2006-01-02")
 	segments := []string{label, stamp}
 	if l.Status != "" {
-		segments = append(segments, l.Status)
+		segments = append(segments, components.SanitizeText(l.Status))
 	}
 	if preview := metadataPreview(map[string]any(l.Metadata), 40); preview != "" {
 		segments = append(segments, preview)

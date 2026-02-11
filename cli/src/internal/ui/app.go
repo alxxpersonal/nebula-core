@@ -818,7 +818,7 @@ func (a *App) openPalette() {
 
 func (a App) renderPalette() string {
 	title := "Command Palette"
-	query := a.paletteQuery
+	query := components.SanitizeText(a.paletteQuery)
 	if query == "" {
 		query = ""
 	}
@@ -835,7 +835,11 @@ func (a App) renderPalette() string {
 		b.WriteString(MutedStyle.Render("No matches."))
 	} else {
 		for i, item := range items {
-			line := fmt.Sprintf("%s  %s", item.Label, MutedStyle.Render(item.Desc))
+			line := fmt.Sprintf(
+				"%s  %s",
+				components.SanitizeText(item.Label),
+				MutedStyle.Render(components.SanitizeText(item.Desc)),
+			)
 			if i == a.paletteIndex {
 				b.WriteString(SelectedStyle.Render("  > " + line))
 			} else {

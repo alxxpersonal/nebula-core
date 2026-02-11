@@ -124,6 +124,7 @@ type formField struct {
 	value string
 }
 
+// NewKnowledgeModel builds the knowledge UI model.
 func NewKnowledgeModel(client *api.Client) KnowledgeModel {
 	return KnowledgeModel{
 		client: client,
@@ -953,7 +954,7 @@ func (m KnowledgeModel) renderDetail() string {
 
 	sections := []string{components.Table("Knowledge", rows, m.width)}
 	if k.Content != nil && strings.TrimSpace(*k.Content) != "" {
-		content := strings.TrimSpace(*k.Content)
+		content := strings.TrimSpace(components.SanitizeText(*k.Content))
 		if !m.contentExpanded {
 			content = truncateString(content, 220)
 		}
@@ -1059,22 +1060,22 @@ func (m KnowledgeModel) loadKnowledgeDetail(id string) tea.Cmd {
 }
 
 func formatKnowledgeLine(k api.Knowledge) string {
-	t := k.SourceType
+	t := components.SanitizeText(k.SourceType)
 	if t == "" {
 		t = "note"
 	}
-	name := truncateKnowledgeName(k.Name, maxKnowledgeNameLen)
-	line := fmt.Sprintf("%s %s", name, TypeBadgeStyle.Render(t))
-	if status := strings.TrimSpace(k.Status); status != "" {
+	name := truncateKnowledgeName(components.SanitizeText(k.Name), maxKnowledgeNameLen)
+	line := fmt.Sprintf("%s %s", name, TypeBadgeStyle.Render(components.SanitizeText(t)))
+	if status := strings.TrimSpace(components.SanitizeText(k.Status)); status != "" {
 		line = fmt.Sprintf("%s · %s", line, status)
 	}
 	preview := ""
 	if metaPreview := metadataPreview(map[string]any(k.Metadata), 40); metaPreview != "" {
 		preview = metaPreview
 	} else if k.Content != nil {
-		preview = truncateString(strings.TrimSpace(*k.Content), 40)
+		preview = truncateString(strings.TrimSpace(components.SanitizeText(*k.Content)), 40)
 	} else if k.URL != nil {
-		preview = truncateString(strings.TrimSpace(*k.URL), 40)
+		preview = truncateString(strings.TrimSpace(components.SanitizeText(*k.URL)), 40)
 	}
 	if preview != "" {
 		line = fmt.Sprintf("%s · %s", line, preview)

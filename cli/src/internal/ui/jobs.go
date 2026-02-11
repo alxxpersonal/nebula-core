@@ -88,6 +88,7 @@ type JobsModel struct {
 	editSaving      bool
 }
 
+// NewJobsModel builds the jobs UI model.
 func NewJobsModel(client *api.Client) JobsModel {
 	return JobsModel{
 		client: client,
@@ -882,7 +883,14 @@ func (m JobsModel) renderDetail() string {
 	sections = append(sections, components.Table("Job", rows, m.width))
 
 	if j.Description != nil && strings.TrimSpace(*j.Description) != "" {
-		sections = append(sections, components.TitledBox("Description", NormalStyle.Render(*j.Description), m.width))
+		sections = append(
+			sections,
+			components.TitledBox(
+				"Description",
+				NormalStyle.Render(components.SanitizeText(*j.Description)),
+				m.width,
+			),
+		)
 	}
 
 	if len(j.Metadata) > 0 {
@@ -898,9 +906,14 @@ func (m JobsModel) renderDetail() string {
 func formatJobLine(j api.Job) string {
 	p := ""
 	if j.Priority != nil {
-		p = fmt.Sprintf(" · %s", *j.Priority)
+		p = fmt.Sprintf(" · %s", components.SanitizeText(*j.Priority))
 	}
-	line := fmt.Sprintf("%s · %s%s", j.Title, j.Status, p)
+	line := fmt.Sprintf(
+		"%s · %s%s",
+		components.SanitizeText(j.Title),
+		components.SanitizeText(j.Status),
+		p,
+	)
 	if preview := metadataPreview(map[string]any(j.Metadata), 40); preview != "" {
 		line = fmt.Sprintf("%s · %s", line, preview)
 	}

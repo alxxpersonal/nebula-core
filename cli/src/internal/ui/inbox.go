@@ -40,6 +40,7 @@ type InboxModel struct {
 	height        int
 }
 
+// NewInboxModel builds the inbox UI model.
 func NewInboxModel(client *api.Client) InboxModel {
 	return InboxModel{
 		client:   client,
@@ -418,9 +419,14 @@ func formatAny(v any) string {
 func formatApprovalLine(a api.Approval) string {
 	name := ""
 	if n, ok := a.ChangeDetails["name"]; ok {
-		name = fmt.Sprintf(": %q", n)
+		name = fmt.Sprintf(": %q", components.SanitizeText(fmt.Sprintf("%v", n)))
 	}
-	return fmt.Sprintf("[%s] %s%s", a.RequestType, a.Status, name)
+	return fmt.Sprintf(
+		"[%s] %s%s",
+		components.SanitizeText(a.RequestType),
+		components.SanitizeText(a.Status),
+		name,
+	)
 }
 
 func (m *InboxModel) applyFilter(resetSelection bool) {

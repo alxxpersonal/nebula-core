@@ -44,6 +44,7 @@ type SearchModel struct {
 	height  int
 }
 
+// NewSearchModel builds the search UI model.
 func NewSearchModel(client *api.Client) SearchModel {
 	return SearchModel{
 		client: client,
@@ -65,7 +66,11 @@ func (m SearchModel) Update(msg tea.Msg) (SearchModel, tea.Cmd) {
 		m.items = buildSearchEntries(msg.query, msg.entities, msg.knowledge, msg.jobs)
 		labels := make([]string, len(m.items))
 		for i, item := range m.items {
-			labels[i] = fmt.Sprintf("%s  %s", item.label, MutedStyle.Render(item.desc))
+			labels[i] = fmt.Sprintf(
+				"%s  %s",
+				components.SanitizeText(item.label),
+				MutedStyle.Render(components.SanitizeText(item.desc)),
+			)
 		}
 		m.list.SetItems(labels)
 		return m, nil
@@ -117,7 +122,7 @@ func (m SearchModel) Update(msg tea.Msg) (SearchModel, tea.Cmd) {
 
 func (m SearchModel) View() string {
 	var b strings.Builder
-	b.WriteString("  > " + m.query)
+	b.WriteString("  > " + components.SanitizeText(m.query))
 	b.WriteString(AccentStyle.Render("█"))
 	b.WriteString("\n\n")
 
@@ -208,8 +213,8 @@ func buildSearchEntries(query string, entities []api.Entity, knowledge []api.Kno
 		items = append(items, searchEntry{
 			kind:   kind,
 			id:     e.ID,
-			label:  e.Name,
-			desc:   fmt.Sprintf("%s · %s", descType, shortID(e.ID)),
+			label:  components.SanitizeText(e.Name),
+			desc:   components.SanitizeText(fmt.Sprintf("%s · %s", descType, shortID(e.ID))),
 			entity: &entity,
 		})
 	}
@@ -223,8 +228,8 @@ func buildSearchEntries(query string, entities []api.Entity, knowledge []api.Kno
 		items = append(items, searchEntry{
 			kind:      kind,
 			id:        k.ID,
-			label:     k.Name,
-			desc:      fmt.Sprintf("%s · %s", descType, shortID(k.ID)),
+			label:     components.SanitizeText(k.Name),
+			desc:      components.SanitizeText(fmt.Sprintf("%s · %s", descType, shortID(k.ID))),
 			knowledge: &knowledgeItem,
 		})
 	}
@@ -238,8 +243,8 @@ func buildSearchEntries(query string, entities []api.Entity, knowledge []api.Kno
 		items = append(items, searchEntry{
 			kind:  kind,
 			id:    j.ID,
-			label: j.Title,
-			desc:  fmt.Sprintf("%s · %s", desc, shortID(j.ID)),
+			label: components.SanitizeText(j.Title),
+			desc:  components.SanitizeText(fmt.Sprintf("%s · %s", desc, shortID(j.ID))),
 			job:   &job,
 		})
 	}

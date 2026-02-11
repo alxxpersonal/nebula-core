@@ -173,6 +173,7 @@ type EntitiesModel struct {
 	bulkTarget   bulkTarget
 }
 
+// NewEntitiesModel builds the entities UI model.
 func NewEntitiesModel(client *api.Client) EntitiesModel {
 	return EntitiesModel{
 		client: client,
@@ -2081,7 +2082,10 @@ func formatEntityLine(e api.Entity) string {
 }
 
 func formatEntityLineWidth(e api.Entity, maxWidth int) string {
-	name, t := normalizeEntityNameType(e.Name, e.Type)
+	name, t := normalizeEntityNameType(
+		components.SanitizeText(e.Name),
+		components.SanitizeText(e.Type),
+	)
 	if t == "" {
 		t = "?"
 	}
@@ -2089,9 +2093,9 @@ func formatEntityLineWidth(e api.Entity, maxWidth int) string {
 	if lineWidth <= 0 || lineWidth > maxEntityLineLen {
 		lineWidth = maxEntityLineLen
 	}
-	header := formatEntityHeader(name, strings.ToLower(t), lineWidth)
+	header := formatEntityHeader(name, strings.ToLower(components.SanitizeText(t)), lineWidth)
 	segments := []string{header}
-	if status := strings.TrimSpace(e.Status); status != "" {
+	if status := strings.TrimSpace(components.SanitizeText(e.Status)); status != "" {
 		segments = append(segments, status)
 	}
 	if tagPreview := previewTags(e.Tags, 2); tagPreview != "" {
@@ -2107,15 +2111,19 @@ func previewTags(tags []string, max int) string {
 	if len(tags) == 0 || max <= 0 {
 		return ""
 	}
-	if len(tags) <= max {
-		return strings.Join(tags, ", ")
+	cleaned := make([]string, len(tags))
+	for i, tag := range tags {
+		cleaned[i] = components.SanitizeText(tag)
 	}
-	head := strings.Join(tags[:max], ", ")
-	return fmt.Sprintf("%s +%d", head, len(tags)-max)
+	if len(tags) <= max {
+		return strings.Join(cleaned, ", ")
+	}
+	head := strings.Join(cleaned[:max], ", ")
+	return fmt.Sprintf("%s +%d", head, len(cleaned)-max)
 }
 
 func formatHistoryLine(entry api.AuditEntry) string {
-	action := entry.Action
+	action := components.SanitizeText(entry.Action)
 	if action == "" {
 		action = "update"
 	}
@@ -2130,17 +2138,17 @@ func formatHistoryLine(entry api.AuditEntry) string {
 
 func relationshipLabel(id, name string) string {
 	if strings.TrimSpace(name) != "" {
-		return name
+		return components.SanitizeText(name)
 	}
 	return shortID(id)
 }
 
 func formatEntityHeader(name string, typ string, maxWidth int) string {
-	name = truncateString(name, maxEntityNameLen)
+	name = truncateString(components.SanitizeText(name), maxEntityNameLen)
 	if strings.TrimSpace(typ) == "" {
 		typ = "?"
 	}
-	badge := TypeBadgeStyle.Render(typ)
+	badge := TypeBadgeStyle.Render(components.SanitizeText(typ))
 	header := fmt.Sprintf("%s %s", name, badge)
 	if maxWidth <= 0 || lipgloss.Width(header) <= maxWidth {
 		return header

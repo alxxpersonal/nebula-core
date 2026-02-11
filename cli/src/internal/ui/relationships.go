@@ -87,6 +87,7 @@ type RelationshipsModel struct {
 	typeOptions []string
 }
 
+// NewRelationshipsModel builds the relationships UI model.
 func NewRelationshipsModel(client *api.Client) RelationshipsModel {
 	return RelationshipsModel{
 		client:         client,
@@ -831,17 +832,22 @@ func (m RelationshipsModel) buildListLabels() []string {
 	for i, rel := range m.items {
 		source := m.displayNode(rel.SourceID, rel.SourceType, rel.SourceName)
 		target := m.displayNode(rel.TargetID, rel.TargetType, rel.TargetName)
-		labels[i] = fmt.Sprintf("%s · %s -> %s", rel.Type, source, target)
+		labels[i] = fmt.Sprintf(
+			"%s · %s -> %s",
+			components.SanitizeText(rel.Type),
+			components.SanitizeText(source),
+			components.SanitizeText(target),
+		)
 	}
 	return labels
 }
 
 func (m RelationshipsModel) displayNode(id, typ, name string) string {
 	if strings.TrimSpace(name) != "" {
-		return name
+		return components.SanitizeText(name)
 	}
 	if label, ok := m.names[id]; ok && label != "" {
-		return label
+		return components.SanitizeText(label)
 	}
 	switch strings.TrimSpace(typ) {
 	case "", "entity":

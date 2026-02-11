@@ -171,7 +171,9 @@ func truncateRunes(s string, max int) string {
 
 // InfoRow renders a label: value row for detail views.
 func InfoRow(label, value string) string {
-	return boxMutedStyle.Render(label+": ") + boxValueStyle.Render(value)
+	safeLabel := SanitizeText(label)
+	safeValue := SanitizeText(value)
+	return boxMutedStyle.Render(safeLabel+": ") + boxValueStyle.Render(safeValue)
 }
 
 // Table renders a key-value table with aligned columns inside a bordered box.
@@ -182,17 +184,22 @@ func Table(title string, rows []TableRow, width int) string {
 
 	// Find max label width for alignment
 	maxLabel := 0
-	for _, r := range rows {
-		if len(r.Label) > maxLabel {
-			maxLabel = len(r.Label)
+	safeRows := make([]TableRow, len(rows))
+	for i, r := range rows {
+		safeRows[i] = TableRow{
+			Label: SanitizeText(r.Label),
+			Value: SanitizeText(r.Value),
+		}
+		if len(safeRows[i].Label) > maxLabel {
+			maxLabel = len(safeRows[i].Label)
 		}
 	}
 
 	var b strings.Builder
-	for i, r := range rows {
+	for i, r := range safeRows {
 		label := boxLabelStyle.Render(fmt.Sprintf("%-*s", maxLabel, r.Label))
 		b.WriteString(label + "  " + boxValueStyle.Render(r.Value))
-		if i < len(rows)-1 {
+		if i < len(safeRows)-1 {
 			b.WriteString("\n")
 		}
 	}
