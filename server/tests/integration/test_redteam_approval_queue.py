@@ -39,7 +39,6 @@ async def test_revert_entity_rejects_invalid_audit_id(
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="audit id format should be validated before DB query")
 async def test_revert_entity_rejects_invalid_audit_format(
     test_entity, untrusted_mcp_context
 ):
