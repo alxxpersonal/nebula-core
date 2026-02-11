@@ -134,7 +134,6 @@ async def _make_knowledge(db_pool, enums, title, scopes):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="file attachment should respect entity privacy scopes")
 async def test_attach_file_to_private_entity_denied(db_pool, enums):
     """Public agents should not attach files to private entities."""
 
@@ -151,7 +150,6 @@ async def test_attach_file_to_private_entity_denied(db_pool, enums):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="file attachment should respect job ownership")
 async def test_attach_file_to_foreign_job_denied(db_pool, enums):
     """Agents should not attach files to jobs owned by other agents."""
 
@@ -168,7 +166,6 @@ async def test_attach_file_to_foreign_job_denied(db_pool, enums):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="file attachment should respect knowledge scopes")
 async def test_attach_file_to_private_knowledge_denied(db_pool, enums):
     """Public agents should not attach files to private knowledge."""
 
