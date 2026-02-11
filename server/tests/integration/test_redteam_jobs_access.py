@@ -123,7 +123,6 @@ async def test_update_job_status_denies_other_agent(db_pool, enums):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="agents should not create jobs for other agents")
 async def test_create_job_denies_agent_spoofing(db_pool, enums):
     """Agents should not create jobs on behalf of other agents."""
 
@@ -142,7 +141,7 @@ async def test_create_job_denies_agent_spoofing(db_pool, enums):
     if result.get("status") == "approval_required":
         return
 
-    assert result["agent_id"] == str(other["id"])
+    assert str(result["agent_id"]) == str(other["id"])
 
 
 @pytest.mark.asyncio
@@ -161,7 +160,6 @@ async def test_create_subtask_denies_foreign_job(db_pool, enums):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="create_job passes UUID agent_id into CreateJobInput")
 async def test_create_job_handles_uuid_agent_id(db_pool, enums):
     """Agent job creation should not crash on UUID agent_id."""
 
@@ -176,4 +174,4 @@ async def test_create_job_handles_uuid_agent_id(db_pool, enums):
     if result.get("status") == "approval_required":
         return
 
-    assert result.get("agent_id") == str(agent["id"])
+    assert str(result.get("agent_id")) == str(agent["id"])
