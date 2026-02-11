@@ -250,6 +250,10 @@ async def _node_allowed(
         if not row:
             return False
         return row.get("agent_id") == agent.get("id")
+    if node_type in {"file", "log"}:
+        return not await _has_hidden_relationships(
+            pool, enums, agent, node_type, node_id
+        )
     return True
 
 
@@ -562,6 +566,11 @@ async def get_entity(payload: GetEntityInput, ctx: Context) -> dict:
     """
 
     pool, enums, agent = await require_context(ctx)
+
+    try:
+        UUID(payload.entity_id)
+    except ValueError:
+        raise ValueError("Invalid entity id")
 
     row = await pool.fetchrow(QUERIES["entities/get"], payload.entity_id)
     if not row:
@@ -1205,7 +1214,8 @@ async def create_job(payload: CreateJobInput, ctx: Context) -> dict:
     pool, enums, agent = await require_context(ctx)
     data = payload.model_dump()
     if not _is_admin(agent, enums):
-        data["agent_id"] = agent.get("id")
+        agent_id = agent.get("id")
+        data["agent_id"] = str(agent_id) if agent_id else None
 
     if resp := await maybe_require_approval(
         pool, agent, "create_job", data

@@ -4,6 +4,7 @@
 import json
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 # Third-Party
 from fastapi import APIRouter, Depends, Query, Request
@@ -217,7 +218,10 @@ async def create_entity(
         data["scopes"] = enforce_scope_subset(data["scopes"], allowed)
     if resp := await maybe_check_agent_approval(pool, auth, "create_entity", data):
         return resp
-    result = await execute_create_entity(pool, enums, data)
+    try:
+        result = await execute_create_entity(pool, enums, data)
+    except ValueError as exc:
+        api_error("INVALID_INPUT", str(exc), 400)
     return success(result)
 
 
@@ -239,6 +243,11 @@ async def get_entity(
     """
     pool = request.app.state.pool
     enums = request.app.state.enums
+
+    try:
+        UUID(entity_id)
+    except ValueError:
+        api_error("INVALID_INPUT", "Invalid entity id", 400)
 
     row = await pool.fetchrow(QUERIES["entities/get"], entity_id)
     if not row:
@@ -496,7 +505,10 @@ async def update_entity(
         change["scopes"] = enforce_scope_subset(change["scopes"], allowed)
     if resp := await maybe_check_agent_approval(pool, auth, "update_entity", change):
         return resp
-    result = await execute_update_entity(pool, enums, change)
+    try:
+        result = await execute_update_entity(pool, enums, change)
+    except ValueError as exc:
+        api_error("INVALID_INPUT", str(exc), 400)
     return success(result)
 
 

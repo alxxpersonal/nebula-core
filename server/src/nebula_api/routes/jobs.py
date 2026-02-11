@@ -136,7 +136,8 @@ async def create_job(
     if data.get("metadata") is None:
         data["metadata"] = {}
     if auth["caller_type"] == "agent" and not _is_admin(auth, enums):
-        data["agent_id"] = auth.get("agent_id")
+        agent_id = auth.get("agent_id")
+        data["agent_id"] = str(agent_id) if agent_id else None
     if resp := await maybe_check_agent_approval(pool, auth, "create_job", data):
         return resp
     result = await execute_create_job(pool, enums, data)
@@ -260,7 +261,10 @@ async def update_job_status(
     ):
         return resp
 
-    status_id = require_status(payload.status, enums)
+    try:
+        status_id = require_status(payload.status, enums)
+    except ValueError as exc:
+        api_error("INVALID_INPUT", str(exc), 400)
 
     row = await pool.fetchrow(
         QUERIES["jobs/update_status"],

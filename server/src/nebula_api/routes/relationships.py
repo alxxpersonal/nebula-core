@@ -144,7 +144,10 @@ async def create_relationship(
         pool, auth, "create_relationship", data
     ):
         return resp
-    result = await execute_create_relationship(pool, enums, data)
+    try:
+        result = await execute_create_relationship(pool, enums, data)
+    except ValueError as exc:
+        api_error("INVALID_INPUT", str(exc), 400)
     return success(result)
 
 
@@ -290,7 +293,12 @@ async def update_relationship(
     ):
         return resp
 
-    status_id = require_status(payload.status, enums) if payload.status else None
+    try:
+        status_id = (
+            require_status(payload.status, enums) if payload.status else None
+        )
+    except ValueError as exc:
+        api_error("INVALID_INPUT", str(exc), 400)
 
     row = await pool.fetchrow(
         QUERIES["relationships/update"],
