@@ -11,12 +11,14 @@ from nebula_mcp.models import (
     GetApprovalDiffInput,
     GetRelationshipsInput,
     QueryJobsInput,
+    QueryAuditLogInput,
     UpdateEntityInput,
     UpdateRelationshipInput,
 )
 from nebula_mcp.server import (
     get_approval_diff,
     get_relationships,
+    query_audit_log,
     query_jobs,
     update_entity,
     update_relationship,
@@ -133,3 +135,29 @@ async def test_get_approval_diff_rejects_invalid_uuid(db_pool, enums):
 
     with pytest.raises(ValueError):
         await get_approval_diff(payload, ctx)
+
+
+@pytest.mark.asyncio
+@pytest.mark.xfail(reason="invalid UUIDs raise asyncpg DataError")
+async def test_query_audit_log_rejects_invalid_actor_id(db_pool, enums):
+    """query_audit_log should reject malformed actor UUIDs."""
+
+    agent = await _make_agent(db_pool, enums, "audit-actor-uuid-agent", ["sensitive"])
+    ctx = _make_context(db_pool, enums, agent)
+    payload = QueryAuditLogInput(actor_id="not-a-uuid")
+
+    with pytest.raises(ValueError):
+        await query_audit_log(payload, ctx)
+
+
+@pytest.mark.asyncio
+@pytest.mark.xfail(reason="invalid UUIDs raise asyncpg DataError")
+async def test_query_audit_log_rejects_invalid_scope_id(db_pool, enums):
+    """query_audit_log should reject malformed scope UUIDs."""
+
+    agent = await _make_agent(db_pool, enums, "audit-scope-uuid-agent", ["sensitive"])
+    ctx = _make_context(db_pool, enums, agent)
+    payload = QueryAuditLogInput(scope_id="not-a-uuid")
+
+    with pytest.raises(ValueError):
+        await query_audit_log(payload, ctx)
