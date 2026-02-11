@@ -207,7 +207,7 @@ async def get_entity(
 
     row = await pool.fetchrow(QUERIES["entities/get"], entity_id)
     if not row:
-        api_error("NOT_FOUND", f"Entity '{entity_id}' not found", 404)
+        api_error("NOT_FOUND", "Entity not found", 404)
 
     entity = dict(row)
 

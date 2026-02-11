@@ -183,9 +183,14 @@ def normalize_knowledge(item: dict[str, Any], defaults: dict[str, Any] | None) -
     )
     if not scopes:
         scopes = ["public"]
+    url = coerce_text(merged.get("url"))
+    if url:
+        url = url.strip()
+        if not (url.startswith("http://") or url.startswith("https://")):
+            raise ValueError("Knowledge URL must start with http:// or https://")
     return {
         "title": title,
-        "url": coerce_text(merged.get("url")),
+        "url": url,
         "source_type": source_type,
         "content": coerce_text(merged.get("content")),
         "scopes": scopes,

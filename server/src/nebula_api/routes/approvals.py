@@ -35,8 +35,6 @@ ADMIN_SCOPE_NAMES = {"vault-only", "sensitive"}
 def _require_admin_scope(auth: dict, enums: Any) -> None:
     if os.getenv("NEBULA_STRICT_ADMIN") != "1":
         return
-    if auth.get("caller_type") != "agent":
-        return
     scope_ids = set(auth.get("scopes", []))
     allowed_ids = {
         enums.scopes.name_to_id.get(name)
