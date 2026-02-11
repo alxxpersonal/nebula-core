@@ -8,12 +8,19 @@ import pytest
 
 # Local
 from nebula_mcp.models import (
+    GetApprovalDiffInput,
     GetRelationshipsInput,
     QueryJobsInput,
     UpdateEntityInput,
     UpdateRelationshipInput,
 )
-from nebula_mcp.server import get_relationships, query_jobs, update_entity, update_relationship
+from nebula_mcp.server import (
+    get_approval_diff,
+    get_relationships,
+    query_jobs,
+    update_entity,
+    update_relationship,
+)
 
 
 def _make_context(pool, enums, agent):
@@ -113,3 +120,16 @@ async def test_query_jobs_rejects_invalid_assignee(db_pool, enums):
 
     with pytest.raises(ValueError):
         await query_jobs(payload, ctx)
+
+
+@pytest.mark.asyncio
+@pytest.mark.xfail(reason="invalid UUIDs raise asyncpg DataError")
+async def test_get_approval_diff_rejects_invalid_uuid(db_pool, enums):
+    """get_approval_diff should reject malformed approval ids cleanly."""
+
+    agent = await _make_agent(db_pool, enums, "approval-diff-uuid-agent", ["public"])
+    ctx = _make_context(db_pool, enums, agent)
+    payload = GetApprovalDiffInput(approval_id="not-a-uuid")
+
+    with pytest.raises(ValueError):
+        await get_approval_diff(payload, ctx)
