@@ -87,7 +87,6 @@ async def test_api_get_job_denies_other_agent(db_pool, enums):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="job query should be restricted to owning agent")
 async def test_api_query_jobs_filters_by_agent(db_pool, enums):
     """Agent should not list other agents' jobs via API."""
 
@@ -114,8 +113,10 @@ async def test_api_query_jobs_filters_by_agent(db_pool, enums):
     app.state.pool = db_pool
     app.state.enums = enums
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        resp = await client.get("/api/jobs")
+    async with AsyncClient(
+        transport=transport, base_url="http://test", follow_redirects=True
+    ) as client:
+        resp = await client.get("/api/jobs/")
     app.dependency_overrides.pop(require_auth, None)
 
     assert resp.status_code == 200
