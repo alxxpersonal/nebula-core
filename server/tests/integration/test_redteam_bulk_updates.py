@@ -102,3 +102,39 @@ async def test_bulk_update_scopes_denies_private_entity(db_pool, enums):
 
     with pytest.raises(ValueError):
         await bulk_update_entity_scopes(payload, ctx)
+
+
+@pytest.mark.asyncio
+@pytest.mark.xfail(reason="invalid UUIDs raise asyncpg DataError")
+async def test_bulk_update_tags_rejects_invalid_uuid(db_pool, enums):
+    """Bulk tag updates should reject malformed UUIDs."""
+
+    agent = await _make_agent(db_pool, enums, "bulk-tag-invalid", ["public"], False)
+    ctx = _make_context(db_pool, enums, agent)
+
+    payload = BulkUpdateEntityTagsInput(
+        entity_ids=["not-a-uuid"],
+        tags=["pwn"],
+        op="add",
+    )
+
+    with pytest.raises(ValueError):
+        await bulk_update_entity_tags(payload, ctx)
+
+
+@pytest.mark.asyncio
+@pytest.mark.xfail(reason="invalid UUIDs raise asyncpg DataError")
+async def test_bulk_update_scopes_rejects_invalid_uuid(db_pool, enums):
+    """Bulk scope updates should reject malformed UUIDs."""
+
+    agent = await _make_agent(db_pool, enums, "bulk-scope-invalid", ["public"], False)
+    ctx = _make_context(db_pool, enums, agent)
+
+    payload = BulkUpdateEntityScopesInput(
+        entity_ids=["not-a-uuid"],
+        scopes=["public"],
+        op="add",
+    )
+
+    with pytest.raises(ValueError):
+        await bulk_update_entity_scopes(payload, ctx)
