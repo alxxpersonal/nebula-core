@@ -1,0 +1,99 @@
+"""Red team tests for metadata privacy filtering in queries."""
+
+# Standard Library
+import json
+from unittest.mock import MagicMock
+
+# Third-Party
+import pytest
+
+# Local
+from nebula_mcp.models import QueryEntitiesInput, SearchEntitiesByMetadataInput
+from nebula_mcp.server import query_entities, search_entities_by_metadata
+
+
+def _make_context(pool, enums, agent):
+    """Build a mock MCP context for metadata filtering tests."""
+
+    ctx = MagicMock()
+    ctx.request_context.lifespan_context = {
+        "pool": pool,
+        "enums": enums,
+        "agent": agent,
+    }
+    return ctx
+
+
+async def _make_entity(db_pool, enums, name, scopes, metadata):
+    """Insert a test entity with scoped metadata."""
+
+    status_id = enums.statuses.name_to_id["active"]
+    type_id = enums.entity_types.name_to_id["person"]
+    scope_ids = [enums.scopes.name_to_id[s] for s in scopes]
+
+    row = await db_pool.fetchrow(
+        """
+        INSERT INTO entities (name, type_id, status_id, privacy_scope_ids, tags, metadata)
+        VALUES ($1, $2, $3, $4, $5, $6::jsonb)
+        RETURNING *
+        """,
+        name,
+        type_id,
+        status_id,
+        scope_ids,
+        ["test"],
+        json.dumps(metadata),
+    )
+    return dict(row)
+
+
+@pytest.mark.asyncio
+async def test_query_entities_filters_context_segments(db_pool, enums):
+    """Query results should not include context segments outside agent scopes."""
+
+    metadata = {
+        "context_segments": [
+            {"text": "public info", "scopes": ["public"]},
+            {"text": "private info", "scopes": ["personal"]},
+        ]
+    }
+    await _make_entity(db_pool, enums, "Mixed Scope", ["public", "personal"], metadata)
+
+    public_agent = {
+        "id": "public-agent",
+        "scopes": [enums.scopes.name_to_id["public"]],
+    }
+    ctx = _make_context(db_pool, enums, public_agent)
+
+    rows = await query_entities(QueryEntitiesInput(), ctx)
+    assert rows
+    segments = rows[0]["metadata"].get("context_segments", [])
+
+    assert all("personal" not in seg.get("scopes", []) for seg in segments)
+
+
+@pytest.mark.asyncio
+async def test_search_entities_by_metadata_filters_context_segments(db_pool, enums):
+    """Metadata search should not leak context segments outside agent scopes."""
+
+    metadata = {
+        "context_segments": [
+            {"text": "public info", "scopes": ["public"]},
+            {"text": "private info", "scopes": ["personal"]},
+        ],
+        "signal": "needle",
+    }
+    await _make_entity(db_pool, enums, "Metadata Leak", ["public", "personal"], metadata)
+
+    public_agent = {
+        "id": "public-agent",
+        "scopes": [enums.scopes.name_to_id["public"]],
+    }
+    ctx = _make_context(db_pool, enums, public_agent)
+
+    payload = SearchEntitiesByMetadataInput(metadata_query={"signal": "needle"})
+    rows = await search_entities_by_metadata(payload, ctx)
+    assert rows
+    segments = rows[0]["metadata"].get("context_segments", [])
+
+    assert all("personal" not in seg.get("scopes", []) for seg in segments)
