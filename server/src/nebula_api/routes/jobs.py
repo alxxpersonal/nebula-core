@@ -18,6 +18,26 @@ from nebula_mcp.query_loader import QueryLoader
 QUERIES = QueryLoader(Path(__file__).resolve().parents[2] / "queries")
 
 router = APIRouter()
+ADMIN_SCOPE_NAMES = {"vault-only", "sensitive"}
+
+
+def _is_admin(auth: dict, enums: Any) -> bool:
+    scope_ids = set(auth.get("scopes", []))
+    allowed_ids = {
+        enums.scopes.name_to_id.get(name)
+        for name in ADMIN_SCOPE_NAMES
+        if enums.scopes.name_to_id.get(name)
+    }
+    return bool(scope_ids.intersection(allowed_ids))
+
+
+def _require_job_owner(auth: dict, enums: Any, job: dict) -> None:
+    if auth["caller_type"] != "agent":
+        return
+    if _is_admin(auth, enums):
+        return
+    if job.get("agent_id") != auth.get("agent_id"):
+        api_error("FORBIDDEN", "Job not in your scope", 403)
 
 
 class CreateJobBody(BaseModel):
@@ -115,6 +135,8 @@ async def create_job(
     data = payload.model_dump()
     if data.get("metadata") is None:
         data["metadata"] = {}
+    if auth["caller_type"] == "agent" and not _is_admin(auth, enums):
+        data["agent_id"] = auth.get("agent_id")
     if resp := await maybe_check_agent_approval(pool, auth, "create_job", data):
         return resp
     result = await execute_create_job(pool, enums, data)
@@ -143,7 +165,9 @@ async def get_job(
     if not row:
         api_error("NOT_FOUND", f"Job '{job_id}' not found", 404)
 
-    return success(dict(row))
+    job = dict(row)
+    _require_job_owner(auth, request.app.state.enums, job)
+    return success(job)
 
 
 @router.get("/")
@@ -179,14 +203,18 @@ async def query_jobs(
         API response with job list.
     """
     pool = request.app.state.pool
+    enums = request.app.state.enums
 
     status_list = status_names.split(",") if status_names else None
+    agent_filter = agent_id
+    if auth["caller_type"] == "agent" and not _is_admin(auth, enums):
+        agent_filter = auth.get("agent_id")
 
     rows = await pool.fetch(
         QUERIES["jobs/query"],
         status_list,
         assigned_to,
-        agent_id,
+        agent_filter,
         priority,
         due_before,
         due_after,
@@ -217,6 +245,10 @@ async def update_job_status(
     """
     pool = request.app.state.pool
     enums = request.app.state.enums
+    row = await pool.fetchrow(QUERIES["jobs/get"], job_id)
+    if not row:
+        api_error("NOT_FOUND", f"Job '{job_id}' not found", 404)
+    _require_job_owner(auth, enums, dict(row))
     change = {
         "job_id": job_id,
         "status": payload.status,
@@ -263,6 +295,10 @@ async def update_job(
     """
     pool = request.app.state.pool
     enums = request.app.state.enums
+    row = await pool.fetchrow(QUERIES["jobs/get"], job_id)
+    if not row:
+        api_error("NOT_FOUND", f"Job '{job_id}' not found", 404)
+    _require_job_owner(auth, enums, dict(row))
     data = payload.model_dump()
     status_id = None
     if data.get("status"):
@@ -307,12 +343,16 @@ async def create_subtask(
     """
     pool = request.app.state.pool
     enums = request.app.state.enums
+    parent_row = await pool.fetchrow(QUERIES["jobs/get"], job_id)
+    if not parent_row:
+        api_error("NOT_FOUND", f"Job '{job_id}' not found", 404)
+    _require_job_owner(auth, enums, dict(parent_row))
     data = {
         "title": payload.title,
         "description": payload.description,
         "job_type": None,
         "assigned_to": None,
-        "agent_id": None,
+        "agent_id": parent_row.get("agent_id"),
         "priority": payload.priority,
         "parent_job_id": job_id,
         "due_at": payload.due_at,

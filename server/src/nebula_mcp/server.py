@@ -170,6 +170,20 @@ def _has_write_scopes(agent_scopes: list, node_scopes: list) -> bool:
     return set(node_scopes).issubset(set(agent_scopes))
 
 
+async def _get_job_row(pool: Pool, job_id: str) -> dict:
+    row = await pool.fetchrow(QUERIES["jobs/get"], job_id)
+    if not row:
+        raise ValueError(f"Job '{job_id}' not found")
+    return dict(row)
+
+
+def _require_job_owner(agent: dict, enums: Any, job: dict) -> None:
+    if _is_admin(agent, enums):
+        return
+    if job.get("agent_id") != agent.get("id"):
+        raise ValueError("Access denied")
+
+
 async def _node_allowed(
     pool: Pool, enums: Any, agent: dict, node_type: str, node_id: str
 ) -> bool:
@@ -1018,13 +1032,16 @@ async def create_job(payload: CreateJobInput, ctx: Context) -> dict:
     """Create a new job with auto-generated ID."""
 
     pool, enums, agent = await require_context(ctx)
+    data = payload.model_dump()
+    if not _is_admin(agent, enums):
+        data["agent_id"] = agent.get("id")
 
     if resp := await maybe_require_approval(
-        pool, agent, "create_job", payload.model_dump()
+        pool, agent, "create_job", data
     ):
         return resp
 
-    return await execute_create_job(pool, enums, payload.model_dump())
+    return await execute_create_job(pool, enums, data)
 
 
 @mcp.tool()
@@ -1033,11 +1050,9 @@ async def get_job(payload: GetJobInput, ctx: Context) -> dict:
 
     pool, enums, agent = await require_context(ctx)
 
-    row = await pool.fetchrow(QUERIES["jobs/get"], payload.job_id)
-    if not row:
-        raise ValueError(f"Job '{payload.job_id}' not found")
-
-    return dict(row)
+    job = await _get_job_row(pool, payload.job_id)
+    _require_job_owner(agent, enums, job)
+    return job
 
 
 @mcp.tool()
@@ -1046,12 +1061,15 @@ async def query_jobs(payload: QueryJobsInput, ctx: Context) -> list[dict]:
 
     pool, enums, agent = await require_context(ctx)
     limit = _clamp_limit(payload.limit)
+    agent_id = payload.agent_id
+    if not _is_admin(agent, enums):
+        agent_id = agent.get("id")
 
     rows = await pool.fetch(
         QUERIES["jobs/query"],
         payload.status_names or None,
         payload.assigned_to,
-        payload.agent_id,
+        agent_id,
         payload.priority,
         payload.due_before,
         payload.due_after,
@@ -1067,6 +1085,8 @@ async def update_job_status(payload: UpdateJobStatusInput, ctx: Context) -> dict
     """Update job status with optional completion timestamp."""
 
     pool, enums, agent = await require_context(ctx)
+    job = await _get_job_row(pool, payload.job_id)
+    _require_job_owner(agent, enums, job)
     if resp := await maybe_require_approval(
         pool, agent, "update_job_status", payload.model_dump()
     ):
@@ -1092,12 +1112,14 @@ async def create_subtask(payload: CreateSubtaskInput, ctx: Context) -> dict:
     """Create a subtask under a parent job."""
 
     pool, enums, agent = await require_context(ctx)
+    parent_job = await _get_job_row(pool, payload.parent_job_id)
+    _require_job_owner(agent, enums, parent_job)
     subtask_payload = {
         "title": payload.title,
         "description": payload.description,
         "job_type": None,
         "assigned_to": None,
-        "agent_id": None,
+        "agent_id": parent_job.get("agent_id"),
         "priority": payload.priority,
         "parent_job_id": payload.parent_job_id,
         "due_at": payload.due_at,
