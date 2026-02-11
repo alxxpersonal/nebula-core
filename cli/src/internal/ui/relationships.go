@@ -843,7 +843,16 @@ func (m RelationshipsModel) displayNode(id, typ, name string) string {
 	if label, ok := m.names[id]; ok && label != "" {
 		return label
 	}
-	return shortID(id)
+	switch strings.TrimSpace(typ) {
+	case "", "entity":
+		return "unknown entity"
+	case "knowledge":
+		return "unknown knowledge"
+	case "job":
+		return "unknown job"
+	default:
+		return "unknown"
+	}
 }
 
 func (m RelationshipsModel) selectedRelationship() *api.Relationship {
