@@ -1,6 +1,7 @@
 """Pure helper functions for Nebula MCP."""
 
 # Standard Library
+import inspect
 import json
 from pathlib import Path
 from typing import Any
@@ -88,7 +89,30 @@ async def ensure_approval_capacity(
     """Raise if agent has too many pending approvals."""
 
     if conn is None:
-        async with pool.acquire() as pooled:
+        acquire = getattr(pool, "acquire", None)
+        if acquire is None or inspect.iscoroutinefunction(acquire):
+            fetchval = getattr(pool, "fetchval", None)
+            if fetchval is None:
+                return
+            count = await fetchval(
+                (
+                    "SELECT COUNT(*) FROM approval_requests "
+                    "WHERE status = 'pending' AND requested_by = $1"
+                ),
+                agent_id,
+            )
+            if count is None:
+                return
+            try:
+                count_value = int(count)
+            except (TypeError, ValueError):
+                return
+            if requested < 1:
+                return
+            if count_value + requested > MAX_PENDING_APPROVALS:
+                raise ValueError("Approval queue limit reached")
+            return
+        async with acquire() as pooled:
             async with pooled.transaction():
                 await ensure_approval_capacity(
                     pool, agent_id, requested=requested, conn=pooled

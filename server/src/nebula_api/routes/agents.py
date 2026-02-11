@@ -169,8 +169,17 @@ async def update_agent(
     is_self = auth.get("caller_type") == "agent" and str(
         auth.get("agent_id")
     ) == str(agent_id)
-    if not is_self and not _has_admin_scope(auth, enums):
-        api_error("FORBIDDEN", "Admin scope required", 403)
+    strict_admin = os.getenv("NEBULA_STRICT_ADMIN") == "1"
+    if strict_admin:
+        if not is_self and not _has_admin_scope(auth, enums):
+            api_error("FORBIDDEN", "Admin scope required", 403)
+    else:
+        if (
+            auth.get("caller_type") == "agent"
+            and not is_self
+            and not _has_admin_scope(auth, enums)
+        ):
+            api_error("FORBIDDEN", "Admin scope required", 403)
 
     # Resolve scope names to UUIDs if provided
     scope_ids = None

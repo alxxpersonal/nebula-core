@@ -1179,6 +1179,10 @@ async def graph_neighbors(payload: GraphNeighborsInput, ctx: Context) -> list[di
     pool, enums, agent = await require_context(ctx)
     max_hops = _clamp_hops(payload.max_hops)
     limit = _clamp_limit(payload.limit)
+    try:
+        UUID(str(payload.source_id))
+    except (TypeError, ValueError):
+        raise ValueError("Invalid source id")
 
     if not await _node_allowed(
         pool, enums, agent, payload.source_type, payload.source_id
@@ -1219,6 +1223,11 @@ async def graph_shortest_path(payload: GraphShortestPathInput, ctx: Context) -> 
 
     pool, enums, agent = await require_context(ctx)
     max_hops = _clamp_hops(payload.max_hops)
+    try:
+        UUID(str(payload.source_id))
+        UUID(str(payload.target_id))
+    except (TypeError, ValueError):
+        raise ValueError("Invalid node id")
 
     if not await _node_allowed(
         pool, enums, agent, payload.source_type, payload.source_id
