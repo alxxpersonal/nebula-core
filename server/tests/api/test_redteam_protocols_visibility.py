@@ -42,7 +42,6 @@ async def _make_trusted_protocol(db_pool, enums, name: str) -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="trusted protocol reads should be restricted for non-admin users")
 async def test_non_admin_user_cannot_read_trusted_protocol_content(api, db_pool, enums):
     """Non-admin users should not fetch trusted protocol content by name."""
 

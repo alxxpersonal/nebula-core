@@ -8,7 +8,6 @@ from nebula_mcp.helpers import create_approval_request
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="approvals should be admin only")
 async def test_pending_approvals_requires_admin(api):
     """Non-admin users should not list pending approvals."""
 
@@ -17,7 +16,6 @@ async def test_pending_approvals_requires_admin(api):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="approval detail should be admin only")
 async def test_get_approval_requires_admin(api, db_pool, test_agent_row):
     """Non-admin users should not read approval details."""
 
@@ -41,7 +39,6 @@ async def test_get_approval_requires_admin(api, db_pool, test_agent_row):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="approval execution should be admin only")
 async def test_approve_requires_admin(api, db_pool, test_agent_row):
     """Non-admin users should not approve requests."""
 
@@ -65,7 +62,6 @@ async def test_approve_requires_admin(api, db_pool, test_agent_row):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="approval reject should be admin only")
 async def test_reject_requires_admin(api, db_pool, test_agent_row):
     """Non-admin users should not reject requests."""
 

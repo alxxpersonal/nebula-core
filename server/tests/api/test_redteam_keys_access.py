@@ -53,7 +53,6 @@ def _auth_override(agent_id, enums):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="agents should not list all api keys")
 async def test_agent_cannot_list_all_keys(db_pool, enums):
     """Agents should be blocked from listing all API keys."""
 

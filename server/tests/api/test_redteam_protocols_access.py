@@ -5,7 +5,6 @@ import pytest
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="non-admin user should not set trusted=true on create")
 async def test_create_protocol_forces_trusted_false_for_non_admin(api):
     """Non-admin users should not persist trusted protocols on create."""
 
@@ -29,7 +28,6 @@ async def test_create_protocol_forces_trusted_false_for_non_admin(api):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="non-admin user should not set trusted=true on update")
 async def test_update_protocol_forces_trusted_false_for_non_admin(api):
     """Non-admin users should not persist trusted protocols on update."""
 

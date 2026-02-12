@@ -46,7 +46,6 @@ async def _make_trusted_protocol(db_pool, enums, name: str) -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="trusted protocol reads should be restricted for non-admin agents")
 async def test_non_admin_agent_cannot_read_trusted_protocol_content(
     db_pool,
     enums,
