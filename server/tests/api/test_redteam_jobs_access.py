@@ -269,7 +269,7 @@ async def test_api_create_job_overrides_agent_id(db_pool, enums):
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.post(
-            "/api/jobs",
+            "/api/jobs/",
             json={
                 "title": "Injected Job",
                 "agent_id": str(owner["id"]),
