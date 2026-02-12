@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -111,4 +112,15 @@ func TestQuitConfirmCancels(t *testing.T) {
 	updated := model.(App)
 
 	assert.False(t, updated.quitConfirm)
+}
+
+func TestRenderPaletteSanitizesEntries(t *testing.T) {
+	app := NewApp(nil, &config.Config{})
+	app.width = 80
+	app.paletteFiltered = []paletteAction{
+		{ID: "tab:jobs", Label: "\x1b[2Jbad", Desc: "desc\x1b[0m"},
+	}
+
+	out := app.renderPalette()
+	assert.False(t, strings.Contains(out, "\x1b"))
 }
