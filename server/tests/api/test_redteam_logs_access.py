@@ -2,7 +2,7 @@
 
 # Standard Library
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 
 # Third-Party
 from httpx import ASGITransport, AsyncClient
@@ -70,7 +70,7 @@ async def _make_log(db_pool, enums):
         RETURNING *
         """,
         log_type_id,
-        datetime.utcnow(),
+        datetime.now(UTC),
         json.dumps({"note": "private"}),
         status_id,
         json.dumps({"class": "sensitive"}),

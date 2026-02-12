@@ -2,7 +2,7 @@
 
 # Standard Library
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from unittest.mock import MagicMock
 
 # Third-Party
@@ -101,7 +101,7 @@ async def _make_log(db_pool, enums):
         RETURNING *
         """,
         log_type_id,
-        datetime.utcnow(),
+        datetime.now(UTC),
         json.dumps({"note": "secret"}),
         status_id,
         json.dumps({"class": "sensitive"}),
