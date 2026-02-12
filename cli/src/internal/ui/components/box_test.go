@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -32,4 +33,19 @@ func TestTruncateRunes(t *testing.T) {
 	assert.Equal(t, "", truncateRunes("hello", 0))
 	assert.Equal(t, "he", truncateRunes("hello", 2))
 	assert.Equal(t, "你", truncateRunes("你好", 1))
+}
+
+// TestTableClampsLongValues ensures table rows stay within the box width.
+func TestTableClampsLongValues(t *testing.T) {
+	rows := []TableRow{
+		{
+			Label: strings.Repeat("Label", 8),
+			Value: strings.Repeat("value", 40),
+		},
+	}
+	out := Table("Table", rows, 60)
+	maxWidth := lipgloss.Width(strings.Split(Box("x", 60), "\n")[0])
+	for _, line := range strings.Split(out, "\n") {
+		assert.LessOrEqual(t, lipgloss.Width(line), maxWidth)
+	}
 }

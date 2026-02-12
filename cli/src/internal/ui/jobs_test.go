@@ -4,11 +4,14 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/gravitrone/nebula-core/cli/internal/api"
+	"github.com/gravitrone/nebula-core/cli/internal/ui/components"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -196,6 +199,33 @@ func TestJobsModelRenderEmpty(t *testing.T) {
 
 	view := model.View()
 	assert.Contains(t, view, "No jobs found")
+}
+
+// TestJobsListClampsLongRows ensures list rendering stays within the box width.
+func TestJobsListClampsLongRows(t *testing.T) {
+	_, client := testJobsClient(t, func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]any{"data": []map[string]any{}}
+		json.NewEncoder(w).Encode(resp)
+	})
+
+	model := NewJobsModel(client)
+	model.loading = false
+	model.width = 60
+	model.items = []api.Job{
+		{
+			ID:        "job-1",
+			Title:     strings.Repeat("long-title-", 20),
+			Status:    "in-progress",
+			CreatedAt: time.Now(),
+		},
+	}
+	model.applyJobSearch()
+
+	view := model.renderList()
+	maxWidth := lipgloss.Width(strings.Split(components.Box("x", model.width), "\n")[0])
+	for _, line := range strings.Split(view, "\n") {
+		assert.LessOrEqual(t, lipgloss.Width(line), maxWidth)
+	}
 }
 
 func TestJobsModelRenderLoading(t *testing.T) {
