@@ -21,7 +21,7 @@ QUERIES = QueryLoader(Path(__file__).resolve().parents[2] / "queries")
 
 router = APIRouter()
 
-ADMIN_SCOPE_NAMES = {"vault-only", "sensitive"}
+ADMIN_SCOPE_NAMES = {"admin"}
 
 
 def _has_admin_scope(auth: dict, enums: EnumRegistry) -> bool:

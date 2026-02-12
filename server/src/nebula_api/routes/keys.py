@@ -18,6 +18,7 @@ from nebula_mcp.query_loader import QueryLoader
 QUERIES = QueryLoader(Path(__file__).resolve().parents[2] / "queries")
 
 router = APIRouter()
+ADMIN_SCOPE_NAMES = {"admin"}
 
 
 def _require_uuid(value: str, label: str) -> None:
@@ -25,6 +26,17 @@ def _require_uuid(value: str, label: str) -> None:
         UUID(str(value))
     except ValueError:
         api_error("INVALID_INPUT", f"Invalid {label} id", 400)
+
+
+def _require_admin_scope(auth: dict, enums: Any) -> None:
+    scope_ids = set(auth.get("scopes", []))
+    allowed_ids = {
+        enums.scopes.name_to_id.get(name)
+        for name in ADMIN_SCOPE_NAMES
+        if enums.scopes.name_to_id.get(name)
+    }
+    if not scope_ids.intersection(allowed_ids):
+        api_error("FORBIDDEN", "Admin scope required", 403)
 
 
 class LoginInput(BaseModel):
@@ -157,6 +169,8 @@ async def list_all_keys(
     """
 
     pool = request.app.state.pool
+    enums = request.app.state.enums
+    _require_admin_scope(auth, enums)
 
     rows = await pool.fetch(QUERIES["api_keys/list_all"])
     return success([dict(r) for r in rows])

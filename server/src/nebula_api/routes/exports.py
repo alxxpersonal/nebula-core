@@ -14,13 +14,17 @@ from fastapi import APIRouter, Depends, Query, Request
 from nebula_api.auth import require_auth
 from nebula_api.response import api_error, success
 from nebula_mcp.enums import require_entity_type, require_scopes
-from nebula_mcp.helpers import filter_context_segments, scope_names_from_ids
+from nebula_mcp.helpers import (
+    enforce_scope_subset,
+    filter_context_segments,
+    scope_names_from_ids,
+)
 from nebula_mcp.query_loader import QueryLoader
 
 QUERIES = QueryLoader(Path(__file__).resolve().parents[2] / "queries")
 
 router = APIRouter()
-ADMIN_SCOPE_NAMES = {"vault-only", "sensitive"}
+ADMIN_SCOPE_NAMES = {"admin"}
 
 
 def _is_admin(auth: dict, enums: Any) -> bool:
@@ -31,6 +35,18 @@ def _is_admin(auth: dict, enums: Any) -> bool:
         if enums.scopes.name_to_id.get(name)
     }
     return bool(scope_ids.intersection(allowed_ids))
+
+
+def _resolve_scope_ids(scopes: list[str], auth: dict, enums: Any) -> list:
+    caller_scope_ids = auth.get("scopes", []) or []
+    if not scopes:
+        return caller_scope_ids
+    caller_scope_names = scope_names_from_ids(caller_scope_ids, enums)
+    try:
+        allowed_scope_names = enforce_scope_subset(scopes, caller_scope_names)
+        return require_scopes(allowed_scope_names, enums)
+    except ValueError as exc:
+        api_error("VALIDATION_ERROR", str(exc), 400)
 
 
 async def _job_visible(pool: Any, auth: dict, job_id: str) -> bool:
@@ -134,8 +150,11 @@ async def export_entities(
     scope_ids = auth.get("scopes", [])
     enums = request.app.state.enums
 
-    type_id = require_entity_type(type, enums) if type else None
-    scope_ids = require_scopes(scopes, enums) if scopes else auth.get("scopes")
+    try:
+        type_id = require_entity_type(type, enums) if type else None
+    except ValueError as exc:
+        api_error("VALIDATION_ERROR", str(exc), 400)
+    scope_ids = _resolve_scope_ids(scopes, auth, enums)
 
     rows = await pool.fetch(
         QUERIES["entities/query"],
@@ -188,7 +207,7 @@ async def export_knowledge(
     pool = request.app.state.pool
     enums = request.app.state.enums
 
-    scope_ids = require_scopes(scopes, enums) if scopes else auth.get("scopes")
+    scope_ids = _resolve_scope_ids(scopes, auth, enums)
 
     rows = await pool.fetch(
         QUERIES["knowledge/query"],

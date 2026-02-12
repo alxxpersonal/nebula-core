@@ -20,7 +20,7 @@ from nebula_mcp.query_loader import QueryLoader
 QUERIES = QueryLoader(Path(__file__).resolve().parents[2] / "queries")
 
 router = APIRouter()
-ADMIN_SCOPE_NAMES = {"admin", "vault-only", "sensitive"}
+ADMIN_SCOPE_NAMES = {"admin"}
 
 KIND_MAP = {
     "scopes": {
@@ -55,6 +55,15 @@ KIND_MAP = {
         "usage": "taxonomy/count_log_type_usage",
         "supports": {"value_schema"},
     },
+}
+
+ROW_QUERY_BY_KIND = {
+    "scopes": "SELECT id, name, is_builtin FROM privacy_scopes WHERE id = $1::uuid",
+    "entity-types": "SELECT id, name, is_builtin FROM entity_types WHERE id = $1::uuid",
+    "relationship-types": (
+        "SELECT id, name, is_builtin FROM relationship_types WHERE id = $1::uuid"
+    ),
+    "log-types": "SELECT id, name, is_builtin FROM log_types WHERE id = $1::uuid",
 }
 
 
@@ -92,6 +101,17 @@ async def _usage_count(pool: Any, cfg: dict[str, Any], item_id: str) -> int:
     if value is None:
         return 0
     return int(value)
+
+
+async def _fetch_taxonomy_row(
+    pool: Any, kind: str, item_id: str
+) -> dict[str, Any] | None:
+    query = ROW_QUERY_BY_KIND[kind]
+    row = await pool.fetchrow(
+        query,
+        item_id,
+    )
+    return dict(row) if row else None
 
 
 async def _ensure_can_archive(
@@ -234,10 +254,19 @@ async def update_taxonomy(
     cfg = _kind_or_error(kind)
     _validate_payload(kind, payload)
     _require_uuid(item_id, kind)
+    current = await _fetch_taxonomy_row(pool, kind, item_id)
+    if current is None:
+        api_error("NOT_FOUND", f"{kind} entry not found", 404)
 
     name = payload.name.strip() if payload.name is not None else None
     if payload.name is not None and not name:
         api_error("INVALID_INPUT", "Name cannot be empty", 400)
+    if (
+        current["is_builtin"]
+        and name is not None
+        and name != current["name"]
+    ):
+        api_error("CONFLICT", "Built-in taxonomy names are immutable", 409)
 
     try:
         if kind in {"scopes", "entity-types"}:

@@ -11,7 +11,7 @@ from starlette.responses import JSONResponse
 
 # Local
 from nebula_api.auth import maybe_check_agent_approval, require_auth
-from nebula_api.response import success
+from nebula_api.response import api_error, success
 from nebula_mcp.executors import (
     execute_create_entity,
     execute_create_job,
@@ -34,7 +34,7 @@ from nebula_mcp.imports import (
 from nebula_mcp.query_loader import QueryLoader
 
 router = APIRouter()
-ADMIN_SCOPE_NAMES = {"vault-only", "sensitive"}
+ADMIN_SCOPE_NAMES = {"admin"}
 QUERIES = QueryLoader(Path(__file__).resolve().parents[2] / "queries")
 
 
@@ -152,7 +152,10 @@ async def _run_import(
     pool = request.app.state.pool
     enums = request.app.state.enums
 
-    items = extract_items(payload.format, payload.data, payload.items)
+    try:
+        items = extract_items(payload.format, payload.data, payload.items)
+    except ValueError as exc:
+        api_error("VALIDATION_ERROR", str(exc), 400)
     allowed_scopes = scope_names_from_ids(auth.get("scopes", []), enums)
     if auth["caller_type"] == "agent" and auth["agent"].get("requires_approval", True):
         agent = auth["agent"]

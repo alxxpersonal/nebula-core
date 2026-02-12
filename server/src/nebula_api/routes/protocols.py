@@ -20,7 +20,7 @@ QUERIES = QueryLoader(Path(__file__).resolve().parents[2] / "queries")
 
 router = APIRouter()
 
-ADMIN_SCOPE_NAMES = {"vault-only", "sensitive"}
+ADMIN_SCOPE_NAMES = {"admin"}
 
 
 def _is_admin(auth: dict, enums: Any) -> bool:
@@ -98,6 +98,7 @@ async def query_protocols(
     """Query protocols with optional filters."""
 
     pool = request.app.state.pool
+    enums = request.app.state.enums
     rows = await pool.fetch(
         QUERIES["protocols/query"],
         status_category,
@@ -105,7 +106,10 @@ async def query_protocols(
         search,
         limit,
     )
-    return paginated([dict(r) for r in rows], len(rows), limit, 0)
+    items = [dict(r) for r in rows]
+    if not _is_admin(auth, enums):
+        items = [item for item in items if not item.get("trusted")]
+    return paginated(items, len(items), limit, 0)
 
 
 @router.get("/{protocol_name}")
@@ -117,9 +121,12 @@ async def get_protocol(
     """Fetch a protocol by name."""
 
     pool = request.app.state.pool
+    enums = request.app.state.enums
     row = await pool.fetchrow(QUERIES["protocols/get"], protocol_name)
     if not row:
         raise HTTPException(status_code=404, detail="Not Found")
+    if row.get("trusted") and not _is_admin(auth, enums):
+        raise HTTPException(status_code=403, detail="Forbidden")
     return success(dict(row))
 
 
@@ -136,7 +143,7 @@ async def create_protocol(
     data = payload.model_dump()
     if data["metadata"] is None:
         data["metadata"] = {}
-    if auth["caller_type"] == "agent" and not _is_admin(auth, enums):
+    if not _is_admin(auth, enums):
         data["trusted"] = False
     if resp := await maybe_check_agent_approval(pool, auth, "create_protocol", data):
         return resp
@@ -159,8 +166,8 @@ async def update_protocol(
     data["name"] = protocol_name
     if data.get("status") is not None:
         require_status(data["status"], enums)
-    if auth["caller_type"] == "agent" and not _is_admin(auth, enums):
-        data["trusted"] = None
+    if not _is_admin(auth, enums) and data.get("trusted") is not None:
+        data["trusted"] = False
     if resp := await maybe_check_agent_approval(pool, auth, "update_protocol", data):
         return resp
     result = await execute_update_protocol(pool, enums, data)

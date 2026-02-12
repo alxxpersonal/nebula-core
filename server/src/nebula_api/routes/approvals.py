@@ -1,7 +1,6 @@
 """Approval API routes."""
 
 # Standard Library
-import os
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -30,12 +29,10 @@ from nebula_mcp.query_loader import QueryLoader
 QUERIES = QueryLoader(Path(__file__).resolve().parents[2] / "queries")
 
 router = APIRouter()
-ADMIN_SCOPE_NAMES = {"vault-only", "sensitive"}
+ADMIN_SCOPE_NAMES = {"admin"}
 
 
 def _require_admin_scope(auth: dict, enums: Any) -> None:
-    if os.getenv("NEBULA_STRICT_ADMIN") != "1":
-        return
     scope_ids = set(auth.get("scopes", []))
     allowed_ids = {
         enums.scopes.name_to_id.get(name)

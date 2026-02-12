@@ -17,7 +17,7 @@ from nebula_mcp.helpers import (
 )
 
 router = APIRouter()
-ADMIN_SCOPE_NAMES = {"vault-only", "sensitive"}
+ADMIN_SCOPE_NAMES = {"admin"}
 
 
 def _require_admin_scope(auth: dict, enums: EnumRegistry) -> None:

@@ -77,7 +77,7 @@ def filter_context_segments(metadata: dict | str, agent_scopes: list[str]) -> di
 
 # --- Approval Workflow ---
 
-MAX_PENDING_APPROVALS = 100
+MAX_PENDING_APPROVALS = 10
 
 
 async def ensure_approval_capacity(

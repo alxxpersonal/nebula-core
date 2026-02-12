@@ -23,7 +23,6 @@ from nebula_mcp.context import (
     authenticate_agent,
     maybe_require_approval,
     require_context,
-    require_pool,
 )
 from nebula_mcp.db import get_pool
 from nebula_mcp.enums import (
@@ -133,7 +132,7 @@ QUERIES = QueryLoader(Path(__file__).resolve().parents[1] / "queries")
 
 load_dotenv()
 
-ADMIN_SCOPES = {"admin", "vault-only", "sensitive"}
+ADMIN_SCOPES = {"admin", "vault-only"}
 
 TAXONOMY_KIND_MAP = {
     "scopes": {
@@ -168,6 +167,15 @@ TAXONOMY_KIND_MAP = {
         "usage": "taxonomy/count_log_type_usage",
         "supports": {"value_schema"},
     },
+}
+
+TAXONOMY_ROW_QUERY_MAP = {
+    "scopes": "SELECT id, name, is_builtin FROM privacy_scopes WHERE id = $1::uuid",
+    "entity-types": "SELECT id, name, is_builtin FROM entity_types WHERE id = $1::uuid",
+    "relationship-types": (
+        "SELECT id, name, is_builtin FROM relationship_types WHERE id = $1::uuid"
+    ),
+    "log-types": "SELECT id, name, is_builtin FROM log_types WHERE id = $1::uuid",
 }
 
 
@@ -271,6 +279,15 @@ def _taxonomy_kind_or_error(kind: str) -> dict[str, Any]:
     if cfg is None:
         raise ValueError(f"Unknown taxonomy kind: {kind}")
     return cfg
+
+
+async def _get_taxonomy_row(pool: Any, kind: str, item_id: str) -> dict | None:
+    query = TAXONOMY_ROW_QUERY_MAP[kind]
+    row = await pool.fetchrow(
+        query,
+        item_id,
+    )
+    return dict(row) if row else None
 
 
 def _validate_taxonomy_payload(
@@ -742,7 +759,7 @@ async def get_entity(payload: GetEntityInput, ctx: Context) -> dict:
 
     row = await pool.fetchrow(QUERIES["entities/get"], payload.entity_id)
     if not row:
-        raise ValueError("Entity not found")
+        raise ValueError("Not found: not found")
 
     entity = dict(row)
 
@@ -1670,11 +1687,13 @@ async def attach_file_to_job(payload: AttachFileInput, ctx: Context) -> dict:
 async def get_protocol(payload: GetProtocolInput, ctx: Context) -> dict:
     """Retrieve protocol by name."""
 
-    pool = await require_pool(ctx)
+    pool, enums, agent = await require_context(ctx)
 
     row = await pool.fetchrow(QUERIES["protocols/get"], payload.protocol_name)
     if not row:
         raise ValueError(f"Protocol '{payload.protocol_name}' not found")
+    if row.get("trusted") and not _is_admin(agent, enums):
+        raise ValueError("Access denied")
 
     return dict(row)
 
@@ -1698,8 +1717,8 @@ async def update_protocol(payload: UpdateProtocolInput, ctx: Context) -> dict:
 
     pool, enums, agent = await require_context(ctx)
     data = payload.model_dump()
-    if not _is_admin(agent, enums):
-        data["trusted"] = None
+    if not _is_admin(agent, enums) and data.get("trusted") is not None:
+        data["trusted"] = False
     if resp := await maybe_require_approval(pool, agent, "update_protocol", data):
         return resp
     return await execute_update_protocol(pool, enums, data)
@@ -1709,9 +1728,12 @@ async def update_protocol(payload: UpdateProtocolInput, ctx: Context) -> dict:
 async def list_active_protocols(ctx: Context) -> list[dict]:
     """List all active protocols."""
 
-    pool = await require_pool(ctx)
+    pool, enums, agent = await require_context(ctx)
     rows = await pool.fetch(QUERIES["protocols/list_active"])
-    return [dict(r) for r in rows]
+    items = [dict(r) for r in rows]
+    if not _is_admin(agent, enums):
+        items = [item for item in items if not item.get("trusted")]
+    return items
 
 
 # --- Agent Tools ---
@@ -1825,10 +1847,15 @@ async def update_taxonomy(payload: UpdateTaxonomyInput, ctx: Context) -> dict:
         value_schema=payload.value_schema,
     )
     _require_uuid(payload.item_id, "taxonomy")
+    current = await _get_taxonomy_row(pool, payload.kind, payload.item_id)
+    if current is None:
+        raise ValueError(f"{payload.kind} entry not found")
 
     name = payload.name.strip() if payload.name is not None else None
     if payload.name is not None and not name:
         raise ValueError("Taxonomy name cannot be empty")
+    if current["is_builtin"] and name is not None and name != current["name"]:
+        raise ValueError("Built-in taxonomy names are immutable")
 
     try:
         if payload.kind in {"scopes", "entity-types"}:
