@@ -113,7 +113,7 @@ async def test_api_create_relationship_denies_private_target(db_pool, enums):
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.post(
-            "/api/relationships",
+            "/api/relationships/",
             json={
                 "source_type": "entity",
                 "source_id": str(public_entity["id"]),

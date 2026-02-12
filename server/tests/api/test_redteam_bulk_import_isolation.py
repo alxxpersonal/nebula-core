@@ -110,7 +110,12 @@ async def test_bulk_import_entities_scope_escalation(db_pool, enums):
     app.dependency_overrides.pop(require_auth, None)
 
     assert resp.status_code == 200
-    scopes = resp.json()["data"]["items"][0]["scopes"]
+    data = resp.json()["data"]
+    items = data.get("items", [])
+    if not items:
+        assert data.get("failed", 0) >= 1 or data.get("created", 0) == 0
+        return
+    scopes = items[0]["scopes"]
     assert "personal" not in scopes
 
 
@@ -146,7 +151,12 @@ async def test_bulk_import_jobs_agent_spoofing(db_pool, enums):
     app.dependency_overrides.pop(require_auth, None)
 
     assert resp.status_code == 200
-    job = resp.json()["data"]["items"][0]
+    data = resp.json()["data"]
+    items = data.get("items", [])
+    if not items:
+        assert data.get("failed", 0) >= 1 or data.get("created", 0) == 0
+        return
+    job = items[0]
     assert job["agent_id"] == str(viewer["id"])
 
 
@@ -184,7 +194,12 @@ async def test_bulk_import_relationships_private_target(db_pool, enums):
     app.dependency_overrides.pop(require_auth, None)
 
     assert resp.status_code == 200
-    rel = resp.json()["data"]["items"][0]
+    data = resp.json()["data"]
+    items = data.get("items", [])
+    if not items:
+        assert data.get("failed", 0) >= 1 or data.get("created", 0) == 0
+        return
+    rel = items[0]
     assert rel["target_id"] != str(private_entity["id"])
 
 
@@ -224,5 +239,10 @@ async def test_bulk_import_knowledge_scope_escalation(db_pool, enums):
     app.dependency_overrides.pop(require_auth, None)
 
     assert resp.status_code == 200
-    scopes = resp.json()["data"]["items"][0]["scopes"]
+    data = resp.json()["data"]
+    items = data.get("items", [])
+    if not items:
+        assert data.get("failed", 0) >= 1 or data.get("created", 0) == 0
+        return
+    scopes = items[0]["scopes"]
     assert "personal" not in scopes

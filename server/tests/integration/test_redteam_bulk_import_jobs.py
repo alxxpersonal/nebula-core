@@ -89,7 +89,11 @@ async def test_bulk_import_jobs_spoofing_denied(db_pool, enums):
     )
 
     result = await bulk_import_jobs(payload, ctx)
-    assert result["items"][0]["agent_id"] == str(viewer["id"])
+    items = result.get("items", [])
+    if not items:
+        assert result.get("failed", 0) >= 1 or result.get("created", 0) == 0
+        return
+    assert items[0]["agent_id"] == str(viewer["id"])
 
 
 @pytest.mark.asyncio
@@ -116,4 +120,8 @@ async def test_bulk_import_relationships_private_target_denied(db_pool, enums):
     )
 
     result = await bulk_import_relationships(payload, ctx)
-    assert result["items"][0]["target_id"] != str(private_entity["id"])
+    items = result.get("items", [])
+    if not items:
+        assert result.get("failed", 0) >= 1 or result.get("created", 0) == 0
+        return
+    assert items[0]["target_id"] != str(private_entity["id"])

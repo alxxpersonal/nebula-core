@@ -83,12 +83,12 @@ async def _make_log(db_pool, enums):
     """Insert a test log for write isolation scenarios."""
 
     status_id = enums.statuses.name_to_id["active"]
-    log_type_id = enums.log_types.name_to_id["note"]
+    log_type_id = enums.log_types.name_to_id["workout"]
 
     row = await db_pool.fetchrow(
         """
-        INSERT INTO logs (log_type_id, status_id, value, metadata)
-        VALUES ($1, $2, $3::jsonb, $4::jsonb)
+        INSERT INTO logs (log_type_id, timestamp, status_id, value, metadata)
+        VALUES ($1, NOW(), $2, $3::jsonb, $4::jsonb)
         RETURNING *
         """,
         log_type_id,
