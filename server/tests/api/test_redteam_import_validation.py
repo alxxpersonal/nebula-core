@@ -5,7 +5,6 @@ import pytest
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="invalid import format bubbles ValueError")
 async def test_import_entities_rejects_invalid_format(api):
     """Invalid format should not crash the import endpoint."""
 
@@ -23,11 +22,12 @@ async def test_import_entities_rejects_invalid_format(api):
         ],
     }
     resp = await api.post("/api/import/entities", json=payload)
-    assert resp.status_code in {400, 404}
+    assert resp.status_code == 400
+    body = resp.json()
+    assert body["detail"]["error"]["code"] == "VALIDATION_ERROR"
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="missing csv data bubbles ValueError")
 async def test_import_entities_rejects_empty_csv(api):
     """Missing CSV data should not crash the import endpoint."""
 
@@ -36,4 +36,6 @@ async def test_import_entities_rejects_empty_csv(api):
         "data": "",
     }
     resp = await api.post("/api/import/entities", json=payload)
-    assert resp.status_code in {400, 404}
+    assert resp.status_code == 400
+    body = resp.json()
+    assert body["detail"]["error"]["code"] == "VALIDATION_ERROR"

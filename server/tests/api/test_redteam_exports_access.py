@@ -145,7 +145,6 @@ def _auth_override(agent_id, enums):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="exports should filter context segments by scope")
 async def test_export_entities_filters_context_segments(db_pool, enums):
     """Entity exports should filter context_segments by caller scopes."""
 
@@ -174,7 +173,6 @@ async def test_export_entities_filters_context_segments(db_pool, enums):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="export entities should enforce caller scope subset")
 async def test_export_entities_denies_scope_override(db_pool, enums):
     """Export entities should not allow requesting scopes outside caller access."""
 
@@ -190,13 +188,12 @@ async def test_export_entities_denies_scope_override(db_pool, enums):
         resp = await client.get("/api/export/entities?scopes=personal")
     app.dependency_overrides.pop(require_auth, None)
 
-    assert resp.status_code == 200
-    items = resp.json()["data"]["items"]
-    assert not items
+    assert resp.status_code == 400
+    body = resp.json()
+    assert body["detail"]["error"]["code"] == "VALIDATION_ERROR"
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="context export should not include other agents' jobs")
 async def test_export_context_filters_jobs_by_agent(db_pool, enums):
     """Context export should not expose jobs owned by other agents."""
 
@@ -247,7 +244,6 @@ async def test_export_context_filters_job_relationships(db_pool, enums):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="jobs export should not include other agents' jobs")
 async def test_export_jobs_filters_by_agent(db_pool, enums):
     """Job exports should not expose jobs owned by other agents."""
 
@@ -270,7 +266,6 @@ async def test_export_jobs_filters_by_agent(db_pool, enums):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="knowledge export should filter context segments by scope")
 async def test_export_knowledge_filters_context_segments(db_pool, enums):
     """Knowledge exports should filter metadata context segments."""
 
@@ -300,7 +295,6 @@ async def test_export_knowledge_filters_context_segments(db_pool, enums):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="export knowledge should enforce caller scope subset")
 async def test_export_knowledge_denies_scope_override(db_pool, enums):
     """Export knowledge should not allow requesting scopes outside caller access."""
 
@@ -316,9 +310,9 @@ async def test_export_knowledge_denies_scope_override(db_pool, enums):
         resp = await client.get("/api/export/knowledge?scopes=personal")
     app.dependency_overrides.pop(require_auth, None)
 
-    assert resp.status_code == 200
-    items = resp.json()["data"]["items"]
-    assert not items
+    assert resp.status_code == 400
+    body = resp.json()
+    assert body["detail"]["error"]["code"] == "VALIDATION_ERROR"
 
 
 @pytest.mark.asyncio
