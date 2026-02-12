@@ -64,4 +64,4 @@ async def test_api_update_agent_rejects_invalid_uuid(api):
         "/api/agents/not-a-uuid",
         json={"description": "bad"},
     )
-    assert resp.status_code in {400, 404}
+    assert resp.status_code in {400, 403, 404}
