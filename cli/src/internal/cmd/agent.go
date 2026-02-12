@@ -31,7 +31,7 @@ func agentRegisterCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("not logged in: %w", err)
 			}
-			client := api.NewClient(cfg.ServerURL, cfg.APIKey)
+			client := api.NewDefaultClient(cfg.APIKey)
 
 			input := api.RegisterAgentInput{
 				Name:            args[0],
@@ -64,7 +64,7 @@ func agentListCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("not logged in: %w", err)
 			}
-			client := api.NewClient(cfg.ServerURL, cfg.APIKey)
+			client := api.NewDefaultClient(cfg.APIKey)
 
 			agents, err := client.ListAgents("active")
 			if err != nil {

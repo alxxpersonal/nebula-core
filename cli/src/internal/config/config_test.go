@@ -16,8 +16,7 @@ func TestSaveConfigCreatesDirectories(t *testing.T) {
 	defer os.Setenv("HOME", oldHome)
 
 	cfg := Config{
-		ServerURL: "http://localhost:8000",
-		APIKey:    "test-key",
+		APIKey: "test-key",
 	}
 
 	err := cfg.Save()
@@ -47,7 +46,6 @@ func TestSaveLoadRoundtripWithAllFields(t *testing.T) {
 	defer os.Setenv("HOME", oldHome)
 
 	original := Config{
-		ServerURL:    "https://api.example.com",
 		APIKey:       "nbl_verylongkeystring12345",
 		UserEntityID: "ent-123",
 		Username:     "testuser",
@@ -61,7 +59,6 @@ func TestSaveLoadRoundtripWithAllFields(t *testing.T) {
 	loaded, err := Load()
 	require.NoError(t, err)
 
-	assert.Equal(t, original.ServerURL, loaded.ServerURL)
 	assert.Equal(t, original.APIKey, loaded.APIKey)
 	assert.Equal(t, original.UserEntityID, loaded.UserEntityID)
 	assert.Equal(t, original.Username, loaded.Username)
@@ -76,19 +73,18 @@ func TestSaveConfigOverwritesExisting(t *testing.T) {
 	defer os.Setenv("HOME", oldHome)
 
 	// First save
-	cfg1 := Config{ServerURL: "http://first", APIKey: "key1"}
+	cfg1 := Config{APIKey: "key1"}
 	err := cfg1.Save()
 	require.NoError(t, err)
 
 	// Overwrite
-	cfg2 := Config{ServerURL: "http://second", APIKey: "key2"}
+	cfg2 := Config{APIKey: "key2"}
 	err = cfg2.Save()
 	require.NoError(t, err)
 
 	// Verify second config is loaded
 	loaded, err := Load()
 	require.NoError(t, err)
-	assert.Equal(t, "http://second", loaded.ServerURL)
 	assert.Equal(t, "key2", loaded.APIKey)
 }
 
@@ -134,8 +130,7 @@ func TestSaveConfigWithEmptyAPIKey(t *testing.T) {
 	defer os.Setenv("HOME", oldHome)
 
 	cfg := Config{
-		ServerURL: "http://localhost:8000",
-		APIKey:    "", // Empty key should fail on load
+		APIKey: "", // Empty key should fail on load
 	}
 
 	err := cfg.Save()
@@ -152,7 +147,7 @@ func TestConfigPermissionsStrictlyEnforced(t *testing.T) {
 	os.Setenv("HOME", dir)
 	defer os.Setenv("HOME", oldHome)
 
-	cfg := Config{ServerURL: "http://test", APIKey: "secret"}
+	cfg := Config{APIKey: "secret"}
 	err := cfg.Save()
 	require.NoError(t, err)
 
@@ -167,7 +162,7 @@ func TestConfigPermissionsStrictlyEnforced(t *testing.T) {
 	assert.Contains(t, err.Error(), "permissions")
 }
 
-func TestLoadConfigWithMissingServerURL(t *testing.T) {
+func TestLoadConfigWithLegacyServerURLAndMissingAPIKey(t *testing.T) {
 	dir := t.TempDir()
 	oldHome := os.Getenv("HOME")
 	os.Setenv("HOME", dir)
@@ -177,13 +172,32 @@ func TestLoadConfigWithMissingServerURL(t *testing.T) {
 	os.MkdirAll(cfgDir, 0700)
 	path := filepath.Join(cfgDir, "config")
 
-	// Only API key, no server URL
-	err := os.WriteFile(path, []byte("api_key: key123\n"), 0600)
+	// Legacy server_url is ignored, but missing api_key still fails.
+	err := os.WriteFile(path, []byte("server_url: http://legacy\n"), 0600)
 	require.NoError(t, err)
 
 	_, err = Load()
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "server_url")
+	assert.Contains(t, err.Error(), "api_key")
+}
+
+func TestLoadConfigIgnoresLegacyServerURLField(t *testing.T) {
+	dir := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	os.Setenv("HOME", dir)
+	defer os.Setenv("HOME", oldHome)
+
+	cfgDir := filepath.Join(dir, ".nebula")
+	os.MkdirAll(cfgDir, 0700)
+	path := filepath.Join(cfgDir, "config")
+
+	err := os.WriteFile(path, []byte("server_url: http://legacy\napi_key: key123\nusername: test\n"), 0600)
+	require.NoError(t, err)
+
+	loaded, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, "key123", loaded.APIKey)
+	assert.Equal(t, "test", loaded.Username)
 }
 
 func TestPathReturnsCorrectLocation(t *testing.T) {

@@ -48,7 +48,7 @@ func runTUI() error {
 		return err
 	}
 
-	client := api.NewClient(cfg.ServerURL, cfg.APIKey)
+	client := api.NewDefaultClient(cfg.APIKey)
 	app := ui.NewApp(client, cfg)
 
 	p := tea.NewProgram(app, tea.WithAltScreen())

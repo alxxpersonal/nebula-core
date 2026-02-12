@@ -10,7 +10,6 @@ import (
 
 // Config holds CLI configuration stored at ~/.nebula/config.
 type Config struct {
-	ServerURL    string `yaml:"server_url"`
 	APIKey       string `yaml:"api_key"`
 	UserEntityID string `yaml:"user_entity_id"`
 	Username     string `yaml:"username"`
@@ -48,8 +47,8 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("parse config: %w", err)
 	}
 
-	if cfg.ServerURL == "" || cfg.APIKey == "" {
-		return nil, fmt.Errorf("config missing server_url or api_key")
+	if cfg.APIKey == "" {
+		return nil, fmt.Errorf("config missing api_key")
 	}
 
 	return &cfg, nil

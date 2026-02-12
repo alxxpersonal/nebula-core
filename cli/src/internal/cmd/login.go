@@ -20,26 +20,21 @@ func LoginCmd() *cobra.Command {
 		RunE: func(_ *cobra.Command, _ []string) error {
 			reader := bufio.NewReader(os.Stdin)
 
-			fmt.Print("server url (e.g. http://localhost:8000): ")
-			serverURL, _ := reader.ReadString('\n')
-			serverURL = strings.TrimSpace(serverURL)
-
 			fmt.Print("username: ")
 			username, _ := reader.ReadString('\n')
 			username = strings.TrimSpace(username)
 
-			if serverURL == "" || username == "" {
-				return fmt.Errorf("server url and username are required")
+			if username == "" {
+				return fmt.Errorf("username is required")
 			}
 
-			client := api.NewClient(serverURL, "")
+			client := api.NewDefaultClient("")
 			resp, err := client.Login(username)
 			if err != nil {
 				return fmt.Errorf("login failed: %w", err)
 			}
 
 			cfg := &config.Config{
-				ServerURL:    serverURL,
 				APIKey:       resp.APIKey,
 				UserEntityID: resp.EntityID,
 				Username:     resp.Username,

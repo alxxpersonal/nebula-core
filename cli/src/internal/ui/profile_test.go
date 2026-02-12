@@ -14,7 +14,7 @@ import (
 )
 
 func TestProfileAgentDetailToggle(t *testing.T) {
-	model := NewProfileModel(nil, &config.Config{Username: "alxx", ServerURL: "http://localhost"})
+	model := NewProfileModel(nil, &config.Config{Username: "alxx"})
 	model.section = 1
 	model.agents = []api.Agent{
 		{
@@ -52,9 +52,8 @@ func TestProfileSetAPIKeyPersistsAndUpdatesClient(t *testing.T) {
 	defer srv.Close()
 
 	cfg := &config.Config{
-		ServerURL: srv.URL,
-		APIKey:    "nbl_oldkey",
-		Username:  "alxx",
+		APIKey:   "nbl_oldkey",
+		Username: "alxx",
 	}
 	require.NoError(t, cfg.Save())
 

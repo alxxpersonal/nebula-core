@@ -277,7 +277,6 @@ func (m ProfileModel) View() string {
 	b.WriteString(components.Indent(components.Table("Settings", []components.TableRow{
 		{Label: "User", Value: m.config.Username},
 		{Label: "API Key", Value: maskedAPIKey(m.config.APIKey)},
-		{Label: "Server", Value: m.config.ServerURL},
 	}, m.width), 1))
 	b.WriteString("\n\n")
 

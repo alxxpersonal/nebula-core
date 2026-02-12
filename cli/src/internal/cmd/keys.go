@@ -31,7 +31,7 @@ func keysListCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("not logged in: %w", err)
 			}
-			client := api.NewClient(cfg.ServerURL, cfg.APIKey)
+			client := api.NewDefaultClient(cfg.APIKey)
 
 			var keys []api.APIKey
 			if all {
@@ -78,7 +78,7 @@ func keysCreateCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("not logged in: %w", err)
 			}
-			client := api.NewClient(cfg.ServerURL, cfg.APIKey)
+			client := api.NewDefaultClient(cfg.APIKey)
 
 			resp, err := client.CreateKey(args[0])
 			if err != nil {
@@ -103,7 +103,7 @@ func keysRevokeCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("not logged in: %w", err)
 			}
-			client := api.NewClient(cfg.ServerURL, cfg.APIKey)
+			client := api.NewDefaultClient(cfg.APIKey)
 
 			if err := client.RevokeKey(args[0]); err != nil {
 				return fmt.Errorf("revoke key: %w", err)
