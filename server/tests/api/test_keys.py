@@ -66,8 +66,9 @@ async def test_revoke_key(api, db_pool, auth_override):
 
 
 @pytest.mark.asyncio
-async def test_list_all_keys(api, db_pool, test_entity, auth_override):
+async def test_list_all_keys(api, db_pool, test_entity, auth_override, enums):
     """Test list all keys includes user and agent keys."""
+    auth_override["scopes"] = [enums.scopes.name_to_id["admin"]]
 
     # Create a user key
     await api.post("/api/keys", json={"name": "user-key-for-all"})

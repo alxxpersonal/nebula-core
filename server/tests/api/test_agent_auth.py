@@ -42,7 +42,7 @@ async def test_register_duplicate_agent_returns_409(api_no_auth, test_agent_row)
 async def test_agent_key_authenticates(api_agent_auth, test_agent_row):
     """Agent-authed request should work for read endpoints."""
 
-    r = await api_agent_auth.get("/api/agents/")
+    r = await api_agent_auth.get("/api/entities/")
     assert r.status_code == 200
     data = r.json()["data"]
     assert isinstance(data, list)
@@ -149,6 +149,6 @@ async def test_revoked_agent_key_returns_401(db_pool, enums, test_agent_row):
         base_url="http://test",
         headers={"Authorization": f"Bearer {raw_key}"},
     ) as client:
-        r = await client.get("/api/agents/")
+        r = await client.get("/api/entities/")
 
     assert r.status_code == 401

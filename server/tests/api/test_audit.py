@@ -5,8 +5,9 @@ import pytest
 
 
 @pytest.mark.asyncio
-async def test_list_audit_scopes(api):
+async def test_list_audit_scopes(api, auth_override, enums):
     """List audit scopes."""
+    auth_override["scopes"] = [enums.scopes.name_to_id["admin"]]
 
     r = await api.get("/api/audit/scopes")
     assert r.status_code == 200
@@ -15,8 +16,9 @@ async def test_list_audit_scopes(api):
 
 
 @pytest.mark.asyncio
-async def test_list_audit_actors(api, test_entity):
+async def test_list_audit_actors(api, test_entity, auth_override, enums):
     """List audit actors."""
+    auth_override["scopes"] = [enums.scopes.name_to_id["admin"]]
 
     r = await api.get("/api/audit/actors")
     assert r.status_code == 200
@@ -25,8 +27,9 @@ async def test_list_audit_actors(api, test_entity):
 
 
 @pytest.mark.asyncio
-async def test_list_audit_scope_filter(api, enums, test_entity):
+async def test_list_audit_scope_filter(api, enums, test_entity, auth_override):
     """Filter audit log by scope."""
+    auth_override["scopes"] = [enums.scopes.name_to_id["admin"]]
 
     scope_id = enums.scopes.name_to_id["public"]
     r = await api.get("/api/audit", params={"scope_id": str(scope_id)})
