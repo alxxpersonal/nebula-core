@@ -117,6 +117,7 @@ from nebula_mcp.models import (
     QueryRelationshipsInput,
     RevertEntityInput,
     SearchEntitiesByMetadataInput,
+    SemanticSearchInput,
     ToggleTaxonomyInput,
     UpdateEntityInput,
     UpdateJobStatusInput,
@@ -126,6 +127,7 @@ from nebula_mcp.models import (
     UpdateTaxonomyInput,
 )
 from nebula_mcp.query_loader import QueryLoader
+from nebula_mcp.semantic import rank_semantic_candidates
 
 QUERIES = QueryLoader(Path(__file__).resolve().parents[1] / "queries")
 
@@ -207,6 +209,61 @@ def _scope_filter_ids(agent: dict, enums: Any) -> list | None:
     if _is_admin(agent, enums):
         return None
     return agent.get("scopes", []) or []
+
+
+def _entity_semantic_candidate(row: dict[str, Any]) -> dict[str, Any]:
+    metadata = row.get("metadata") or {}
+    tags = row.get("tags") or []
+    text = " ".join(
+        [
+            str(row.get("name", "")),
+            str(row.get("type", "")),
+            " ".join(str(t) for t in tags),
+            json.dumps(metadata, sort_keys=True),
+        ]
+    ).strip()
+    subtitle = str(row.get("type", "") or "entity")
+    snippet_parts = [subtitle]
+    if tags:
+        snippet_parts.append(", ".join(str(t) for t in tags[:3]))
+    return {
+        "kind": "entity",
+        "id": str(row.get("id", "")),
+        "title": str(row.get("name", "")),
+        "subtitle": subtitle,
+        "snippet": " · ".join(part for part in snippet_parts if part),
+        "text": text,
+    }
+
+
+def _knowledge_semantic_candidate(row: dict[str, Any]) -> dict[str, Any]:
+    metadata = row.get("metadata") or {}
+    tags = row.get("tags") or []
+    content = str(row.get("content") or "")
+    text = " ".join(
+        [
+            str(row.get("title", "")),
+            str(row.get("source_type", "")),
+            content,
+            " ".join(str(t) for t in tags),
+            json.dumps(metadata, sort_keys=True),
+        ]
+    ).strip()
+    subtitle = str(row.get("source_type", "") or "knowledge")
+    snippet_base = content.strip().replace("\n", " ")
+    if len(snippet_base) > 120:
+        snippet_base = snippet_base[:120].rstrip() + "..."
+    snippet_parts = [subtitle]
+    if snippet_base:
+        snippet_parts.append(snippet_base)
+    return {
+        "kind": "knowledge",
+        "id": str(row.get("id", "")),
+        "title": str(row.get("title", "")),
+        "subtitle": subtitle,
+        "snippet": " · ".join(part for part in snippet_parts if part),
+        "text": text,
+    }
 
 
 def _taxonomy_kind_or_error(kind: str) -> dict[str, Any]:
@@ -736,6 +793,36 @@ async def query_entities(payload: QueryEntitiesInput, ctx: Context) -> list[dict
             )
         results.append(entity)
     return results
+
+
+@mcp.tool()
+async def semantic_search(payload: SemanticSearchInput, ctx: Context) -> list[dict]:
+    """Run semantic search across entities and knowledge for the active agent."""
+
+    pool, enums, agent = await require_context(ctx)
+    scope_ids = _scope_filter_ids(agent, enums)
+    candidates: list[dict[str, Any]] = []
+
+    if "entity" in payload.kinds:
+        rows = await pool.fetch(
+            QUERIES["search/entities_semantic_candidates"],
+            scope_ids,
+            payload.candidate_limit,
+        )
+        candidates.extend(_entity_semantic_candidate(dict(row)) for row in rows)
+
+    if "knowledge" in payload.kinds:
+        rows = await pool.fetch(
+            QUERIES["search/knowledge_semantic_candidates"],
+            scope_ids,
+            payload.candidate_limit,
+        )
+        candidates.extend(_knowledge_semantic_candidate(dict(row)) for row in rows)
+
+    ranked = rank_semantic_candidates(payload.query, candidates, limit=payload.limit)
+    for item in ranked:
+        item.pop("text", None)
+    return ranked
 
 
 @mcp.tool()

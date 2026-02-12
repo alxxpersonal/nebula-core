@@ -764,6 +764,7 @@ func (a App) statusHintsForTab() []string {
 		return append(base,
 			components.Hint("↑/↓", "Scroll"),
 			components.Hint("enter", "Open"),
+			components.Hint("tab", "Mode"),
 			components.Hint("esc", "Clear"),
 		)
 	case tabProfile:
@@ -1018,6 +1019,10 @@ func (a *App) runPaletteAction(action paletteAction) (tea.Model, tea.Cmd) {
 		return a.switchTab(tabHistory)
 	case "tab:search":
 		return a.switchTab(tabSearch)
+	case "search:semantic":
+		a.tab = tabSearch
+		a.search.mode = searchModeSemantic
+		return *a, nil
 	case "tab:profile":
 		return a.switchTab(tabProfile)
 	case "entities:search":
@@ -1138,6 +1143,7 @@ func defaultPaletteActions() []paletteAction {
 		{ID: "tab:jobs", Label: "Jobs", Desc: "View jobs"},
 		{ID: "tab:history", Label: "History", Desc: "Audit log"},
 		{ID: "tab:search", Label: "Search", Desc: "Global search"},
+		{ID: "search:semantic", Label: "Semantic search", Desc: "Global semantic search"},
 		{ID: "tab:profile", Label: "Profile", Desc: "Keys and agents"},
 		{ID: "ops:import", Label: "Import", Desc: "Bulk import from file"},
 		{ID: "ops:export", Label: "Export", Desc: "Export data to file"},

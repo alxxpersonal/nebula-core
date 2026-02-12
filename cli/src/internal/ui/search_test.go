@@ -91,3 +91,84 @@ func TestSearchModelSelectionEmitsMsg(t *testing.T) {
 	require.NotNil(t, selection.entity)
 	assert.Equal(t, "ent-1", selection.entity.ID)
 }
+
+func TestSearchModelSemanticModeCallsSemanticEndpoint(t *testing.T) {
+	var semanticQuery string
+	_, client := searchTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/search/semantic":
+			var payload map[string]any
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&payload))
+			semanticQuery = payload["query"].(string)
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]any{
+					{
+						"kind":     "entity",
+						"id":       "ent-1",
+						"title":    "Agent Memory Mesh",
+						"subtitle": "project",
+						"snippet":  "project · memory",
+						"score":    0.93,
+					},
+				},
+			})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+
+	model := NewSearchModel(client)
+	model, _ = model.Update(tea.KeyMsg{Type: tea.KeyTab})
+	assert.Equal(t, searchModeSemantic, model.mode)
+
+	model, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
+	require.NotNil(t, cmd)
+	msg := cmd()
+	model, _ = model.Update(msg)
+
+	assert.Equal(t, "m", semanticQuery)
+	require.Len(t, model.items, 1)
+	assert.Equal(t, "entity", model.items[0].kind)
+}
+
+func TestSearchModelSemanticSelectionFetchesDetail(t *testing.T) {
+	_, client := searchTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/search/semantic":
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]any{
+					{
+						"kind":     "entity",
+						"id":       "ent-1",
+						"title":    "Agent Memory Mesh",
+						"subtitle": "project",
+						"snippet":  "project · memory",
+						"score":    0.93,
+					},
+				},
+			})
+		case "/api/entities/ent-1":
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"id":   "ent-1",
+					"name": "Agent Memory Mesh",
+					"type": "project",
+				},
+			})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+
+	model := NewSearchModel(client)
+	model, _ = model.Update(tea.KeyMsg{Type: tea.KeyTab})
+	model, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
+	msg := cmd()
+	model, _ = model.Update(msg)
+
+	model, cmd = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	require.NotNil(t, cmd)
+	selection := cmd().(searchSelectionMsg)
+	require.NotNil(t, selection.entity)
+	assert.Equal(t, "ent-1", selection.entity.ID)
+}

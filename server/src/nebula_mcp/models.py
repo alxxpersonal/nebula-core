@@ -430,6 +430,39 @@ class QueryEntitiesInput(BaseModel):
         return _sanitize_tags(v)
 
 
+class SemanticSearchInput(BaseModel):
+    """Input payload for semantic search."""
+
+    query: str = Field(..., min_length=2, max_length=512, description="Search query")
+    kinds: list[str] = Field(
+        default_factory=lambda: ["entity", "knowledge"],
+        description="Search kinds: entity, knowledge",
+    )
+    limit: int = Field(
+        default=20, ge=1, le=MAX_PAGE_LIMIT, description="Max results to return"
+    )
+    candidate_limit: int = Field(
+        default=250, ge=50, le=2000, description="Candidate pool size per kind"
+    )
+
+    @field_validator("query", mode="before")
+    @classmethod
+    def _clean_semantic_query(cls, v: str | None) -> str | None:
+        return _sanitize_text(v)
+
+    @field_validator("kinds", mode="before")
+    @classmethod
+    def _clean_semantic_kinds(cls, v: list[str] | None) -> list[str]:
+        if not v:
+            return ["entity", "knowledge"]
+        out: list[str] = []
+        for item in v:
+            name = str(item or "").strip().lower()
+            if name and name in {"entity", "knowledge"} and name not in out:
+                out.append(name)
+        return out or ["entity", "knowledge"]
+
+
 class UpdateEntityInput(BaseModel):
     """Input payload for updating an entity."""
 

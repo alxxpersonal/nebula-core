@@ -22,6 +22,7 @@ from nebula_api.routes import (
     logs,
     protocols,
     relationships,
+    search,
     taxonomy,
 )
 
@@ -65,6 +66,7 @@ app.include_router(
     relationships.router, prefix="/api/relationships", tags=["Relationships"]
 )
 app.include_router(jobs.router, prefix="/api/jobs", tags=["Jobs"])
+app.include_router(search.router, prefix="/api/search", tags=["Search"])
 app.include_router(files.router, prefix="/api/files", tags=["Files"])
 app.include_router(logs.router, prefix="/api/logs", tags=["Logs"])
 app.include_router(imports.router, prefix="/api/import", tags=["Import"])

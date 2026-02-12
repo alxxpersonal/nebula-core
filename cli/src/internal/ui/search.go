@@ -12,9 +12,11 @@ import (
 
 type searchResultsMsg struct {
 	query     string
+	mode      string
 	entities  []api.Entity
 	knowledge []api.Knowledge
 	jobs      []api.Job
+	semantic  []api.SemanticSearchResult
 }
 
 type searchSelectionMsg struct {
@@ -37,6 +39,7 @@ type searchEntry struct {
 type SearchModel struct {
 	client  *api.Client
 	query   string
+	mode    string
 	loading bool
 	list    *components.List
 	items   []searchEntry
@@ -44,10 +47,16 @@ type SearchModel struct {
 	height  int
 }
 
+const (
+	searchModeText     = "text"
+	searchModeSemantic = "semantic"
+)
+
 // NewSearchModel builds the search UI model.
 func NewSearchModel(client *api.Client) SearchModel {
 	return SearchModel{
 		client: client,
+		mode:   searchModeText,
 		list:   components.NewList(12),
 	}
 }
@@ -62,8 +71,15 @@ func (m SearchModel) Update(msg tea.Msg) (SearchModel, tea.Cmd) {
 		if strings.TrimSpace(msg.query) != strings.TrimSpace(m.query) {
 			return m, nil
 		}
+		if msg.mode != m.mode {
+			return m, nil
+		}
 		m.loading = false
-		m.items = buildSearchEntries(msg.query, msg.entities, msg.knowledge, msg.jobs)
+		if m.mode == searchModeSemantic {
+			m.items = buildSemanticEntries(msg.semantic)
+		} else {
+			m.items = buildSearchEntries(msg.query, msg.entities, msg.knowledge, msg.jobs)
+		}
 		labels := make([]string, len(m.items))
 		for i, item := range m.items {
 			labels[i] = fmt.Sprintf(
@@ -101,6 +117,19 @@ func (m SearchModel) Update(msg tea.Msg) (SearchModel, tea.Cmd) {
 			m.list.Down()
 		case isUp(msg):
 			m.list.Up()
+		case isKey(msg, "tab"):
+			if m.mode == searchModeText {
+				m.mode = searchModeSemantic
+			} else {
+				m.mode = searchModeText
+			}
+			if strings.TrimSpace(m.query) == "" {
+				m.loading = false
+				m.items = nil
+				m.list.SetItems(nil)
+				return m, nil
+			}
+			return m, m.search(m.query)
 		case isEnter(msg):
 			if idx := m.list.Selected(); idx < len(m.items) {
 				entry := m.items[idx]
@@ -122,6 +151,8 @@ func (m SearchModel) Update(msg tea.Msg) (SearchModel, tea.Cmd) {
 
 func (m SearchModel) View() string {
 	var b strings.Builder
+	b.WriteString(MutedStyle.Render(fmt.Sprintf("Mode: %s (tab to toggle)", m.mode)))
+	b.WriteString("\n\n")
 	b.WriteString("  > " + components.SanitizeText(m.query))
 	b.WriteString(AccentStyle.Render("█"))
 	b.WriteString("\n\n")
@@ -164,7 +195,19 @@ func (m *SearchModel) search(query string) tea.Cmd {
 		return nil
 	}
 	m.loading = true
+	mode := m.mode
 	return func() tea.Msg {
+		if mode == searchModeSemantic {
+			results, err := m.client.SemanticSearch(q, []string{"entity", "knowledge"}, 20)
+			if err != nil {
+				return errMsg{err}
+			}
+			return searchResultsMsg{
+				query:    q,
+				mode:     mode,
+				semantic: results,
+			}
+		}
 		entities, err := m.client.QueryEntities(api.QueryParams{
 			"search_text": q,
 			"limit":       "20",
@@ -188,6 +231,7 @@ func (m *SearchModel) search(query string) tea.Cmd {
 		}
 		return searchResultsMsg{
 			query:     q,
+			mode:      mode,
 			entities:  filterEntitiesByQuery(entities, q),
 			knowledge: filterKnowledgeByQuery(knowledge, q),
 			jobs:      filterJobsByQuery(jobs, q),
@@ -197,6 +241,32 @@ func (m *SearchModel) search(query string) tea.Cmd {
 
 func (m SearchModel) emitSelection(entry searchEntry) tea.Cmd {
 	return func() tea.Msg {
+		switch entry.kind {
+		case "entity":
+			if entry.entity == nil {
+				item, err := m.client.GetEntity(entry.id)
+				if err != nil {
+					return errMsg{err}
+				}
+				return searchSelectionMsg{kind: entry.kind, entity: item}
+			}
+		case "knowledge":
+			if entry.knowledge == nil {
+				item, err := m.client.GetKnowledge(entry.id)
+				if err != nil {
+					return errMsg{err}
+				}
+				return searchSelectionMsg{kind: entry.kind, knowledge: item}
+			}
+		case "job":
+			if entry.job == nil {
+				item, err := m.client.GetJob(entry.id)
+				if err != nil {
+					return errMsg{err}
+				}
+				return searchSelectionMsg{kind: entry.kind, job: item}
+			}
+		}
 		return searchSelectionMsg{
 			kind:      entry.kind,
 			entity:    entry.entity,
@@ -204,6 +274,32 @@ func (m SearchModel) emitSelection(entry searchEntry) tea.Cmd {
 			job:       entry.job,
 		}
 	}
+}
+
+func buildSemanticEntries(items []api.SemanticSearchResult) []searchEntry {
+	out := make([]searchEntry, 0, len(items))
+	for _, item := range items {
+		title := strings.TrimSpace(item.Title)
+		if title == "" {
+			title = item.ID
+		}
+		descParts := []string{
+			fmt.Sprintf("%.2f", item.Score),
+		}
+		if strings.TrimSpace(item.Subtitle) != "" {
+			descParts = append(descParts, item.Subtitle)
+		}
+		if strings.TrimSpace(item.Snippet) != "" {
+			descParts = append(descParts, item.Snippet)
+		}
+		out = append(out, searchEntry{
+			kind:  item.Kind,
+			id:    item.ID,
+			label: components.SanitizeText(title),
+			desc:  components.SanitizeText(strings.Join(descParts, " · ")),
+		})
+	}
+	return out
 }
 
 func buildSearchEntries(query string, entities []api.Entity, knowledge []api.Knowledge, jobs []api.Job) []searchEntry {
