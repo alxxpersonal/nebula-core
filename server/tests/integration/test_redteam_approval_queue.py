@@ -153,21 +153,27 @@ async def test_bulk_import_requires_per_item_approval(db_pool, untrusted_mcp_con
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="approval queue should enforce rate limits")
 async def test_approval_queue_rate_limit(db_pool, untrusted_mcp_context):
-    """Approval queue should rate limit repeated requests."""
+    """Approval queue should cap pending approvals per agent."""
 
     start_count = await db_pool.fetchval("SELECT COUNT(*) FROM approval_requests")
+    rejected = False
     for i in range(20):
-        payload = CreateEntityInput(
-            name=f"Rate Limit Probe {i}",
-            type="person",
-            status="active",
-            scopes=["public"],
-            tags=["redteam"],
-            metadata={},
-        )
-        await create_entity(payload, untrusted_mcp_context)
+        try:
+            payload = CreateEntityInput(
+                name=f"Rate Limit Probe {i}",
+                type="person",
+                status="active",
+                scopes=["public"],
+                tags=["redteam"],
+                metadata={},
+            )
+            await create_entity(payload, untrusted_mcp_context)
+        except ValueError as exc:
+            assert "Approval queue limit reached" in str(exc)
+            rejected = True
+            break
 
     end_count = await db_pool.fetchval("SELECT COUNT(*) FROM approval_requests")
+    assert rejected is True
     assert end_count - start_count <= 10

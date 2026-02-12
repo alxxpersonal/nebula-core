@@ -17,9 +17,6 @@ from nebula_mcp.server import (
 pytestmark = pytest.mark.integration
 
 
-@pytest.mark.xfail(
-    reason="built-in scope names are security boundaries and should be immutable/reserved"
-)
 async def test_mcp_taxonomy_builtin_scope_name_is_immutable(mock_mcp_context, db_pool):
     """Renaming built-in scopes should be rejected (prevents reserved-name reuse)."""
 

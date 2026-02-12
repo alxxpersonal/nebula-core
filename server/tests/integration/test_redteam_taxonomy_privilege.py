@@ -27,7 +27,6 @@ def _make_context(pool, enums, scope_ids: list) -> MagicMock:
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="taxonomy MCP management should require explicit admin scope")
 async def test_mcp_taxonomy_sensitive_scope_cannot_create(db_pool, enums):
     """A sensitive-only agent should not create taxonomy rows."""
 
@@ -57,7 +56,6 @@ async def test_mcp_taxonomy_sensitive_scope_cannot_create(db_pool, enums):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="taxonomy MCP listing should require explicit admin scope")
 async def test_mcp_taxonomy_sensitive_scope_cannot_list(db_pool, enums):
     """A sensitive-only agent should not list taxonomy rows."""
 

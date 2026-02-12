@@ -47,9 +47,6 @@ async def api_admin(db_pool, enums, admin_auth_override):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(
-    reason="built-in scope names are security boundaries and should be immutable/reserved"
-)
 async def test_taxonomy_builtin_scope_name_is_immutable(api_admin, db_pool):
     """Renaming built-in scopes should be rejected (prevents reserved-name reuse)."""
 

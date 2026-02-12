@@ -10,7 +10,6 @@ from nebula_api.auth import require_auth
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="taxonomy management should require explicit admin scope")
 async def test_taxonomy_sensitive_scope_cannot_create(api, db_pool, test_entity, enums):
     """A sensitive-only user should not be treated as taxonomy admin."""
 
@@ -58,7 +57,6 @@ async def test_taxonomy_sensitive_scope_cannot_create(api, db_pool, test_entity,
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="taxonomy listing should require explicit admin scope")
 async def test_taxonomy_sensitive_scope_cannot_list(api, test_entity, enums):
     """A sensitive-only user should not list taxonomy rows."""
 

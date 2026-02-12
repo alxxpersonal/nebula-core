@@ -96,7 +96,6 @@ async def test_get_entity_denies_private_scope(db_pool, enums):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="errors should not disclose entity existence")
 async def test_get_entity_not_found_uses_generic_error(db_pool, enums):
     """Missing entities should not leak existence details."""
 
@@ -106,9 +105,14 @@ async def test_get_entity_not_found_uses_generic_error(db_pool, enums):
     }
     ctx = _make_context(db_pool, enums, public_agent)
 
-    payload = GetEntityInput(entity_id="00000000-0000-0000-0000-000000000001")
-    with pytest.raises(ValueError, match="Not found"):
+    missing_id = "00000000-0000-0000-0000-000000000001"
+    payload = GetEntityInput(entity_id=missing_id)
+    with pytest.raises(ValueError) as excinfo:
         await get_entity(payload, ctx)
+
+    msg = str(excinfo.value)
+    assert "Not found" in msg
+    assert missing_id not in msg
 
 
 @pytest.mark.asyncio
