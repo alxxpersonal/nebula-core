@@ -71,7 +71,7 @@ async def login(payload: LoginInput, request: Request) -> dict[str, Any]:
 
     if not entity:
         status_id = require_status("active", enums)
-        scope_ids = require_scopes(["public", "personal", "code"], enums)
+        scope_ids = require_scopes(["public", "personal", "code", "vault-only"], enums)
         entity = await pool.fetchrow(
             QUERIES["entities/create"],
             scope_ids,
