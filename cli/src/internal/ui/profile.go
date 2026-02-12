@@ -38,6 +38,18 @@ type ProfileModel struct {
 	createBuf  string
 	createdKey string
 
+	taxKind            int
+	taxIncludeInactive bool
+	taxSearch          string
+	taxLoading         bool
+	taxItems           []api.TaxonomyEntry
+	taxList            *components.List
+	taxPromptMode      taxonomyPromptMode
+	taxPromptBuf       string
+	taxPendingName     string
+	taxPendingDesc     string
+	taxEditID          string
+
 	width  int
 	height int
 }
@@ -49,13 +61,15 @@ func NewProfileModel(client *api.Client, cfg *config.Config) ProfileModel {
 		config:    cfg,
 		keyList:   components.NewList(10),
 		agentList: components.NewList(10),
+		taxList:   components.NewList(12),
 	}
 }
 
 func (m ProfileModel) Init() tea.Cmd {
 	m.loading = true
+	m.taxLoading = true
 	m.agentDetail = nil
-	return tea.Batch(m.loadKeys, m.loadAgents)
+	return tea.Batch(m.loadKeys, m.loadAgents, m.loadTaxonomy)
 }
 
 func (m ProfileModel) Update(msg tea.Msg) (ProfileModel, tea.Cmd) {
@@ -91,7 +105,23 @@ func (m ProfileModel) Update(msg tea.Msg) (ProfileModel, tea.Cmd) {
 	case agentUpdatedMsg:
 		return m, m.loadAgents
 
+	case taxonomyLoadedMsg:
+		if msg.kind != m.taxonomyKindPath() {
+			return m, nil
+		}
+		m.setTaxonomyItems(msg.items)
+		m.taxLoading = false
+		m.loading = false
+		return m, nil
+
+	case taxonomyActionDoneMsg:
+		m.taxLoading = true
+		return m, m.loadTaxonomy
+
 	case tea.KeyMsg:
+		if m.taxPromptMode != taxPromptNone {
+			return m.handleTaxonomyPrompt(msg)
+		}
 		if m.creating {
 			return m.handleCreateInput(msg)
 		}
@@ -109,17 +139,27 @@ func (m ProfileModel) Update(msg tea.Msg) (ProfileModel, tea.Cmd) {
 
 		switch {
 		case isKey(msg, "left"):
-			m.section = (m.section - 1 + 2) % 2
+			m.section = (m.section - 1 + 3) % 3
 		case isKey(msg, "right"):
-			m.section = (m.section + 1) % 2
+			m.section = (m.section + 1) % 3
 		case isDown(msg):
-			m.activeList().Down()
+			if m.section == 2 {
+				m.taxList.Down()
+			} else {
+				m.activeList().Down()
+			}
 		case isUp(msg):
-			m.activeList().Up()
+			if m.section == 2 {
+				m.taxList.Up()
+			} else {
+				m.activeList().Up()
+			}
 		case isKey(msg, "n"):
 			if m.section == 0 {
 				m.creating = true
 				m.createBuf = ""
+			} else if m.section == 2 {
+				m.openTaxPrompt(taxPromptCreateName, "")
 			}
 		case isKey(msg, "r"):
 			if m.section == 0 {
@@ -135,6 +175,60 @@ func (m ProfileModel) Update(msg tea.Msg) (ProfileModel, tea.Cmd) {
 					agent := m.agents[idx]
 					m.agentDetail = &agent
 				}
+			} else if m.section == 2 {
+				item := m.selectedTaxonomy()
+				if item != nil {
+					desc := ""
+					if item.Description != nil {
+						desc = *item.Description
+					}
+					m.taxEditID = item.ID
+					m.taxPendingDesc = desc
+					m.openTaxPrompt(taxPromptEditName, item.Name)
+				}
+			}
+		case isKey(msg, "e"):
+			if m.section == 2 {
+				item := m.selectedTaxonomy()
+				if item != nil {
+					desc := ""
+					if item.Description != nil {
+						desc = *item.Description
+					}
+					m.taxEditID = item.ID
+					m.taxPendingDesc = desc
+					m.openTaxPrompt(taxPromptEditName, item.Name)
+				}
+			}
+		case isKey(msg, "d"):
+			if m.section == 2 {
+				return m.taxonomyArchiveSelected()
+			}
+		case isKey(msg, "a"):
+			if m.section == 2 {
+				return m.taxonomyActivateSelected()
+			}
+		case isKey(msg, "f"):
+			if m.section == 2 {
+				m.openTaxPrompt(taxPromptFilter, m.taxSearch)
+			}
+		case isKey(msg, "i"):
+			if m.section == 2 {
+				m.taxIncludeInactive = !m.taxIncludeInactive
+				m.taxLoading = true
+				return m, m.loadTaxonomy
+			}
+		case isKey(msg, "["):
+			if m.section == 2 {
+				m.taxKind = (m.taxKind - 1 + len(taxonomyKinds)) % len(taxonomyKinds)
+				m.taxLoading = true
+				return m, m.loadTaxonomy
+			}
+		case isKey(msg, "]"), isKey(msg, "tab"):
+			if m.section == 2 {
+				m.taxKind = (m.taxKind + 1) % len(taxonomyKinds)
+				m.taxLoading = true
+				return m, m.loadTaxonomy
 			}
 		}
 	}
@@ -171,19 +265,30 @@ func (m ProfileModel) View() string {
 	// Section tabs
 	keysLabel := "API Keys"
 	agentsLabel := "Agents"
+	taxonomyLabel := "Taxonomy"
 	var tabs string
 	if m.section == 0 {
-		tabs = SelectedStyle.Render(keysLabel) + "   " + MutedStyle.Render(agentsLabel)
+		tabs = SelectedStyle.Render(keysLabel) +
+			"   " + MutedStyle.Render(agentsLabel) +
+			"   " + MutedStyle.Render(taxonomyLabel)
+	} else if m.section == 1 {
+		tabs = MutedStyle.Render(keysLabel) +
+			"   " + SelectedStyle.Render(agentsLabel) +
+			"   " + MutedStyle.Render(taxonomyLabel)
 	} else {
-		tabs = MutedStyle.Render(keysLabel) + "   " + SelectedStyle.Render(agentsLabel)
+		tabs = MutedStyle.Render(keysLabel) +
+			"   " + MutedStyle.Render(agentsLabel) +
+			"   " + SelectedStyle.Render(taxonomyLabel)
 	}
 	b.WriteString(components.CenterLine(tabs, m.width))
 	b.WriteString("\n\n")
 
 	if m.section == 0 {
 		b.WriteString(m.renderKeys())
-	} else {
+	} else if m.section == 1 {
 		b.WriteString(m.renderAgents())
+	} else {
+		b.WriteString(m.renderTaxonomy())
 	}
 
 	return b.String()

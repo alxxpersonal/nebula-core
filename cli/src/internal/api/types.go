@@ -410,6 +410,40 @@ type ExportResult struct {
 	Count   int              `json:"count"`
 }
 
+// --- Taxonomy ---
+
+// TaxonomyEntry represents a taxonomy row for scopes/types.
+type TaxonomyEntry struct {
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Description *string   `json:"description,omitempty"`
+	IsBuiltin   bool      `json:"is_builtin"`
+	IsActive    bool      `json:"is_active"`
+	Metadata    JSONMap   `json:"metadata,omitempty"`
+	IsSymmetric *bool     `json:"is_symmetric,omitempty"`
+	ValueSchema JSONMap   `json:"value_schema,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+// CreateTaxonomyInput defines fields for creating taxonomy entries.
+type CreateTaxonomyInput struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description,omitempty"`
+	Metadata    map[string]any `json:"metadata,omitempty"`
+	IsSymmetric *bool          `json:"is_symmetric,omitempty"`
+	ValueSchema map[string]any `json:"value_schema,omitempty"`
+}
+
+// UpdateTaxonomyInput defines fields for updating taxonomy entries.
+type UpdateTaxonomyInput struct {
+	Name        *string        `json:"name,omitempty"`
+	Description *string        `json:"description,omitempty"`
+	Metadata    map[string]any `json:"metadata,omitempty"`
+	IsSymmetric *bool          `json:"is_symmetric,omitempty"`
+	ValueSchema map[string]any `json:"value_schema,omitempty"`
+}
+
 // --- Agent ---
 
 // Agent represents an AI agent or automated system.

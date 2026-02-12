@@ -372,7 +372,9 @@ func (a App) tabWantsArrows() bool {
 	case tabSearch:
 		return false
 	case tabProfile:
-		return a.profile.creating || a.profile.createdKey != ""
+		return a.profile.creating ||
+			a.profile.createdKey != "" ||
+			a.profile.taxPromptMode != taxPromptNone
 	}
 	return false
 }
@@ -779,11 +781,28 @@ func (a App) statusHintsForTab() []string {
 				components.Hint("n", "New Key"),
 				components.Hint("r", "Revoke"),
 			)
-		} else {
+		} else if a.profile.section == 1 {
 			hints = append(hints,
 				components.Hint("enter", "Details"),
 				components.Hint("t", "Toggle Trust"),
 			)
+		} else {
+			if a.profile.taxPromptMode != taxPromptNone {
+				hints = append(hints,
+					components.Hint("enter", "Apply"),
+					components.Hint("esc", "Cancel"),
+				)
+			} else {
+				hints = append(hints,
+					components.Hint("[/]", "Kind"),
+					components.Hint("n", "New"),
+					components.Hint("e", "Edit"),
+					components.Hint("d", "Archive"),
+					components.Hint("a", "Activate"),
+					components.Hint("f", "Filter"),
+					components.Hint("i", "Inactive"),
+				)
+			}
 		}
 		return append(base, hints...)
 	}
@@ -1015,6 +1034,10 @@ func (a *App) runPaletteAction(action paletteAction) (tea.Model, tea.Cmd) {
 		a.tab = tabProfile
 		a.profile.section = 1
 		return *a, nil
+	case "profile:taxonomy":
+		a.tab = tabProfile
+		a.profile.section = 2
+		return *a, nil
 	case "ops:import":
 		a.tabNav = false
 		a.importExportOpen = true
@@ -1085,6 +1108,9 @@ func (a App) hasUnsaved() bool {
 	if a.profile.creating {
 		return true
 	}
+	if a.profile.taxPromptMode != taxPromptNone {
+		return true
+	}
 	return false
 }
 
@@ -1118,6 +1144,7 @@ func defaultPaletteActions() []paletteAction {
 		{ID: "entities:search", Label: "Search entities", Desc: "Open entity search"},
 		{ID: "profile:keys", Label: "Profile: API keys", Desc: "Manage keys"},
 		{ID: "profile:agents", Label: "Profile: agents", Desc: "Manage agents"},
+		{ID: "profile:taxonomy", Label: "Profile: taxonomy", Desc: "Manage scopes and types"},
 		{ID: "quit", Label: "Quit", Desc: "Exit CLI"},
 	}
 }

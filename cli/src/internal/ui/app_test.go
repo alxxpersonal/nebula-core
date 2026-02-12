@@ -46,6 +46,25 @@ func TestRunPaletteActionEntityJump(t *testing.T) {
 	assert.Equal(t, entitiesViewDetail, updated.entities.view)
 }
 
+func TestRunPaletteActionProfileSections(t *testing.T) {
+	app := NewApp(nil, &config.Config{})
+
+	model, _ := app.runPaletteAction(paletteAction{ID: "profile:keys"})
+	updated := model.(App)
+	assert.Equal(t, tabProfile, updated.tab)
+	assert.Equal(t, 0, updated.profile.section)
+
+	model, _ = updated.runPaletteAction(paletteAction{ID: "profile:agents"})
+	updated = model.(App)
+	assert.Equal(t, tabProfile, updated.tab)
+	assert.Equal(t, 1, updated.profile.section)
+
+	model, _ = updated.runPaletteAction(paletteAction{ID: "profile:taxonomy"})
+	updated = model.(App)
+	assert.Equal(t, tabProfile, updated.tab)
+	assert.Equal(t, 2, updated.profile.section)
+}
+
 func TestTabNavAllowsActionKeys(t *testing.T) {
 	app := NewApp(nil, &config.Config{})
 	app.tab = tabRelations
