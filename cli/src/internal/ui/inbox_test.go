@@ -200,6 +200,31 @@ func TestInboxModelRenderEmpty(t *testing.T) {
 	assert.Contains(t, view, "No pending approvals")
 }
 
+func TestInboxBulkApproveRequiresConfirm(t *testing.T) {
+	_, client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]any{
+			"data": []map[string]any{
+				{"id": "ap-1", "status": "pending", "request_type": "create_entity", "agent_name": "test", "requested_by": "user", "change_details": map[string]any{}, "created_at": time.Now()},
+				{"id": "ap-2", "status": "pending", "request_type": "create_entity", "agent_name": "test", "requested_by": "user", "change_details": map[string]any{}, "created_at": time.Now()},
+			},
+		}
+		json.NewEncoder(w).Encode(resp)
+	})
+
+	model := NewInboxModel(client)
+	model.confirmBulk = true
+
+	cmd := model.Init()
+	msg := cmd()
+	model, _ = model.Update(msg)
+
+	model, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'A'}})
+
+	assert.True(t, model.confirming)
+	view := model.View()
+	assert.Contains(t, view, "Approve")
+}
+
 func TestInboxModelRenderLoading(t *testing.T) {
 	_, client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
 		// should not be called
