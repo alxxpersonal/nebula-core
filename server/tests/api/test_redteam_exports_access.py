@@ -98,7 +98,9 @@ async def _make_knowledge(db_pool, enums, title, scopes, metadata):
     return dict(row)
 
 
-async def _make_relationship(db_pool, enums, source_type, source_id, target_type, target_id):
+async def _make_relationship(
+    db_pool, enums, source_type, source_id, target_type, target_id
+):
     """Insert a relationship for export access tests."""
 
     status_id = enums.statuses.name_to_id["active"]
@@ -222,7 +224,9 @@ async def test_export_context_filters_job_relationships(db_pool, enums):
 
     owner = await _make_agent(db_pool, enums, "job-owner-export-rel")
     viewer = await _make_agent(db_pool, enums, "job-viewer-export-rel")
-    entity = await _make_entity(db_pool, enums, "Public Link", ["public"], {"note": "public"})
+    entity = await _make_entity(
+        db_pool, enums, "Public Link", ["public"], {"note": "public"}
+    )
     job = await _make_job(db_pool, enums, owner["id"])
     rel = await _make_relationship(
         db_pool, enums, "job", job["id"], "entity", str(entity["id"])
@@ -276,7 +280,9 @@ async def test_export_knowledge_filters_context_segments(db_pool, enums):
             {"text": "private info", "scopes": ["personal"]},
         ]
     }
-    await _make_knowledge(db_pool, enums, "Knowledge Mixed", ["public", "personal"], metadata)
+    await _make_knowledge(
+        db_pool, enums, "Knowledge Mixed", ["public", "personal"], metadata
+    )
 
     viewer = await _make_agent(db_pool, enums, "knowledge-export-viewer")
     app.dependency_overrides[require_auth] = _auth_override(viewer["id"], enums)
@@ -322,7 +328,9 @@ async def test_export_relationships_filters_job_ownership(db_pool, enums):
     owner = await _make_agent(db_pool, enums, "rel-job-owner")
     viewer = await _make_agent(db_pool, enums, "rel-job-viewer")
     job = await _make_job(db_pool, enums, owner["id"])
-    entity = await _make_entity(db_pool, enums, "Public Link", ["public"], {"note": "public"})
+    entity = await _make_entity(
+        db_pool, enums, "Public Link", ["public"], {"note": "public"}
+    )
 
     rel = await _make_relationship(
         db_pool, enums, "job", job["id"], "entity", str(entity["id"])

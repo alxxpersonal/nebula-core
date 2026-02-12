@@ -84,7 +84,9 @@ async def test_bulk_import_entities_scope_escalation(db_pool, enums):
     """Agents should not bulk import entities with private scopes."""
 
     agent = await _make_agent(db_pool, enums, "bulk-import-viewer", ["public"], False)
-    app.dependency_overrides[require_auth] = _auth_override(agent["id"], ["public"], enums)
+    app.dependency_overrides[require_auth] = _auth_override(
+        agent["id"], ["public"], enums
+    )
     app.state.pool = db_pool
     app.state.enums = enums
 
@@ -120,7 +122,9 @@ async def test_bulk_import_jobs_agent_spoofing(db_pool, enums):
     owner = await _make_agent(db_pool, enums, "bulk-owner", ["public"], False)
     viewer = await _make_agent(db_pool, enums, "bulk-viewer", ["public"], False)
 
-    app.dependency_overrides[require_auth] = _auth_override(viewer["id"], ["public"], enums)
+    app.dependency_overrides[require_auth] = _auth_override(
+        viewer["id"], ["public"], enums
+    )
     app.state.pool = db_pool
     app.state.enums = enums
 
@@ -155,7 +159,9 @@ async def test_bulk_import_relationships_private_target(db_pool, enums):
     public_entity = await _make_entity(db_pool, enums, "Public", ["public"])
     viewer = await _make_agent(db_pool, enums, "bulk-linker", ["public"], False)
 
-    app.dependency_overrides[require_auth] = _auth_override(viewer["id"], ["public"], enums)
+    app.dependency_overrides[require_auth] = _auth_override(
+        viewer["id"], ["public"], enums
+    )
     app.state.pool = db_pool
     app.state.enums = enums
 
@@ -183,12 +189,18 @@ async def test_bulk_import_relationships_private_target(db_pool, enums):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="bulk import knowledge should enforce scope subset for agents")
+@pytest.mark.xfail(
+    reason="bulk import knowledge should enforce scope subset for agents"
+)
 async def test_bulk_import_knowledge_scope_escalation(db_pool, enums):
     """Agents should not bulk import knowledge with private scopes."""
 
-    agent = await _make_agent(db_pool, enums, "bulk-knowledge-viewer", ["public"], False)
-    app.dependency_overrides[require_auth] = _auth_override(agent["id"], ["public"], enums)
+    agent = await _make_agent(
+        db_pool, enums, "bulk-knowledge-viewer", ["public"], False
+    )
+    app.dependency_overrides[require_auth] = _auth_override(
+        agent["id"], ["public"], enums
+    )
     app.state.pool = db_pool
     app.state.enums = enums
 

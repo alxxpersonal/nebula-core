@@ -4,7 +4,12 @@
 import pytest
 
 # Local
-from nebula_mcp.models import GetFileInput, GetLogInput, LinkKnowledgeInput, UpdateLogInput
+from nebula_mcp.models import (
+    GetFileInput,
+    GetLogInput,
+    LinkKnowledgeInput,
+    UpdateLogInput,
+)
 from nebula_mcp.server import get_file, get_log, link_knowledge_to_entity, update_log
 
 

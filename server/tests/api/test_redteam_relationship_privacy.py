@@ -70,12 +70,16 @@ def _public_auth(public_entity, enums):
 
 
 @pytest.mark.asyncio
-async def test_api_get_relationships_hides_private_entities(api_no_auth, db_pool, enums):
+async def test_api_get_relationships_hides_private_entities(
+    api_no_auth, db_pool, enums
+):
     """API relationships should hide private entity links."""
 
     public_entity = await _make_entity(db_pool, enums, "Public", ["public"])
     private_entity = await _make_entity(db_pool, enums, "Private", ["sensitive"])
-    rel = await _make_relationship(db_pool, enums, public_entity["id"], private_entity["id"])
+    rel = await _make_relationship(
+        db_pool, enums, public_entity["id"], private_entity["id"]
+    )
 
     async def mock_auth():
         """Mock auth with public only scope."""
@@ -84,9 +88,7 @@ async def test_api_get_relationships_hides_private_entities(api_no_auth, db_pool
 
     app.dependency_overrides[require_auth] = mock_auth
     try:
-        resp = await api_no_auth.get(
-            f"/api/relationships/entity/{public_entity['id']}"
-        )
+        resp = await api_no_auth.get(f"/api/relationships/entity/{public_entity['id']}")
     finally:
         app.dependency_overrides.pop(require_auth, None)
 
@@ -96,12 +98,16 @@ async def test_api_get_relationships_hides_private_entities(api_no_auth, db_pool
 
 
 @pytest.mark.asyncio
-async def test_api_query_relationships_hides_private_entities(api_no_auth, db_pool, enums):
+async def test_api_query_relationships_hides_private_entities(
+    api_no_auth, db_pool, enums
+):
     """API query relationships should hide private entity links."""
 
     public_entity = await _make_entity(db_pool, enums, "Public 2", ["public"])
     private_entity = await _make_entity(db_pool, enums, "Private 2", ["sensitive"])
-    rel = await _make_relationship(db_pool, enums, public_entity["id"], private_entity["id"])
+    rel = await _make_relationship(
+        db_pool, enums, public_entity["id"], private_entity["id"]
+    )
 
     async def mock_auth():
         """Mock auth with public only scope."""

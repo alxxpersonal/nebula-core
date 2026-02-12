@@ -87,7 +87,9 @@ async def _make_job(db_pool, enums, title, agent_id):
     return dict(row)
 
 
-async def _make_relationship(db_pool, enums, source_type, source_id, target_type, target_id):
+async def _make_relationship(
+    db_pool, enums, source_type, source_id, target_type, target_id
+):
     """Insert a relationship linking entities/jobs for access checks."""
 
     status_id = enums.statuses.name_to_id["active"]

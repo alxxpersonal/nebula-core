@@ -143,7 +143,9 @@ async def test_attach_file_to_private_entity_denied(db_pool, enums):
     viewer = await _make_agent(db_pool, enums, "file-attacher", ["public"], False)
     ctx = _make_context(db_pool, enums, viewer)
 
-    payload = AttachFileInput(file_id=str(file_row["id"]), target_id=str(private_entity["id"]))
+    payload = AttachFileInput(
+        file_id=str(file_row["id"]), target_id=str(private_entity["id"])
+    )
 
     with pytest.raises(ValueError):
         await attach_file_to_entity(payload, ctx)
@@ -169,12 +171,16 @@ async def test_attach_file_to_foreign_job_denied(db_pool, enums):
 async def test_attach_file_to_private_knowledge_denied(db_pool, enums):
     """Public agents should not attach files to private knowledge."""
 
-    knowledge = await _make_knowledge(db_pool, enums, "Private Knowledge", ["sensitive"])
+    knowledge = await _make_knowledge(
+        db_pool, enums, "Private Knowledge", ["sensitive"]
+    )
     file_row = await _make_file(db_pool, enums)
     viewer = await _make_agent(db_pool, enums, "knowledge-attacher", ["public"], False)
     ctx = _make_context(db_pool, enums, viewer)
 
-    payload = AttachFileInput(file_id=str(file_row["id"]), target_id=str(knowledge["id"]))
+    payload = AttachFileInput(
+        file_id=str(file_row["id"]), target_id=str(knowledge["id"])
+    )
 
     with pytest.raises(ValueError):
         await attach_file_to_knowledge(payload, ctx)

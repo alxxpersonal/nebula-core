@@ -91,7 +91,9 @@ async def _make_knowledge(db_pool, enums, title, scopes):
     return dict(row)
 
 
-async def _attach_relationship(db_pool, enums, source_type, source_id, target_type, target_id, rel_name):
+async def _attach_relationship(
+    db_pool, enums, source_type, source_id, target_type, target_id, rel_name
+):
     """Attach relationship between graph nodes."""
 
     status_id = enums.statuses.name_to_id["active"]

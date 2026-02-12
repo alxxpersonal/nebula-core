@@ -87,7 +87,9 @@ async def _make_job(db_pool, enums, title, agent_id):
     return dict(row)
 
 
-async def _make_relationship(db_pool, enums, source_type, source_id, target_type, target_id):
+async def _make_relationship(
+    db_pool, enums, source_type, source_id, target_type, target_id
+):
     """Insert a relationship for graph job tests."""
 
     status_id = enums.statuses.name_to_id["active"]
@@ -116,7 +118,9 @@ async def test_graph_neighbors_hides_foreign_jobs(db_pool, enums):
     viewer = await _make_agent(db_pool, enums, "job-viewer", ["public"])
     entity = await _make_entity(db_pool, enums, "Public Node", ["public"])
     job = await _make_job(db_pool, enums, "Private Job", owner["id"])
-    await _make_relationship(db_pool, enums, "entity", str(entity["id"]), "job", job["id"])
+    await _make_relationship(
+        db_pool, enums, "entity", str(entity["id"]), "job", job["id"]
+    )
 
     ctx = _make_context(db_pool, enums, viewer)
     payload = GraphNeighborsInput(
@@ -139,7 +143,9 @@ async def test_graph_shortest_path_hides_foreign_jobs(db_pool, enums):
     viewer = await _make_agent(db_pool, enums, "path-viewer", ["public"])
     entity = await _make_entity(db_pool, enums, "Path Node", ["public"])
     job = await _make_job(db_pool, enums, "Path Job", owner["id"])
-    await _make_relationship(db_pool, enums, "entity", str(entity["id"]), "job", job["id"])
+    await _make_relationship(
+        db_pool, enums, "entity", str(entity["id"]), "job", job["id"]
+    )
 
     ctx = _make_context(db_pool, enums, viewer)
     payload = GraphShortestPathInput(

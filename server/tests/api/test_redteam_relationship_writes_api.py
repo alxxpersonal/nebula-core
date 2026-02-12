@@ -135,7 +135,9 @@ async def test_api_update_relationship_denies_private_target(db_pool, enums):
 
     public_entity = await _make_entity(db_pool, enums, "Public", ["public"])
     private_entity = await _make_entity(db_pool, enums, "Private", ["sensitive"])
-    relationship = await _make_relationship(db_pool, enums, public_entity["id"], private_entity["id"])
+    relationship = await _make_relationship(
+        db_pool, enums, public_entity["id"], private_entity["id"]
+    )
     viewer = await _make_agent(db_pool, enums, "rel-viewer-2", ["public"], False)
 
     app.dependency_overrides[require_auth] = _auth_override(viewer["id"], enums)

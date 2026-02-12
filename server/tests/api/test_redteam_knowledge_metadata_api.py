@@ -87,7 +87,9 @@ async def test_api_query_knowledge_filters_context_segments(db_pool, enums):
             {"text": "private info", "scopes": ["personal"]},
         ]
     }
-    knowledge = await _make_knowledge(db_pool, enums, "Mixed Scope", ["public", "personal"], metadata)
+    knowledge = await _make_knowledge(
+        db_pool, enums, "Mixed Scope", ["public", "personal"], metadata
+    )
     agent = await _make_agent(db_pool, enums, "knowledge-viewer")
 
     app.dependency_overrides[require_auth] = _auth_override(agent["id"], enums)
@@ -118,7 +120,9 @@ async def test_api_get_knowledge_filters_context_segments(db_pool, enums):
             {"text": "private info", "scopes": ["personal"]},
         ]
     }
-    knowledge = await _make_knowledge(db_pool, enums, "Mixed Scope", ["public", "personal"], metadata)
+    knowledge = await _make_knowledge(
+        db_pool, enums, "Mixed Scope", ["public", "personal"], metadata
+    )
     agent = await _make_agent(db_pool, enums, "knowledge-viewer-2")
 
     app.dependency_overrides[require_auth] = _auth_override(agent["id"], enums)

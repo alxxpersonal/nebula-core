@@ -57,7 +57,9 @@ async def test_query_knowledge_filters_context_segments(db_pool, enums):
             {"text": "private info", "scopes": ["personal"]},
         ]
     }
-    await _make_knowledge(db_pool, enums, "Mixed Scope", ["public", "personal"], metadata)
+    await _make_knowledge(
+        db_pool, enums, "Mixed Scope", ["public", "personal"], metadata
+    )
 
     public_agent = {
         "id": "public-agent",

@@ -118,7 +118,9 @@ async def _make_file(db_pool, enums):
     return dict(row)
 
 
-async def _attach_relationship(db_pool, enums, source_type, source_id, target_type, target_id, rel_name):
+async def _attach_relationship(
+    db_pool, enums, source_type, source_id, target_type, target_id, rel_name
+):
     """Attach a relationship between two nodes for isolation tests."""
 
     status_id = enums.statuses.name_to_id["active"]
@@ -189,7 +191,15 @@ async def test_api_update_log_denies_private_attachment(db_pool, enums):
 
     private_entity = await _make_entity(db_pool, enums, "Private", ["sensitive"])
     log_row = await _make_log(db_pool, enums)
-    await _attach_relationship(db_pool, enums, "entity", private_entity["id"], "log", log_row["id"], "logged-by")
+    await _attach_relationship(
+        db_pool,
+        enums,
+        "entity",
+        private_entity["id"],
+        "log",
+        log_row["id"],
+        "logged-by",
+    )
     viewer = await _make_agent(db_pool, enums, "log-viewer", ["public"], False)
 
     app.dependency_overrides[require_auth] = _auth_override(viewer["id"], enums)
@@ -213,7 +223,15 @@ async def test_api_update_file_denies_private_attachment(db_pool, enums):
 
     private_entity = await _make_entity(db_pool, enums, "Private", ["sensitive"])
     file_row = await _make_file(db_pool, enums)
-    await _attach_relationship(db_pool, enums, "entity", private_entity["id"], "file", file_row["id"], "has-file")
+    await _attach_relationship(
+        db_pool,
+        enums,
+        "entity",
+        private_entity["id"],
+        "file",
+        file_row["id"],
+        "has-file",
+    )
     viewer = await _make_agent(db_pool, enums, "file-viewer", ["public"], False)
 
     app.dependency_overrides[require_auth] = _auth_override(viewer["id"], enums)
