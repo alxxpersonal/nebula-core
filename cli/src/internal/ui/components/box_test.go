@@ -14,6 +14,19 @@ func TestBoxWidthBounds(t *testing.T) {
 	assert.Equal(t, 70, boxWidth(100))
 }
 
+// TestBoxNarrowTerminalOverflowRepro captures BUG-2026-02-11-022.
+func TestBoxNarrowTerminalOverflowRepro(t *testing.T) {
+	out := TitledBox("Inbox", "line", 20)
+	overflow := false
+	for _, line := range strings.Split(out, "\n") {
+		if lipgloss.Width(line) > 20 {
+			overflow = true
+			break
+		}
+	}
+	assert.True(t, overflow, "overflow no longer reproduces; close BUG-2026-02-11-022 and remove this repro test")
+}
+
 func TestTitledBoxIncludesTitle(t *testing.T) {
 	out := TitledBox("My Title", "Content", 80)
 	assert.True(t, strings.Contains(out, "My Title"))
