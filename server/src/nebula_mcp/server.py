@@ -10,7 +10,7 @@ from typing import Any, Callable
 from uuid import UUID
 
 # Third-Party
-from asyncpg import Pool
+from asyncpg import Pool, UniqueViolationError
 from dotenv import load_dotenv
 from mcp.server.fastmcp import Context, FastMCP
 
@@ -93,6 +93,7 @@ from nebula_mcp.models import (
     CreateProtocolInput,
     CreateRelationshipInput,
     CreateSubtaskInput,
+    CreateTaxonomyInput,
     GetAgentInfoInput,
     GetApprovalDiffInput,
     GetEntityHistoryInput,
@@ -106,6 +107,7 @@ from nebula_mcp.models import (
     GraphShortestPathInput,
     LinkKnowledgeInput,
     ListAgentsInput,
+    ListTaxonomyInput,
     QueryAuditLogInput,
     QueryEntitiesInput,
     QueryFilesInput,
@@ -115,11 +117,13 @@ from nebula_mcp.models import (
     QueryRelationshipsInput,
     RevertEntityInput,
     SearchEntitiesByMetadataInput,
+    ToggleTaxonomyInput,
     UpdateEntityInput,
     UpdateJobStatusInput,
     UpdateLogInput,
     UpdateProtocolInput,
     UpdateRelationshipInput,
+    UpdateTaxonomyInput,
 )
 from nebula_mcp.query_loader import QueryLoader
 
@@ -127,7 +131,42 @@ QUERIES = QueryLoader(Path(__file__).resolve().parents[1] / "queries")
 
 load_dotenv()
 
-ADMIN_SCOPES = {"vault-only", "sensitive"}
+ADMIN_SCOPES = {"admin", "vault-only", "sensitive"}
+
+TAXONOMY_KIND_MAP = {
+    "scopes": {
+        "list": "taxonomy/list_scopes",
+        "create": "taxonomy/create_scope",
+        "update": "taxonomy/update_scope",
+        "set_active": "taxonomy/set_scope_active",
+        "usage": "taxonomy/count_scope_usage",
+        "supports": set(),
+    },
+    "entity-types": {
+        "list": "taxonomy/list_entity_types",
+        "create": "taxonomy/create_entity_type",
+        "update": "taxonomy/update_entity_type",
+        "set_active": "taxonomy/set_entity_type_active",
+        "usage": "taxonomy/count_entity_type_usage",
+        "supports": set(),
+    },
+    "relationship-types": {
+        "list": "taxonomy/list_relationship_types",
+        "create": "taxonomy/create_relationship_type",
+        "update": "taxonomy/update_relationship_type",
+        "set_active": "taxonomy/set_relationship_type_active",
+        "usage": "taxonomy/count_relationship_type_usage",
+        "supports": {"is_symmetric"},
+    },
+    "log-types": {
+        "list": "taxonomy/list_log_types",
+        "create": "taxonomy/create_log_type",
+        "update": "taxonomy/update_log_type",
+        "set_active": "taxonomy/set_log_type_active",
+        "usage": "taxonomy/count_log_type_usage",
+        "supports": {"value_schema"},
+    },
+}
 
 
 def _clamp_limit(value: int) -> int:
@@ -168,6 +207,38 @@ def _scope_filter_ids(agent: dict, enums: Any) -> list | None:
     if _is_admin(agent, enums):
         return None
     return agent.get("scopes", []) or []
+
+
+def _taxonomy_kind_or_error(kind: str) -> dict[str, Any]:
+    cfg = TAXONOMY_KIND_MAP.get(kind)
+    if cfg is None:
+        raise ValueError(f"Unknown taxonomy kind: {kind}")
+    return cfg
+
+
+def _validate_taxonomy_payload(
+    kind: str,
+    *,
+    is_symmetric: bool | None,
+    value_schema: dict | None,
+) -> None:
+    supports = _taxonomy_kind_or_error(kind)["supports"]
+    if is_symmetric is not None and "is_symmetric" not in supports:
+        raise ValueError("is_symmetric is only valid for relationship-types")
+    if value_schema is not None and "value_schema" not in supports:
+        raise ValueError("value_schema is only valid for log-types")
+
+
+async def _refresh_enums_in_context(ctx: Context, pool: Pool) -> None:
+    enums = await load_enums(pool)
+    ctx.request_context.lifespan_context["enums"] = enums
+
+
+async def _taxonomy_usage_count(pool: Pool, cfg: dict[str, Any], item_id: str) -> int:
+    value = await pool.fetchval(QUERIES[cfg["usage"]], item_id)
+    if value is None:
+        return 0
+    return int(value)
 
 
 def _has_write_scopes(agent_scopes: list, node_scopes: list) -> bool:
@@ -1581,6 +1652,177 @@ async def list_agents(payload: ListAgentsInput, ctx: Context) -> list[dict]:
     _require_admin(agent, enums)
     rows = await pool.fetch(QUERIES["agents/list"], payload.status_category)
     return [dict(r) for r in rows]
+
+
+# --- Taxonomy Tools ---
+
+
+@mcp.tool()
+async def list_taxonomy(payload: ListTaxonomyInput, ctx: Context) -> list[dict]:
+    """List taxonomy rows by kind."""
+
+    pool, enums, agent = await require_context(ctx)
+    _require_admin(agent, enums)
+    cfg = _taxonomy_kind_or_error(payload.kind)
+    rows = await pool.fetch(
+        QUERIES[cfg["list"]],
+        payload.include_inactive,
+        payload.search,
+        _clamp_limit(payload.limit),
+        max(0, payload.offset),
+    )
+    return [dict(r) for r in rows]
+
+
+@mcp.tool()
+async def create_taxonomy(payload: CreateTaxonomyInput, ctx: Context) -> dict:
+    """Create a taxonomy row by kind."""
+
+    pool, enums, agent = await require_context(ctx)
+    _require_admin(agent, enums)
+    cfg = _taxonomy_kind_or_error(payload.kind)
+    _validate_taxonomy_payload(
+        payload.kind,
+        is_symmetric=payload.is_symmetric,
+        value_schema=payload.value_schema,
+    )
+
+    name = payload.name.strip()
+    if not name:
+        raise ValueError("Taxonomy name required")
+
+    try:
+        if payload.kind in {"scopes", "entity-types"}:
+            row = await pool.fetchrow(
+                QUERIES[cfg["create"]],
+                name,
+                payload.description,
+                json.dumps(payload.metadata or {}),
+            )
+        elif payload.kind == "relationship-types":
+            row = await pool.fetchrow(
+                QUERIES[cfg["create"]],
+                name,
+                payload.description,
+                payload.is_symmetric,
+                json.dumps(payload.metadata or {}),
+            )
+        else:
+            row = await pool.fetchrow(
+                QUERIES[cfg["create"]],
+                name,
+                payload.description,
+                (
+                    json.dumps(payload.value_schema)
+                    if payload.value_schema is not None
+                    else None
+                ),
+            )
+    except UniqueViolationError as exc:
+        raise ValueError(f"{payload.kind} entry already exists") from exc
+
+    await _refresh_enums_in_context(ctx, pool)
+    return dict(row)
+
+
+@mcp.tool()
+async def update_taxonomy(payload: UpdateTaxonomyInput, ctx: Context) -> dict:
+    """Update a taxonomy row by kind."""
+
+    pool, enums, agent = await require_context(ctx)
+    _require_admin(agent, enums)
+    cfg = _taxonomy_kind_or_error(payload.kind)
+    _validate_taxonomy_payload(
+        payload.kind,
+        is_symmetric=payload.is_symmetric,
+        value_schema=payload.value_schema,
+    )
+    _require_uuid(payload.item_id, "taxonomy")
+
+    name = payload.name.strip() if payload.name is not None else None
+    if payload.name is not None and not name:
+        raise ValueError("Taxonomy name cannot be empty")
+
+    try:
+        if payload.kind in {"scopes", "entity-types"}:
+            row = await pool.fetchrow(
+                QUERIES[cfg["update"]],
+                payload.item_id,
+                name,
+                payload.description,
+                json.dumps(payload.metadata)
+                if payload.metadata is not None
+                else None,
+            )
+        elif payload.kind == "relationship-types":
+            row = await pool.fetchrow(
+                QUERIES[cfg["update"]],
+                payload.item_id,
+                name,
+                payload.description,
+                payload.is_symmetric,
+                json.dumps(payload.metadata)
+                if payload.metadata is not None
+                else None,
+            )
+        else:
+            row = await pool.fetchrow(
+                QUERIES[cfg["update"]],
+                payload.item_id,
+                name,
+                payload.description,
+                json.dumps(payload.value_schema)
+                if payload.value_schema is not None
+                else None,
+            )
+    except UniqueViolationError as exc:
+        raise ValueError(f"{payload.kind} entry already exists") from exc
+
+    if not row:
+        raise ValueError(f"{payload.kind} entry not found")
+    await _refresh_enums_in_context(ctx, pool)
+    return dict(row)
+
+
+@mcp.tool()
+async def archive_taxonomy(payload: ToggleTaxonomyInput, ctx: Context) -> dict:
+    """Archive a taxonomy row by kind."""
+
+    pool, enums, agent = await require_context(ctx)
+    _require_admin(agent, enums)
+    cfg = _taxonomy_kind_or_error(payload.kind)
+    _require_uuid(payload.item_id, "taxonomy")
+
+    usage = await _taxonomy_usage_count(pool, cfg, payload.item_id)
+    if usage > 0:
+        raise ValueError(
+            "Cannot archive "
+            f"{payload.kind} entry while it is referenced ({usage} records)"
+        )
+
+    row = await pool.fetchrow(QUERIES[cfg["set_active"]], payload.item_id, False)
+    if not row:
+        raise ValueError(
+            f"{payload.kind} entry not found or cannot archive built-in entry"
+        )
+    await _refresh_enums_in_context(ctx, pool)
+    return dict(row)
+
+
+@mcp.tool()
+async def activate_taxonomy(payload: ToggleTaxonomyInput, ctx: Context) -> dict:
+    """Activate a taxonomy row by kind."""
+
+    pool, enums, agent = await require_context(ctx)
+    _require_admin(agent, enums)
+    cfg = _taxonomy_kind_or_error(payload.kind)
+    _require_uuid(payload.item_id, "taxonomy")
+
+    row = await pool.fetchrow(QUERIES[cfg["set_active"]], payload.item_id, True)
+    if not row:
+        raise ValueError(f"{payload.kind} entry not found")
+    await _refresh_enums_in_context(ctx, pool)
+    return dict(row)
 
 
 # --- Main ---

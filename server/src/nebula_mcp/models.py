@@ -31,6 +31,13 @@ BASIC_NODE_TYPES = {
     "protocol",
 }
 
+TAXONOMY_KINDS = {
+    "scopes",
+    "entity-types",
+    "relationship-types",
+    "log-types",
+}
+
 BIDI_CONTROLS = {
     "\u202a",
     "\u202b",
@@ -110,6 +117,15 @@ def _sanitize_metadata(value: dict | None) -> dict | None:
         raise ValueError("Metadata must be an object")
     _reject_metadata_keys(value)
     return value
+
+
+def _validate_taxonomy_kind(value: str | None) -> str:
+    if value is None:
+        raise ValueError("Taxonomy kind is required")
+    cleaned = _strip_control(value)
+    if cleaned not in TAXONOMY_KINDS:
+        raise ValueError("Invalid taxonomy kind")
+    return cleaned
 
 
 def _sanitize_vault_path(value: str | None) -> str | None:
@@ -1025,3 +1041,122 @@ class ListAgentsInput(BaseModel):
     """Input payload for listing agents."""
 
     status_category: str = Field(default="active", description="active or archived")
+
+
+# --- Taxonomy Input Models ---
+
+
+class ListTaxonomyInput(BaseModel):
+    """Input payload for listing taxonomy rows."""
+
+    kind: str = Field(default="scopes", description="Taxonomy kind")
+    include_inactive: bool = Field(default=False, description="Include inactive rows")
+    search: str | None = Field(default=None, description="Name search filter")
+    limit: int = Field(
+        default=200, ge=1, le=MAX_PAGE_LIMIT, description="Max results to return"
+    )
+    offset: int = Field(default=0, description="Pagination offset")
+
+    @field_validator("kind", mode="before")
+    @classmethod
+    def _clean_kind(cls, v: str | None) -> str:
+        return _validate_taxonomy_kind(v)
+
+    @field_validator("search", mode="before")
+    @classmethod
+    def _clean_search(cls, v: str | None) -> str | None:
+        return _sanitize_text(v)
+
+
+class CreateTaxonomyInput(BaseModel):
+    """Input payload for creating taxonomy rows."""
+
+    kind: str = Field(..., description="Taxonomy kind")
+    name: str = Field(..., description="Taxonomy row name")
+    description: str | None = Field(default=None, description="Optional description")
+    metadata: dict | None = Field(default=None, description="Optional metadata object")
+    is_symmetric: bool | None = Field(
+        default=None, description="Relationship symmetry flag"
+    )
+    value_schema: dict | None = Field(
+        default=None, description="Log type value schema"
+    )
+
+    @field_validator("kind", mode="before")
+    @classmethod
+    def _clean_kind(cls, v: str | None) -> str:
+        return _validate_taxonomy_kind(v)
+
+    @field_validator("name", "description", mode="before")
+    @classmethod
+    def _clean_text(cls, v: str | None) -> str | None:
+        return _sanitize_text(v)
+
+    @field_validator("metadata", "value_schema", mode="before")
+    @classmethod
+    def _clean_json_objects(cls, v: dict | None) -> dict | None:
+        return _sanitize_metadata(v)
+
+    @model_validator(mode="after")
+    def _validate_kind_fields(self) -> Self:
+        if self.kind != "relationship-types" and self.is_symmetric is not None:
+            raise ValueError("is_symmetric is only valid for relationship-types")
+        if self.kind != "log-types" and self.value_schema is not None:
+            raise ValueError("value_schema is only valid for log-types")
+        return self
+
+
+class UpdateTaxonomyInput(BaseModel):
+    """Input payload for updating taxonomy rows."""
+
+    kind: str = Field(..., description="Taxonomy kind")
+    item_id: str = Field(..., description="Taxonomy row UUID")
+    name: str | None = Field(default=None, description="Optional name")
+    description: str | None = Field(default=None, description="Optional description")
+    metadata: dict | None = Field(default=None, description="Optional metadata object")
+    is_symmetric: bool | None = Field(
+        default=None, description="Relationship symmetry flag"
+    )
+    value_schema: dict | None = Field(
+        default=None, description="Log type value schema"
+    )
+
+    @field_validator("kind", mode="before")
+    @classmethod
+    def _clean_kind(cls, v: str | None) -> str:
+        return _validate_taxonomy_kind(v)
+
+    @field_validator("name", "description", "item_id", mode="before")
+    @classmethod
+    def _clean_text(cls, v: str | None) -> str | None:
+        return _sanitize_text(v)
+
+    @field_validator("metadata", "value_schema", mode="before")
+    @classmethod
+    def _clean_json_objects(cls, v: dict | None) -> dict | None:
+        return _sanitize_metadata(v)
+
+    @model_validator(mode="after")
+    def _validate_kind_fields(self) -> Self:
+        if self.kind != "relationship-types" and self.is_symmetric is not None:
+            raise ValueError("is_symmetric is only valid for relationship-types")
+        if self.kind != "log-types" and self.value_schema is not None:
+            raise ValueError("value_schema is only valid for log-types")
+        return self
+
+
+class ToggleTaxonomyInput(BaseModel):
+    """Input payload for archive/activate taxonomy operations."""
+
+    kind: str = Field(..., description="Taxonomy kind")
+    item_id: str = Field(..., description="Taxonomy row UUID")
+
+    @field_validator("kind", mode="before")
+    @classmethod
+    def _clean_kind(cls, v: str | None) -> str:
+        return _validate_taxonomy_kind(v)
+
+    @field_validator("item_id", mode="before")
+    @classmethod
+    def _clean_item_id(cls, v: str | None) -> str | None:
+        return _sanitize_text(v)
