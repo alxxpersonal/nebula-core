@@ -158,17 +158,15 @@ async def test_approval_queue_rate_limit(db_pool, untrusted_mcp_context):
     """Approval queue should rate limit repeated requests."""
 
     start_count = await db_pool.fetchval("SELECT COUNT(*) FROM approval_requests")
-    payload = {
-        "name": "Rate Limit Probe",
-        "type": "person",
-        "status": "active",
-        "scopes": ["public"],
-        "tags": ["redteam"],
-        "metadata": {},
-    }
-
     for i in range(20):
-        payload["name"] = f"Rate Limit Probe {i}"
+        payload = CreateEntityInput(
+            name=f"Rate Limit Probe {i}",
+            type="person",
+            status="active",
+            scopes=["public"],
+            tags=["redteam"],
+            metadata={},
+        )
         await create_entity(payload, untrusted_mcp_context)
 
     end_count = await db_pool.fetchval("SELECT COUNT(*) FROM approval_requests")
