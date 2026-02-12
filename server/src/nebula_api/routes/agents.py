@@ -1,7 +1,6 @@
 """Agent API routes."""
 
 # Standard Library
-import os
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -43,10 +42,6 @@ def _require_uuid(value: str, label: str) -> None:
 
 
 def _require_admin_scope(auth: dict, enums: EnumRegistry) -> None:
-    if os.getenv("NEBULA_STRICT_ADMIN") != "1":
-        return
-    if auth.get("caller_type") != "agent":
-        return
     scope_ids = set(auth.get("scopes", []))
     allowed_ids = {
         enums.scopes.name_to_id.get(name)
@@ -177,17 +172,8 @@ async def update_agent(
     is_self = auth.get("caller_type") == "agent" and str(auth.get("agent_id")) == str(
         agent_id
     )
-    strict_admin = os.getenv("NEBULA_STRICT_ADMIN") == "1"
-    if strict_admin:
-        if not is_self and not _has_admin_scope(auth, enums):
-            api_error("FORBIDDEN", "Admin scope required", 403)
-    else:
-        if (
-            auth.get("caller_type") == "agent"
-            and not is_self
-            and not _has_admin_scope(auth, enums)
-        ):
-            api_error("FORBIDDEN", "Admin scope required", 403)
+    if not is_self and not _has_admin_scope(auth, enums):
+        api_error("FORBIDDEN", "Admin scope required", 403)
 
     # Resolve scope names to UUIDs if provided
     scope_ids = None
