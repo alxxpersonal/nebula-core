@@ -39,6 +39,14 @@ def _require_admin_scope(auth: dict, enums: Any) -> None:
         api_error("FORBIDDEN", "Admin scope required", 403)
 
 
+def _append_scope(scope_ids: list[Any] | None, scope_id: Any) -> list[Any]:
+    """Return scope list with scope_id appended only when missing."""
+    current = list(scope_ids or [])
+    if scope_id not in current:
+        current.append(scope_id)
+    return current
+
+
 class LoginInput(BaseModel):
     """Login payload used to create or fetch a user entity.
 
@@ -73,6 +81,7 @@ async def login(payload: LoginInput, request: Request) -> dict[str, Any]:
 
     pool = request.app.state.pool
     enums = request.app.state.enums
+    admin_scope_id = require_scopes(["admin"], enums)[0]
 
     # Find existing entity by name + type person
     entity = await pool.fetchrow(
@@ -83,7 +92,9 @@ async def login(payload: LoginInput, request: Request) -> dict[str, Any]:
 
     if not entity:
         status_id = require_status("active", enums)
-        scope_ids = require_scopes(["public", "personal", "code", "vault-only"], enums)
+        scope_ids = require_scopes(
+            ["public", "personal", "code", "vault-only", "admin"], enums
+        )
         entity = await pool.fetchrow(
             QUERIES["entities/create"],
             scope_ids,
@@ -94,6 +105,19 @@ async def login(payload: LoginInput, request: Request) -> dict[str, Any]:
             "{}",
             None,
         )
+    else:
+        scope_ids = _append_scope(entity.get("privacy_scope_ids"), admin_scope_id)
+        if scope_ids != (entity.get("privacy_scope_ids") or []):
+            entity = await pool.fetchrow(
+                """
+                UPDATE entities
+                SET privacy_scope_ids = $2::uuid[], updated_at = NOW()
+                WHERE id = $1::uuid
+                RETURNING *
+                """,
+                entity["id"],
+                scope_ids,
+            )
 
     entity_id = entity["id"]
     raw_key, prefix, key_hash = generate_api_key()
