@@ -124,3 +124,13 @@ func TestRenderPaletteSanitizesEntries(t *testing.T) {
 	out := app.renderPalette()
 	assert.False(t, strings.Contains(out, "\x1b"))
 }
+
+func TestAppClearsErrorOnInput(t *testing.T) {
+	app := NewApp(nil, &config.Config{})
+	app.err = "oops"
+
+	model, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	updated := model.(App)
+
+	assert.Empty(t, updated.err)
+}
