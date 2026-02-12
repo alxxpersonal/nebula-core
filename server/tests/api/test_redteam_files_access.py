@@ -131,7 +131,6 @@ async def test_api_get_file_denies_private_entity(db_pool, enums):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="file list should filter out private attachments")
 async def test_api_list_files_hides_private_entity_files(db_pool, enums):
     """Agent should not list files attached to private entities via API."""
 

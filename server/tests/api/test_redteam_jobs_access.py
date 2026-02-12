@@ -241,7 +241,6 @@ async def test_api_create_subtask_denies_other_agent(db_pool, enums):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="agents should not create jobs for other agents")
 async def test_api_create_job_overrides_agent_id(db_pool, enums):
     """API should prevent agents from creating jobs for other agents."""
 
@@ -285,7 +284,6 @@ async def test_api_create_job_overrides_agent_id(db_pool, enums):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="create_job uses UUID agent_id and 500s")
 async def test_api_create_job_handles_uuid_agent_id(db_pool, enums):
     """API job creation should not crash on UUID agent_id."""
 

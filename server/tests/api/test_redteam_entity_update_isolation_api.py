@@ -78,7 +78,6 @@ def _auth_override(agent_id, enums):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="entity updates should enforce write scopes")
 async def test_api_update_entity_denies_private_scope(db_pool, enums):
     """Public agents should not update private entities via API."""
 

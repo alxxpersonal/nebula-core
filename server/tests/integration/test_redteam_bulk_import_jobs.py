@@ -69,7 +69,6 @@ async def _make_entity(db_pool, enums, name, scopes):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="bulk import jobs should not allow agent_id spoofing")
 async def test_bulk_import_jobs_spoofing_denied(db_pool, enums):
     """Agents should not bulk import jobs owned by other agents."""
 
@@ -97,7 +96,6 @@ async def test_bulk_import_jobs_spoofing_denied(db_pool, enums):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="bulk import relationships should enforce target scopes")
 async def test_bulk_import_relationships_private_target_denied(db_pool, enums):
     """Agents should not bulk import relationships to private entities."""
 

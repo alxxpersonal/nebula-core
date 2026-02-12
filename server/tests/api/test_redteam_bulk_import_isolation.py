@@ -79,7 +79,6 @@ def _auth_override(agent_id, scopes, enums):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="bulk import should enforce scope subset for agents")
 async def test_bulk_import_entities_scope_escalation(db_pool, enums):
     """Agents should not bulk import entities with private scopes."""
 
@@ -120,7 +119,6 @@ async def test_bulk_import_entities_scope_escalation(db_pool, enums):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="bulk import jobs should not allow agent_id spoofing")
 async def test_bulk_import_jobs_agent_spoofing(db_pool, enums):
     """Agents should not bulk import jobs for other agents."""
 
@@ -161,7 +159,6 @@ async def test_bulk_import_jobs_agent_spoofing(db_pool, enums):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="bulk import relationships should enforce target scopes")
 async def test_bulk_import_relationships_private_target(db_pool, enums):
     """Agents should not bulk import relationships to private entities."""
 
@@ -204,9 +201,6 @@ async def test_bulk_import_relationships_private_target(db_pool, enums):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(
-    reason="bulk import knowledge should enforce scope subset for agents"
-)
 async def test_bulk_import_knowledge_scope_escalation(db_pool, enums):
     """Agents should not bulk import knowledge with private scopes."""
 

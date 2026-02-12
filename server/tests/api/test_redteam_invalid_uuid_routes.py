@@ -5,7 +5,6 @@ import pytest
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="invalid UUIDs raise asyncpg DataError")
 async def test_api_update_entity_rejects_invalid_uuid(api):
     """Invalid UUIDs should not crash update entity routes."""
 
@@ -17,7 +16,6 @@ async def test_api_update_entity_rejects_invalid_uuid(api):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="invalid UUIDs raise asyncpg DataError")
 async def test_api_get_relationships_rejects_invalid_uuid(api):
     """Invalid UUIDs should not crash relationship list routes."""
 
@@ -26,7 +24,6 @@ async def test_api_get_relationships_rejects_invalid_uuid(api):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="invalid UUIDs raise asyncpg DataError")
 async def test_api_update_relationship_rejects_invalid_uuid(api):
     """Invalid UUIDs should not crash relationship update routes."""
 
@@ -38,7 +35,6 @@ async def test_api_update_relationship_rejects_invalid_uuid(api):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="invalid UUIDs raise asyncpg DataError")
 async def test_api_query_jobs_rejects_invalid_assignee(api):
     """Invalid UUIDs should not crash job query routes."""
 
@@ -47,7 +43,6 @@ async def test_api_query_jobs_rejects_invalid_assignee(api):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="invalid UUIDs raise asyncpg DataError")
 async def test_api_delete_key_rejects_invalid_uuid(api):
     """Invalid UUIDs should not crash key revoke routes."""
 
@@ -56,7 +51,6 @@ async def test_api_delete_key_rejects_invalid_uuid(api):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="invalid UUIDs raise asyncpg DataError")
 async def test_api_update_agent_rejects_invalid_uuid(api):
     """Invalid UUIDs should not crash agent update routes."""
 

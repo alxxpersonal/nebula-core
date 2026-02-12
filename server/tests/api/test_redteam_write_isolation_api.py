@@ -163,7 +163,6 @@ def _auth_override(agent_id, enums):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="knowledge updates should enforce write scopes")
 async def test_api_update_knowledge_denies_private_scope(db_pool, enums):
     """Public agents should not update private knowledge items."""
 
@@ -185,7 +184,6 @@ async def test_api_update_knowledge_denies_private_scope(db_pool, enums):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="log updates should enforce attachment privacy")
 async def test_api_update_log_denies_private_attachment(db_pool, enums):
     """Public agents should not update logs attached to private entities."""
 
@@ -217,7 +215,6 @@ async def test_api_update_log_denies_private_attachment(db_pool, enums):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="file updates should enforce attachment privacy")
 async def test_api_update_file_denies_private_attachment(db_pool, enums):
     """Public agents should not update files attached to private entities."""
 

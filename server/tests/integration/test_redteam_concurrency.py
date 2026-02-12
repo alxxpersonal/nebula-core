@@ -15,7 +15,6 @@ from nebula_mcp.server import create_entity, create_relationship, update_entity
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="duplicate prevention should be race safe")
 async def test_concurrent_create_entity_duplicate(mock_mcp_context, db_pool):
     """Concurrent entity creates should not bypass duplicate checks."""
 

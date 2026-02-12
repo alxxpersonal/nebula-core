@@ -134,7 +134,6 @@ async def test_api_get_log_denies_private_entity(db_pool, enums):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="log list should filter out private attachments")
 async def test_api_query_logs_hides_private_entity_logs(db_pool, enums):
     """Agent should not list logs attached to private entities via API."""
 

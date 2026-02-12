@@ -73,7 +73,6 @@ async def _make_approval_request(db_pool, agent_id):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="approval diff leaks requests to non-requesting agents")
 async def test_get_approval_diff_leaks_other_agent(db_pool, enums):
     """Approval diff should be restricted to requester or admin."""
 

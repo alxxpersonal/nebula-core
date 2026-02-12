@@ -126,7 +126,6 @@ async def test_get_log_denies_private_entity(db_pool, enums):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="log list should filter out private attachments")
 async def test_query_logs_hides_private_entity_logs(db_pool, enums):
     """Log list should not expose logs attached to private entities."""
 
@@ -143,7 +142,6 @@ async def test_query_logs_hides_private_entity_logs(db_pool, enums):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="log updates should respect entity privacy scopes")
 async def test_update_log_denies_private_entity(db_pool, enums):
     """Log updates should be denied when attached to private entities."""
 

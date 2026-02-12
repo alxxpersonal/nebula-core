@@ -137,7 +137,6 @@ async def test_api_bulk_update_scopes_denies_private_entity(db_pool, enums):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="invalid UUIDs raise asyncpg DataError")
 async def test_api_bulk_update_tags_rejects_invalid_uuid(db_pool, enums):
     """API bulk tag updates should reject malformed UUIDs."""
 
@@ -177,7 +176,6 @@ async def test_api_bulk_update_tags_rejects_invalid_uuid(db_pool, enums):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="invalid UUIDs raise asyncpg DataError")
 async def test_api_bulk_update_scopes_rejects_invalid_uuid(db_pool, enums):
     """API bulk scope updates should reject malformed UUIDs."""
 

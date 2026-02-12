@@ -7,7 +7,6 @@ import pytest
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="agents can update other agents without admin scope")
 async def test_agent_can_update_other_agent(api_agent_auth, db_pool, enums):
     """Non-admin agents should not be able to update other agents."""
 
@@ -39,7 +38,6 @@ async def test_agent_can_update_other_agent(api_agent_auth, db_pool, enums):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="users can update agents without admin scope")
 async def test_user_can_update_agent(api, db_pool, enums):
     """Non-admin users should not be able to update agents."""
 

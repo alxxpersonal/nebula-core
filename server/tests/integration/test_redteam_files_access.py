@@ -123,7 +123,6 @@ async def test_get_file_denies_private_entity(db_pool, enums):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="file list should filter out private attachments")
 async def test_list_files_hides_private_entity_files(db_pool, enums):
     """File list should not expose files attached to private entities."""
 

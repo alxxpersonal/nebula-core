@@ -14,7 +14,6 @@ from nebula_mcp.server import get_file, get_log, link_knowledge_to_entity, updat
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="invalid UUIDs raise asyncpg DataError")
 async def test_get_log_rejects_invalid_uuid(untrusted_mcp_context):
     """Invalid UUIDs should not crash get_log."""
 
@@ -24,7 +23,6 @@ async def test_get_log_rejects_invalid_uuid(untrusted_mcp_context):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="invalid UUIDs are accepted without validation")
 async def test_update_log_rejects_invalid_uuid(untrusted_mcp_context):
     """Invalid UUIDs should not crash update_log."""
 
@@ -34,7 +32,6 @@ async def test_update_log_rejects_invalid_uuid(untrusted_mcp_context):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="invalid UUIDs raise asyncpg DataError")
 async def test_get_file_rejects_invalid_uuid(untrusted_mcp_context):
     """Invalid UUIDs should not crash get_file."""
 
@@ -44,7 +41,6 @@ async def test_get_file_rejects_invalid_uuid(untrusted_mcp_context):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="invalid UUIDs raise asyncpg DataError")
 async def test_link_knowledge_rejects_invalid_uuid(untrusted_mcp_context):
     """Invalid UUIDs should not crash link_knowledge_to_entity."""
 

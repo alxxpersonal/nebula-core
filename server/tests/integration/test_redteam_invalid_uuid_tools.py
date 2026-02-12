@@ -59,7 +59,6 @@ async def _make_agent(db_pool, enums, name, scopes):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="invalid UUIDs raise asyncpg DataError")
 async def test_update_entity_rejects_invalid_uuid(db_pool, enums):
     """update_entity should reject malformed UUIDs cleanly."""
 
@@ -76,7 +75,6 @@ async def test_update_entity_rejects_invalid_uuid(db_pool, enums):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="invalid UUIDs raise asyncpg DataError")
 async def test_update_relationship_rejects_invalid_uuid(db_pool, enums):
     """update_relationship should reject malformed UUIDs cleanly."""
 
@@ -93,7 +91,6 @@ async def test_update_relationship_rejects_invalid_uuid(db_pool, enums):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="invalid UUIDs are accepted without validation")
 async def test_get_relationships_rejects_invalid_uuid(db_pool, enums):
     """get_relationships should reject malformed UUIDs cleanly."""
 
@@ -111,7 +108,6 @@ async def test_get_relationships_rejects_invalid_uuid(db_pool, enums):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="invalid UUIDs raise asyncpg DataError")
 async def test_query_jobs_rejects_invalid_assignee(db_pool, enums):
     """query_jobs should reject malformed assigned_to UUIDs."""
 
@@ -125,7 +121,6 @@ async def test_query_jobs_rejects_invalid_assignee(db_pool, enums):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="invalid UUIDs raise asyncpg DataError")
 async def test_get_approval_diff_rejects_invalid_uuid(db_pool, enums):
     """get_approval_diff should reject malformed approval ids cleanly."""
 
@@ -138,7 +133,6 @@ async def test_get_approval_diff_rejects_invalid_uuid(db_pool, enums):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="invalid UUIDs raise asyncpg DataError")
 async def test_query_audit_log_rejects_invalid_actor_id(db_pool, enums):
     """query_audit_log should reject malformed actor UUIDs."""
 
@@ -151,7 +145,6 @@ async def test_query_audit_log_rejects_invalid_actor_id(db_pool, enums):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="invalid UUIDs raise asyncpg DataError")
 async def test_query_audit_log_rejects_invalid_scope_id(db_pool, enums):
     """query_audit_log should reject malformed scope UUIDs."""
 

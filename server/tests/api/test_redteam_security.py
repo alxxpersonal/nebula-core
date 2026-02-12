@@ -8,7 +8,6 @@ import pytest
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="agent listing should require admin scope")
 async def test_agents_list_requires_admin(api):
     """Non-admin users should not enumerate agents."""
 
@@ -17,7 +16,6 @@ async def test_agents_list_requires_admin(api):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="agent info should require admin scope")
 async def test_agents_info_requires_admin(api, test_agent_row):
     """Non-admin users should not read agent details."""
 
@@ -26,7 +24,6 @@ async def test_agents_info_requires_admin(api, test_agent_row):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="audit log should require admin scope")
 async def test_audit_log_requires_admin(api):
     """Non-admin users should not read audit logs."""
 

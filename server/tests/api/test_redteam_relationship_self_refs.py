@@ -57,7 +57,6 @@ async def _make_entity(db_pool, enums, name):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="self-referencing relationships should be rejected")
 async def test_api_create_relationship_self_ref(db_pool, enums):
     """Self-referencing relationships should be rejected via API."""
 

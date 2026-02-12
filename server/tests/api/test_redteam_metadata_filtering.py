@@ -31,9 +31,6 @@ async def _make_entity(db_pool, enums, name, scopes, metadata):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(
-    reason="query_entities should filter context segments by auth scopes"
-)
 async def test_api_query_entities_filters_context_segments(api, db_pool, enums):
     """API query results should not include context segments outside scopes."""
 
@@ -55,9 +52,6 @@ async def test_api_query_entities_filters_context_segments(api, db_pool, enums):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(
-    reason="metadata search should filter context segments by auth scopes"
-)
 async def test_api_search_entities_filters_context_segments(api, db_pool, enums):
     """API metadata search should not leak context segments outside scopes."""
 
@@ -85,7 +79,6 @@ async def test_api_search_entities_filters_context_segments(api, db_pool, enums)
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="metadata search should not return private-only entities")
 async def test_api_search_entities_hides_private_entities(api, db_pool, enums):
     """API metadata search should not return private-only entities."""
 

@@ -48,7 +48,6 @@ async def test_relationship_rejects_missing_job(db_pool, enums, mock_mcp_context
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="invalid UUIDs raise asyncpg DataError")
 async def test_relationship_rejects_invalid_uuid(db_pool, enums, mock_mcp_context):
     """Relationships should reject malformed UUIDs cleanly."""
 

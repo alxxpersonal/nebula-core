@@ -99,7 +99,6 @@ def _auth_override(agent_id, enums):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="relationship creation should enforce scope access")
 async def test_api_create_relationship_denies_private_target(db_pool, enums):
     """Public agents should not create relationships to private entities."""
 
@@ -129,7 +128,6 @@ async def test_api_create_relationship_denies_private_target(db_pool, enums):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="relationship updates should enforce scope access")
 async def test_api_update_relationship_denies_private_target(db_pool, enums):
     """Public agents should not update relationships to private entities."""
 
