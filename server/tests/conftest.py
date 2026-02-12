@@ -30,6 +30,7 @@ MIGRATION_FILES = [
     "010_add_work_scope.sql",
     "011_security_hardening.sql",
     "012_taxonomy_lifecycle.sql",
+    "013_taxonomy_generalization.sql",
 ]
 
 TEST_DB = "nebula_test"

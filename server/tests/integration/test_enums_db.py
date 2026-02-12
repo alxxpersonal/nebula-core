@@ -31,9 +31,11 @@ async def test_statuses_count(enums):
 
 
 async def test_scopes_count(enums):
-    """Scopes section should contain exactly 10 entries."""
+    """Scopes section should contain baseline defaults plus any custom rows."""
 
-    assert len(enums.scopes.name_to_id) == 10
+    assert len(enums.scopes.name_to_id) >= 10
+    assert "admin" in enums.scopes.name_to_id
+    assert "private" in enums.scopes.name_to_id
 
 
 async def test_relationship_types_count(enums):
@@ -43,15 +45,19 @@ async def test_relationship_types_count(enums):
 
 
 async def test_entity_types_count(enums):
-    """Entity types section should contain exactly 9 entries."""
+    """Entity types section should contain baseline defaults plus any custom rows."""
 
-    assert len(enums.entity_types.name_to_id) == 9
+    assert len(enums.entity_types.name_to_id) >= 9
+    assert "document" in enums.entity_types.name_to_id
 
 
 async def test_log_types_count(enums):
-    """Log types section should contain exactly 9 entries."""
+    """Log types section should contain baseline defaults plus any custom rows."""
 
-    assert len(enums.log_types.name_to_id) == 9
+    assert len(enums.log_types.name_to_id) >= 9
+    assert "event" in enums.log_types.name_to_id
+    assert "note" in enums.log_types.name_to_id
+    assert "metric" in enums.log_types.name_to_id
 
 
 # --- UUID Validation ---

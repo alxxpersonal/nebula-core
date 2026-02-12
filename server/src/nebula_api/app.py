@@ -22,6 +22,7 @@ from nebula_api.routes import (
     logs,
     protocols,
     relationships,
+    taxonomy,
 )
 
 # Local
@@ -72,6 +73,7 @@ app.include_router(protocols.router, prefix="/api/protocols", tags=["Protocols"]
 app.include_router(approvals.router, prefix="/api/approvals", tags=["Approvals"])
 app.include_router(agents.router, prefix="/api/agents", tags=["Agents"])
 app.include_router(keys.router, prefix="/api/keys", tags=["Keys"])
+app.include_router(taxonomy.router, prefix="/api/taxonomy", tags=["Taxonomy"])
 
 
 @app.get("/api/health")
