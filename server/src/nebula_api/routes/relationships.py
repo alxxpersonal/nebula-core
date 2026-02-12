@@ -290,9 +290,7 @@ async def update_relationship(
         "properties": payload.properties,
         "status": payload.status,
     }
-    row = await pool.fetchrow(
-        QUERIES["relationships/get_by_id"], relationship_id
-    )
+    row = await pool.fetchrow(QUERIES["relationships/get_by_id"], relationship_id)
     if not row:
         api_error("NOT_FOUND", "Relationship not found", 404)
     await _validate_relationship_node(
@@ -307,9 +305,7 @@ async def update_relationship(
         return resp
 
     try:
-        status_id = (
-            require_status(payload.status, enums) if payload.status else None
-        )
+        status_id = require_status(payload.status, enums) if payload.status else None
     except ValueError as exc:
         api_error("INVALID_INPUT", str(exc), 400)
 

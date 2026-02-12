@@ -50,18 +50,14 @@ async def _log_visible(pool: Any, enums: Any, auth: dict, log_id: str) -> bool:
             rel_type = rel[f"{side}_type"]
             rel_id = rel[f"{side}_id"]
             if rel_type == "entity":
-                row = await pool.fetchrow(
-                    QUERIES["entities/get_by_id"], rel_id
-                )
+                row = await pool.fetchrow(QUERIES["entities/get_by_id"], rel_id)
                 if not row:
                     return False
                 scopes = row.get("privacy_scope_ids") or []
                 if scopes and not any(s in scope_ids for s in scopes):
                     return False
             if rel_type == "knowledge":
-                row = await pool.fetchrow(
-                    QUERIES["knowledge/get"], rel_id, None
-                )
+                row = await pool.fetchrow(QUERIES["knowledge/get"], rel_id, None)
                 if not row:
                     return False
                 scopes = row.get("privacy_scope_ids") or []
