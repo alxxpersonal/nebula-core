@@ -152,3 +152,29 @@ async def test_api_update_relationship_denies_private_target(db_pool, enums):
     app.dependency_overrides.pop(require_auth, None)
 
     assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_api_update_relationship_requires_approval_for_untrusted_agent(
+    db_pool, enums
+):
+    """Untrusted agents should route relationship updates through approval."""
+
+    entity_a = await _make_entity(db_pool, enums, "Public A", ["public"])
+    entity_b = await _make_entity(db_pool, enums, "Public B", ["public"])
+    relationship = await _make_relationship(db_pool, enums, entity_a["id"], entity_b["id"])
+    untrusted = await _make_agent(db_pool, enums, "rel-untrusted", ["public"], True)
+
+    app.dependency_overrides[require_auth] = _auth_override(untrusted["id"], enums)
+    app.state.pool = db_pool
+    app.state.enums = enums
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.patch(
+            f"/api/relationships/{relationship['id']}",
+            json={"properties": {"note": "approval-path"}},
+        )
+    app.dependency_overrides.pop(require_auth, None)
+
+    assert resp.status_code == 202
+    assert resp.json()["status"] == "approval_required"

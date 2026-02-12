@@ -8,6 +8,7 @@ import json
 import pytest
 
 # Local
+from nebula_mcp.models import CreateEntityInput
 from nebula_mcp.models import CreateRelationshipInput
 from nebula_mcp.models import UpdateEntityInput
 from nebula_mcp.server import create_entity, create_relationship, update_entity
@@ -18,14 +19,14 @@ from nebula_mcp.server import create_entity, create_relationship, update_entity
 async def test_concurrent_create_entity_duplicate(mock_mcp_context, db_pool):
     """Concurrent entity creates should not bypass duplicate checks."""
 
-    payload = {
-        "name": "Race Entity",
-        "type": "person",
-        "status": "active",
-        "scopes": ["public"],
-        "tags": ["test"],
-        "metadata": {},
-    }
+    payload = CreateEntityInput(
+        name="Race Entity",
+        type="person",
+        status="active",
+        scopes=["public"],
+        tags=["test"],
+        metadata={},
+    )
 
     results = await asyncio.gather(
         create_entity(payload, mock_mcp_context),
