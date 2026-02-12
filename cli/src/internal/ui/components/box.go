@@ -78,9 +78,21 @@ func safeBoxWidth(width int) int {
 	return w
 }
 
+func renderBox(style lipgloss.Style, targetWidth int, content string) string {
+	width := safeBoxWidth(targetWidth)
+	if width <= 0 {
+		return style.Render(content)
+	}
+	inner := width - style.GetHorizontalFrameSize()
+	if inner < 1 {
+		inner = 1
+	}
+	return style.Width(inner).Render(content)
+}
+
 // Box renders content inside a bordered box.
 func Box(content string, width int) string {
-	return boxBorder.Width(safeBoxWidth(width)).Render(content)
+	return renderBox(boxBorder, width, content)
 }
 
 // BoxContentWidth returns the inner content width excluding border and padding.
@@ -111,7 +123,7 @@ func ClampTextWidth(text string, width int) string {
 
 // ActiveBox renders content inside a highlighted bordered box.
 func ActiveBox(content string, width int) string {
-	return boxBorderActive.Width(safeBoxWidth(width)).Render(content)
+	return renderBox(boxBorderActive, width, content)
 }
 
 // ErrorBox renders a red bordered box for errors.
@@ -121,7 +133,7 @@ func ErrorBox(title, message string, width int) string {
 		header = errorHeaderStyle.Render(title) + "\n\n"
 	}
 	body := errorBodyStyle.Render(message)
-	return errorBorder.Width(safeBoxWidth(width)).Render(header + body)
+	return renderBox(errorBorder, width, header+body)
 }
 
 // TitledBox renders a box with a header title.
@@ -131,9 +143,9 @@ func TitledBox(title, content string, width int) string {
 
 func titledBoxWithStyle(title, content string, width int, boxStyle, headerStyle lipgloss.Style, borderColor lipgloss.Color) string {
 	if title == "" {
-		return boxStyle.Width(safeBoxWidth(width)).Render(content)
+		return renderBox(boxStyle, width, content)
 	}
-	boxed := boxStyle.Width(safeBoxWidth(width)).Render(content)
+	boxed := renderBox(boxStyle, width, content)
 	lines := strings.Split(boxed, "\n")
 	if len(lines) == 0 {
 		return boxed

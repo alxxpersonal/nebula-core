@@ -68,8 +68,7 @@ func TestEntitiesSaveEditCallsUpdate(t *testing.T) {
 	}
 }
 
-// TestEntitiesEditHeaderBidiRepro captures BUG-2026-02-11-019 for edit header rendering.
-func TestEntitiesEditHeaderBidiRepro(t *testing.T) {
+func TestEntitiesEditHeaderSanitized(t *testing.T) {
 	_, client := testEntitiesClient(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 	})
@@ -81,7 +80,7 @@ func TestEntitiesEditHeaderBidiRepro(t *testing.T) {
 	}
 
 	rendered := model.renderEdit()
-	assert.Contains(t, rendered, "\u202E", "bidi marker no longer reproduces; close BUG-2026-02-11-019 and remove this repro test")
+	assert.NotContains(t, rendered, "\u202E")
 }
 
 func TestEntitiesCreateRelationshipCommand(t *testing.T) {

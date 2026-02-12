@@ -1380,7 +1380,7 @@ func (m EntitiesModel) renderEdit() string {
 	}
 
 	var b strings.Builder
-	b.WriteString(MutedStyle.Render("Entity: " + m.detail.Name))
+	b.WriteString(MutedStyle.Render("Entity: " + components.SanitizeOneLine(m.detail.Name)))
 	b.WriteString("\n\n")
 
 	// Tags

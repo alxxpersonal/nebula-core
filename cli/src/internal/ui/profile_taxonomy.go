@@ -64,7 +64,8 @@ func (m *ProfileModel) setTaxonomyItems(items []api.TaxonomyEntry) {
 }
 
 func formatTaxonomyLine(item api.TaxonomyEntry) string {
-	parts := []string{item.Name}
+	name := components.SanitizeOneLine(item.Name)
+	parts := []string{name}
 	if item.IsBuiltin {
 		parts = append(parts, TypeBadgeStyle.Render("builtin"))
 	}
@@ -72,7 +73,7 @@ func formatTaxonomyLine(item api.TaxonomyEntry) string {
 		parts = append(parts, WarningStyle.Render("inactive"))
 	}
 	if item.Description != nil && strings.TrimSpace(*item.Description) != "" {
-		parts = append(parts, MutedStyle.Render(*item.Description))
+		parts = append(parts, MutedStyle.Render(components.SanitizeOneLine(*item.Description)))
 	}
 	return strings.Join(parts, "  ")
 }

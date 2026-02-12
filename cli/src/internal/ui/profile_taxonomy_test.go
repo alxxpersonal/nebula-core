@@ -15,11 +15,10 @@ func TestTaxonomyLineSanitizeGapRepro(t *testing.T) {
 	}
 
 	out := formatTaxonomyLine(item)
-	if !strings.Contains(out, "\x1b]8;;") {
-		t.Fatalf("expected OSC escape to survive (sanitize gap repro), got %q", out)
+	if strings.Contains(out, "\x1b]8;;") {
+		t.Fatalf("unexpected OSC escape sequence in output: %q", out)
 	}
-	if !strings.Contains(out, "\n") {
-		t.Fatalf("expected newline to survive (sanitize gap repro), got %q", out)
+	if strings.Contains(out, "\n") {
+		t.Fatalf("unexpected newline in output: %q", out)
 	}
 }
-
