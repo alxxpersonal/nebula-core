@@ -29,7 +29,7 @@ const (
 	tabCount     = 11
 )
 
-var tabNames = []string{"Inbox", "Entities", "Relationships", "Knowledge", "Jobs", "Logs", "Files", "Protocols", "History", "Search", "Profile"}
+var tabNames = []string{"Inbox", "Entities", "Relationships", "Knowledge", "Jobs", "Logs", "Files", "Protocols", "History", "Search", "Settings"}
 
 // --- Messages ---
 
@@ -776,6 +776,7 @@ func (a App) statusHintsForTab() []string {
 		hints := []string{
 			components.Hint("↑/↓", "Scroll"),
 			components.Hint("←/→", "Section"),
+			components.Hint("k", "API Key"),
 		}
 		if a.profile.section == 0 {
 			hints = append(hints,
@@ -1023,7 +1024,7 @@ func (a *App) runPaletteAction(action paletteAction) (tea.Model, tea.Cmd) {
 		a.tab = tabSearch
 		a.search.mode = searchModeSemantic
 		return *a, nil
-	case "tab:profile":
+	case "tab:settings", "tab:profile":
 		return a.switchTab(tabProfile)
 	case "entities:search":
 		a.tab = tabEntities
@@ -1144,13 +1145,13 @@ func defaultPaletteActions() []paletteAction {
 		{ID: "tab:history", Label: "History", Desc: "Audit log"},
 		{ID: "tab:search", Label: "Search", Desc: "Global search"},
 		{ID: "search:semantic", Label: "Semantic search", Desc: "Global semantic search"},
-		{ID: "tab:profile", Label: "Profile", Desc: "Keys and agents"},
+		{ID: "tab:settings", Label: "Settings", Desc: "Config, keys, and agents"},
 		{ID: "ops:import", Label: "Import", Desc: "Bulk import from file"},
 		{ID: "ops:export", Label: "Export", Desc: "Export data to file"},
 		{ID: "entities:search", Label: "Search entities", Desc: "Open entity search"},
-		{ID: "profile:keys", Label: "Profile: API keys", Desc: "Manage keys"},
-		{ID: "profile:agents", Label: "Profile: agents", Desc: "Manage agents"},
-		{ID: "profile:taxonomy", Label: "Profile: taxonomy", Desc: "Manage scopes and types"},
+		{ID: "profile:keys", Label: "Settings: API keys", Desc: "Manage keys"},
+		{ID: "profile:agents", Label: "Settings: agents", Desc: "Manage agents"},
+		{ID: "profile:taxonomy", Label: "Settings: taxonomy", Desc: "Manage scopes and types"},
 		{ID: "quit", Label: "Quit", Desc: "Exit CLI"},
 	}
 }

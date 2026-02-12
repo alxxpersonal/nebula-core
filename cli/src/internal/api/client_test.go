@@ -291,6 +291,29 @@ func TestCreateKey(t *testing.T) {
 	assert.Equal(t, "my-key", resp.Name)
 }
 
+func TestSetAPIKeyUpdatesSubsequentRequests(t *testing.T) {
+	_, client := testServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer nbl_newkey" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.Write(jsonResponse(map[string]any{
+			"id":   "ent-1",
+			"name": "ok",
+			"tags": []string{},
+		}))
+	})
+
+	client.SetAPIKey("")
+	_, err := client.GetEntity("ent-1")
+	require.Error(t, err)
+
+	client.SetAPIKey("nbl_newkey")
+	entity, err := client.GetEntity("ent-1")
+	require.NoError(t, err)
+	assert.Equal(t, "ent-1", entity.ID)
+}
+
 func TestQueryJobs(t *testing.T) {
 	_, client := testServer(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Write(jsonResponse([]map[string]any{

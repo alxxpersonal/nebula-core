@@ -49,8 +49,12 @@ func TestRunPaletteActionEntityJump(t *testing.T) {
 func TestRunPaletteActionProfileSections(t *testing.T) {
 	app := NewApp(nil, &config.Config{})
 
-	model, _ := app.runPaletteAction(paletteAction{ID: "profile:keys"})
+	model, _ := app.runPaletteAction(paletteAction{ID: "tab:settings"})
 	updated := model.(App)
+	assert.Equal(t, tabProfile, updated.tab)
+
+	model, _ = app.runPaletteAction(paletteAction{ID: "profile:keys"})
+	updated = model.(App)
 	assert.Equal(t, tabProfile, updated.tab)
 	assert.Equal(t, 0, updated.profile.section)
 

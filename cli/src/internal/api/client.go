@@ -32,6 +32,11 @@ func NewClient(baseURL, apiKey string, timeout ...time.Duration) *Client {
 	}
 }
 
+// SetAPIKey updates the bearer token used for subsequent requests.
+func (c *Client) SetAPIKey(apiKey string) {
+	c.apiKey = apiKey
+}
+
 // do executes an HTTP request and returns the raw response body.
 func (c *Client) do(method, path string, body any) ([]byte, int, error) {
 	var reqBody io.Reader

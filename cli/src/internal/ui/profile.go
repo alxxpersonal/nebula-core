@@ -18,6 +18,7 @@ type agentsLoadedMsg struct{ items []api.Agent }
 type keyCreatedMsg struct{ resp *api.CreateKeyResponse }
 type keyRevokedMsg struct{}
 type agentUpdatedMsg struct{}
+type apiKeySavedMsg struct{}
 
 // --- Profile Model ---
 
@@ -37,6 +38,8 @@ type ProfileModel struct {
 	creating   bool
 	createBuf  string
 	createdKey string
+	editAPIKey bool
+	apiKeyBuf  string
 
 	taxKind            int
 	taxIncludeInactive bool
@@ -105,6 +108,11 @@ func (m ProfileModel) Update(msg tea.Msg) (ProfileModel, tea.Cmd) {
 	case agentUpdatedMsg:
 		return m, m.loadAgents
 
+	case apiKeySavedMsg:
+		m.editAPIKey = false
+		m.apiKeyBuf = ""
+		return m, nil
+
 	case taxonomyLoadedMsg:
 		if msg.kind != m.taxonomyKindPath() {
 			return m, nil
@@ -121,6 +129,9 @@ func (m ProfileModel) Update(msg tea.Msg) (ProfileModel, tea.Cmd) {
 	case tea.KeyMsg:
 		if m.taxPromptMode != taxPromptNone {
 			return m.handleTaxonomyPrompt(msg)
+		}
+		if m.editAPIKey {
+			return m.handleAPIKeyInput(msg)
 		}
 		if m.creating {
 			return m.handleCreateInput(msg)
@@ -161,6 +172,9 @@ func (m ProfileModel) Update(msg tea.Msg) (ProfileModel, tea.Cmd) {
 			} else if m.section == 2 {
 				m.openTaxPrompt(taxPromptCreateName, "")
 			}
+		case isKey(msg, "k"):
+			m.editAPIKey = true
+			m.apiKeyBuf = m.config.APIKey
 		case isKey(msg, "r"):
 			if m.section == 0 {
 				return m.revokeSelected()
@@ -240,6 +254,10 @@ func (m ProfileModel) View() string {
 		return "  " + MutedStyle.Render("Loading profile...")
 	}
 
+	if m.editAPIKey {
+		return components.Indent(components.InputDialog("Set API Key", m.apiKeyBuf), 1)
+	}
+
 	if m.creating {
 		return components.Indent(components.InputDialog("New Key Name", m.createBuf), 1)
 	}
@@ -256,8 +274,9 @@ func (m ProfileModel) View() string {
 	var b strings.Builder
 
 	// User info table
-	b.WriteString(components.Indent(components.Table("Profile", []components.TableRow{
+	b.WriteString(components.Indent(components.Table("Settings", []components.TableRow{
 		{Label: "User", Value: m.config.Username},
+		{Label: "API Key", Value: maskedAPIKey(m.config.APIKey)},
 		{Label: "Server", Value: m.config.ServerURL},
 	}, m.width), 1))
 	b.WriteString("\n\n")
@@ -342,6 +361,42 @@ func (m ProfileModel) handleCreateInput(msg tea.KeyMsg) (ProfileModel, tea.Cmd) 
 	default:
 		if len(msg.String()) == 1 || msg.String() == " " {
 			m.createBuf += msg.String()
+		}
+	}
+	return m, nil
+}
+
+func (m ProfileModel) handleAPIKeyInput(msg tea.KeyMsg) (ProfileModel, tea.Cmd) {
+	switch {
+	case isBack(msg):
+		m.editAPIKey = false
+		m.apiKeyBuf = ""
+		return m, nil
+	case isEnter(msg):
+		key := strings.TrimSpace(m.apiKeyBuf)
+		if key == "" {
+			return m, func() tea.Msg {
+				return errMsg{fmt.Errorf("api key cannot be empty")}
+			}
+		}
+		return m, func() tea.Msg {
+			m.config.APIKey = key
+			if err := m.config.Save(); err != nil {
+				return errMsg{err}
+			}
+			if m.client != nil {
+				m.client.SetAPIKey(key)
+			}
+			return apiKeySavedMsg{}
+		}
+	case isKey(msg, "backspace", "delete"):
+		if len(m.apiKeyBuf) > 0 {
+			m.apiKeyBuf = m.apiKeyBuf[:len(m.apiKeyBuf)-1]
+		}
+	default:
+		ch := msg.String()
+		if len(ch) == 1 || ch == " " {
+			m.apiKeyBuf += ch
 		}
 	}
 	return m, nil
@@ -499,4 +554,15 @@ func formatAgentLine(a api.Agent) string {
 	status := components.SanitizeOneLine(a.Status)
 	name := components.SanitizeOneLine(a.Name)
 	return fmt.Sprintf("[%s] %s (%s)", status, name, trust)
+}
+
+func maskedAPIKey(key string) string {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return "-"
+	}
+	if len(key) <= 10 {
+		return strings.Repeat("*", len(key))
+	}
+	return fmt.Sprintf("%s...%s", key[:6], key[len(key)-4:])
 }
