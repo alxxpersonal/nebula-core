@@ -56,12 +56,28 @@ async def get_pool(
     """
 
     dsn = build_dsn()
-    return await asyncpg.create_pool(
-        dsn=dsn,
-        min_size=min_size,
-        max_size=max_size,
-        command_timeout=command_timeout,
-    )
+    try:
+        return await asyncpg.create_pool(
+            dsn=dsn,
+            min_size=min_size,
+            max_size=max_size,
+            command_timeout=command_timeout,
+        )
+    except (OSError, asyncpg.PostgresError) as exc:
+        message = str(exc)
+        connection_error = isinstance(exc, ConnectionRefusedError) or (
+            isinstance(exc, OSError) and exc.errno in {61, 111, 10061}
+        )
+        if (
+            connection_error
+            or "connection refused" in message.lower()
+            or "could not connect to server" in message.lower()
+            or "failed to connect" in message.lower()
+        ):
+            raise RuntimeError(
+                "Database connection failed. Is Docker running?"
+            ) from exc
+        raise
 
 
 async def get_agent(pool: Pool, agent_name: str) -> Record | None:
