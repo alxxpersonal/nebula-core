@@ -1,0 +1,143 @@
+package ui
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/gravitrone/nebula-core/cli/internal/api"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func testFilesClient(t *testing.T, handler http.HandlerFunc) (*httptest.Server, *api.Client) {
+	srv := httptest.NewServer(handler)
+	t.Cleanup(srv.Close)
+	return srv, api.NewClient(srv.URL, "test-key")
+}
+
+func TestFilesInitLoadsFilesAndScopes(t *testing.T) {
+	now := time.Now()
+	_, client := testFilesClient(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/api/files") && r.Method == http.MethodGet:
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]any{
+					{
+						"id":         "file-1",
+						"filename":   "spec.md",
+						"file_path":  "/vault/spec.md",
+						"status":     "active",
+						"tags":       []string{},
+						"metadata":   map[string]any{},
+						"created_at": now,
+						"updated_at": now,
+					},
+				},
+			})
+			return
+		case r.URL.Path == "/api/audit/scopes" && r.Method == http.MethodGet:
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]any{
+					{
+						"id":              "scope-1",
+						"name":            "public",
+						"description":     nil,
+						"agent_count":     0,
+						"entity_count":    0,
+						"knowledge_count": 0,
+					},
+				},
+			})
+			return
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+
+	model := NewFilesModel(client)
+	cmd := model.Init()
+	require.NotNil(t, cmd)
+	msg := cmd()
+	model, cmd = model.Update(msg)
+
+	require.NotNil(t, cmd)
+	msg = cmd()
+	model, _ = model.Update(msg)
+
+	assert.False(t, model.loading)
+	assert.Len(t, model.items, 1)
+	assert.Equal(t, "file-1", model.items[0].ID)
+	assert.Contains(t, model.scopeOptions, "public")
+}
+
+func TestFilesAddValidationErrorOnEmpty(t *testing.T) {
+	_, client := testFilesClient(t, func(w http.ResponseWriter, r *http.Request) {})
+	model := NewFilesModel(client)
+	model.view = filesViewAdd
+
+	model, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
+	assert.Equal(t, "Filename is required", model.addErr)
+}
+
+func TestFilesUpdateHandlesAPIError(t *testing.T) {
+	now := time.Now()
+	_, client := testFilesClient(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/api/files") && r.Method == http.MethodGet:
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]any{
+					{
+						"id":         "file-1",
+						"filename":   "spec.md",
+						"file_path":  "/vault/spec.md",
+						"status":     "active",
+						"tags":       []string{},
+						"metadata":   map[string]any{},
+						"created_at": now,
+						"updated_at": now,
+					},
+				},
+			})
+			return
+		case strings.HasPrefix(r.URL.Path, "/api/files/") && r.Method == http.MethodPatch:
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]any{
+				"error": map[string]any{"code": "FAIL", "message": "nope"},
+			})
+			return
+		case r.URL.Path == "/api/audit/scopes" && r.Method == http.MethodGet:
+			json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{}})
+			return
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+
+	model := NewFilesModel(client)
+	cmd := model.Init()
+	msg := cmd()
+	model, cmd = model.Update(msg)
+	msg = cmd()
+	model, _ = model.Update(msg)
+
+	// Enter detail
+	model, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	require.NotNil(t, model.detail)
+
+	// Enter edit
+	model, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	assert.Equal(t, filesViewEdit, model.view)
+
+	// Attempt save; server returns FAIL.
+	model, cmd = model.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
+	require.NotNil(t, cmd)
+	msg = cmd()
+	model, _ = model.Update(msg)
+
+	assert.Contains(t, model.errText, "FAIL")
+}
