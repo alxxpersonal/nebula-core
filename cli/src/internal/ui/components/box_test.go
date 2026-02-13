@@ -61,3 +61,91 @@ func TestTableClampsLongValues(t *testing.T) {
 		assert.LessOrEqual(t, lipgloss.Width(line), maxWidth)
 	}
 }
+
+func TestActiveBoxClampsWidth(t *testing.T) {
+	out := ActiveBox("hello\nworld", 40)
+	for _, line := range strings.Split(out, "\n") {
+		assert.LessOrEqual(t, lipgloss.Width(line), 40)
+	}
+}
+
+func TestInfoRowSanitizesLabelAndValue(t *testing.T) {
+	out := InfoRow("na\u202Eme\x1b]0;evil\x07", "va\x1b[2Jlu\u202Ee")
+	assert.NotContains(t, out, "\u202E")
+	assert.NotContains(t, out, "\x1b]")
+	assert.NotContains(t, out, "\x1b[2J")
+
+	clean := SanitizeText(out)
+	assert.Contains(t, clean, "name: value")
+}
+
+func TestIndentPreservesLineCountAndAddsPadding(t *testing.T) {
+	src := "a\nb\nc"
+	out := Indent(src, 2)
+	lines := strings.Split(out, "\n")
+	assert.Len(t, lines, 3)
+	for _, line := range lines {
+		assert.True(t, strings.HasPrefix(line, "  "))
+	}
+}
+
+func TestCenterLineAddsLeftPadding(t *testing.T) {
+	out := CenterLine("hi", 80)
+	pad := (safeBoxWidth(80) - lipgloss.Width("hi")) / 2
+	assert.True(t, strings.HasPrefix(out, strings.Repeat(" ", pad)))
+}
+
+func TestDiffTableRendersMultilineValuesAndSanitizes(t *testing.T) {
+	out := DiffTable("Changes", []DiffRow{
+		{
+			Label: "Field\u202E\x1b]0;bad\x07",
+			From:  "from1\n\x1b[2Jfrom2",
+			To:    "to1\n\u202Eto2",
+		},
+	}, 60)
+
+	assert.NotContains(t, out, "\x1b]")
+	assert.NotContains(t, out, "\u202E")
+	assert.NotContains(t, out, "\x1b[2J")
+
+	clean := SanitizeText(out)
+	assert.Contains(t, clean, "Changes")
+	assert.Contains(t, clean, "- from1")
+	assert.Contains(t, clean, "from2")
+	assert.Contains(t, clean, "+ to1")
+	assert.Contains(t, clean, "to2")
+}
+
+func TestMetadataTableRendersNestedStructures(t *testing.T) {
+	out := MetadataTable(map[string]any{
+		"b": "two",
+		"a": map[string]any{
+			"nested": []any{"x", map[string]any{"k": "v"}},
+		},
+	}, 60)
+
+	clean := SanitizeText(out)
+	assert.Contains(t, clean, "Metadata")
+	assert.Contains(t, clean, "a:")
+	assert.Contains(t, clean, "nested:")
+}
+
+func TestRenderMetadataLinesSortsKeys(t *testing.T) {
+	lines := renderMetadataLines(map[string]any{"b": 1, "a": 2}, 0)
+	assert.GreaterOrEqual(t, len(lines), 2)
+	assert.True(t, strings.HasPrefix(lines[0], "a:"))
+}
+
+func TestFormatMetadataValueEncodesMapsInArrays(t *testing.T) {
+	val := formatMetadataValue([]any{
+		map[string]any{"a": 1},
+		"x",
+	})
+	assert.Contains(t, val, `{"a":1}`)
+	assert.Contains(t, val, "x")
+}
+
+func TestMaxIntReturnsLarger(t *testing.T) {
+	assert.Equal(t, 2, maxInt(1, 2))
+	assert.Equal(t, 2, maxInt(2, 1))
+}
