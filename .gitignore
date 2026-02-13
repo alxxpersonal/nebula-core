@@ -35,6 +35,9 @@ dist/
 nebula-data/
 database/data/
 
-# Node modules (if using drizzle locally)
+# Local artifacts
+Artifacts/
+
+# Node modules
 node_modules/
 package-lock.json
