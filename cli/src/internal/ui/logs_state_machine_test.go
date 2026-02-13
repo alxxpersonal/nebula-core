@@ -84,3 +84,260 @@ func TestLogsAddValidationErrorOnEmpty(t *testing.T) {
 	model, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
 	assert.Equal(t, "Type is required", model.addErr)
 }
+
+func TestLogsListNavigationOpensDetailAndReturnsToList(t *testing.T) {
+	now := time.Now()
+	_, client := testLogsClient(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/api/logs") && r.Method == http.MethodGet:
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]any{
+					{
+						"id":         "log-1",
+						"log_type":   "workout",
+						"timestamp":  now,
+						"value":      map[string]any{"note": "x"},
+						"status":     "active",
+						"tags":       []string{"t1"},
+						"metadata":   map[string]any{},
+						"created_at": now,
+						"updated_at": now,
+					},
+					{
+						"id":         "log-2",
+						"log_type":   "study",
+						"timestamp":  now,
+						"value":      map[string]any{},
+						"status":     "active",
+						"tags":       []string{},
+						"metadata":   map[string]any{},
+						"created_at": now,
+						"updated_at": now,
+					},
+				},
+			})
+			return
+		case r.URL.Path == "/api/audit/scopes" && r.Method == http.MethodGet:
+			json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{{"id": "s1", "name": "public"}}})
+			return
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+
+	model := NewLogsModel(client)
+	cmd := model.Init()
+	require.NotNil(t, cmd)
+	model, cmd = model.Update(cmd())
+	require.NotNil(t, cmd)
+	model, _ = model.Update(cmd())
+
+	require.Len(t, model.items, 2)
+
+	// Navigate down to second item.
+	model, _ = model.Update(tea.KeyMsg{Type: tea.KeyDown})
+	assert.Equal(t, 1, model.list.Selected())
+
+	// Open detail.
+	model, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	assert.Equal(t, logsViewDetail, model.view)
+	require.NotNil(t, model.detail)
+	assert.Equal(t, "log-2", model.detail.ID)
+	assert.Contains(t, model.View(), "Log")
+
+	// Back to list.
+	model, _ = model.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	assert.Equal(t, logsViewList, model.view)
+	assert.Nil(t, model.detail)
+	assert.Contains(t, model.View(), "Logs")
+}
+
+func TestLogsAddFlowCommitsTagsAndSaves(t *testing.T) {
+	now := time.Now()
+	var created api.CreateLogInput
+	var posted bool
+	_, client := testLogsClient(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/api/logs") && r.Method == http.MethodGet:
+			json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{}})
+			return
+		case r.URL.Path == "/api/audit/scopes" && r.Method == http.MethodGet:
+			json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{{"id": "s1", "name": "public"}}})
+			return
+		case r.URL.Path == "/api/logs" && r.Method == http.MethodPost:
+			posted = true
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&created))
+			json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{
+				"id":         "log-1",
+				"log_type":   created.LogType,
+				"timestamp":  now,
+				"status":     created.Status,
+				"tags":       created.Tags,
+				"value":      created.Value,
+				"metadata":   created.Metadata,
+				"created_at": now,
+				"updated_at": now,
+			}})
+			return
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+
+	model := NewLogsModel(client)
+	cmd := model.Init()
+	require.NotNil(t, cmd)
+	model, cmd = model.Update(cmd())
+	require.NotNil(t, cmd)
+	model, _ = model.Update(cmd())
+
+	// Toggle into Add mode via mode line focus.
+	model, _ = model.Update(tea.KeyMsg{Type: tea.KeyUp})
+	assert.True(t, model.modeFocus)
+	model, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	assert.Equal(t, logsViewAdd, model.view)
+
+	// Fill type.
+	for _, r := range []rune("workout") {
+		model, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	assert.Equal(t, "workout", model.addType)
+
+	// Move to Tags field.
+	for i := 0; i < 3; i++ {
+		model, _ = model.Update(tea.KeyMsg{Type: tea.KeyDown})
+	}
+	assert.Equal(t, logFieldTags, model.addFocus)
+
+	// Commit tag and dedupe.
+	for _, r := range []rune("alpha") {
+		model, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	model, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	require.Equal(t, []string{"alpha"}, model.addTags)
+
+	for _, r := range []rune("alpha") {
+		model, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	model, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	require.Equal(t, []string{"alpha"}, model.addTags)
+
+	// Save.
+	model, cmd = model.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
+	require.NotNil(t, cmd)
+	model, cmd = model.Update(cmd())
+	require.NotNil(t, cmd)
+
+	// Reload logs and scopes.
+	model, cmd = model.Update(cmd())
+	require.NotNil(t, cmd)
+	model, _ = model.Update(cmd())
+
+	require.True(t, posted)
+	assert.Equal(t, "workout", created.LogType)
+	assert.Equal(t, "active", created.Status)
+	assert.Equal(t, []string{"alpha"}, created.Tags)
+	assert.True(t, model.addSaved)
+}
+
+func TestLogsEditFlowSavesPatchAndReturnsToList(t *testing.T) {
+	now := time.Now()
+	var patched api.UpdateLogInput
+	var patchedID string
+	_, client := testLogsClient(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/api/logs") && r.Method == http.MethodGet:
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]any{
+					{
+						"id":         "log-1",
+						"log_type":   "workout",
+						"timestamp":  now,
+						"value":      map[string]any{"note": "x"},
+						"status":     "active",
+						"tags":       []string{},
+						"metadata":   map[string]any{},
+						"created_at": now,
+						"updated_at": now,
+					},
+				},
+			})
+			return
+		case r.URL.Path == "/api/audit/scopes" && r.Method == http.MethodGet:
+			json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{{"id": "s1", "name": "public"}}})
+			return
+		case strings.HasPrefix(r.URL.Path, "/api/logs/") && r.Method == http.MethodPatch:
+			patchedID = strings.TrimPrefix(r.URL.Path, "/api/logs/")
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&patched))
+			json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"id": patchedID}})
+			return
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+
+	model := NewLogsModel(client)
+	cmd := model.Init()
+	require.NotNil(t, cmd)
+	model, cmd = model.Update(cmd())
+	require.NotNil(t, cmd)
+	model, _ = model.Update(cmd())
+
+	// Open detail and then edit.
+	model, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	assert.Equal(t, logsViewDetail, model.view)
+	model, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	assert.Equal(t, logsViewEdit, model.view)
+
+	// Move focus to tags and add one tag.
+	model, _ = model.Update(tea.KeyMsg{Type: tea.KeyDown})
+	assert.Equal(t, logEditFieldTags, model.editFocus)
+	for _, r := range []rune("beta") {
+		model, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	model, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	assert.Equal(t, []string{"beta"}, model.editTags)
+
+	model, cmd = model.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
+	require.NotNil(t, cmd)
+	model, cmd = model.Update(cmd())
+	require.NotNil(t, cmd)
+
+	// Reload logs and scopes (post-update path).
+	model, cmd = model.Update(cmd())
+	require.NotNil(t, cmd)
+	model, _ = model.Update(cmd())
+
+	assert.Equal(t, "log-1", patchedID)
+	require.NotNil(t, patched.Tags)
+	assert.Equal(t, []string{"beta"}, *patched.Tags)
+	assert.Equal(t, logsViewList, model.view)
+}
+
+func TestParseLogTimestamp(t *testing.T) {
+	t.Run("empty", func(t *testing.T) {
+		ts, err := parseLogTimestamp("")
+		require.NoError(t, err)
+		assert.Nil(t, ts)
+	})
+
+	t.Run("date-only", func(t *testing.T) {
+		ts, err := parseLogTimestamp("2026-02-13")
+		require.NoError(t, err)
+		require.NotNil(t, ts)
+		assert.Equal(t, "2026-02-13", ts.Format("2006-01-02"))
+	})
+
+	t.Run("rfc3339", func(t *testing.T) {
+		ts, err := parseLogTimestamp("2026-02-13T10:11:12Z")
+		require.NoError(t, err)
+		require.NotNil(t, ts)
+		assert.Equal(t, "2026-02-13T10:11:12Z", ts.UTC().Format(time.RFC3339))
+	})
+
+	t.Run("invalid", func(t *testing.T) {
+		_, err := parseLogTimestamp("nope")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "timestamp:")
+	})
+}
