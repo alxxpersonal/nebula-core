@@ -103,6 +103,22 @@ func TestCommitTagDedupes(t *testing.T) {
 	assert.Equal(t, []string{"alpha"}, model.tags)
 }
 
+func TestCommitScopeDedupes(t *testing.T) {
+	model := NewKnowledgeModel(nil)
+	model.scopes = []string{"public"}
+	model.scopeBuf = " Public "
+	model.commitScope()
+	assert.Equal(t, []string{"public"}, model.scopes)
+}
+
+func TestCommitEditScopeDedupes(t *testing.T) {
+	model := NewKnowledgeModel(nil)
+	model.editScopes = []string{"public"}
+	model.editScopeBuf = " PUBLIC "
+	model.commitEditScope()
+	assert.Equal(t, []string{"public"}, model.editScopes)
+}
+
 func TestKnowledgeToggleModeLoadsList(t *testing.T) {
 	now := time.Now().UTC().Format(time.RFC3339)
 	_, client := knowledgeTestClient(t, func(w http.ResponseWriter, r *http.Request) {
@@ -140,4 +156,17 @@ func TestKnowledgeListEnterShowsDetail(t *testing.T) {
 	require.NotNil(t, model.detail)
 	assert.Equal(t, "k-1", model.detail.ID)
 	assert.Equal(t, knowledgeViewDetail, model.view)
+}
+
+func TestKnowledgeRenderEditShowsTagsAndScopes(t *testing.T) {
+	model := NewKnowledgeModel(nil)
+	model.width = 100
+	model.view = knowledgeViewEdit
+	model.editTags = []string{"alpha"}
+	model.editScopes = []string{"public"}
+
+	out := model.renderEdit()
+	assert.Contains(t, out, "Edit Knowledge")
+	assert.Contains(t, out, "alpha")
+	assert.Contains(t, out, "public")
 }

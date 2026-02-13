@@ -285,3 +285,26 @@ func TestJobsSearchFiltersList(t *testing.T) {
 	assert.Len(t, model.items, 1)
 	assert.Equal(t, "job-1", model.items[0].ID)
 }
+
+func TestJobsRenderEditShowsFields(t *testing.T) {
+	now := time.Now()
+	model := NewJobsModel(nil)
+	model.width = 100
+	model.detail = &api.Job{
+		ID:        "job-1",
+		Title:     "Edit Me",
+		Status:    "pending",
+		Metadata:  api.JSONMap{},
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	model.startEdit()
+	model.view = jobsViewEdit
+
+	out := model.renderEdit()
+	assert.Contains(t, out, "Edit Job")
+	assert.Contains(t, out, "Status:")
+	assert.Contains(t, out, "Description:")
+	assert.Contains(t, out, "Priority:")
+	assert.Contains(t, out, "Metadata:")
+}
