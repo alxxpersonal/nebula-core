@@ -1,0 +1,184 @@
+package ui
+
+import (
+	"encoding/json"
+	"net/http"
+	"strings"
+	"testing"
+	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/gravitrone/nebula-core/cli/internal/api"
+	"github.com/gravitrone/nebula-core/cli/internal/ui/components"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestJobsListSearchSuggestToggleAddSaveAndReset(t *testing.T) {
+	now := time.Now()
+	createCalled := false
+
+	_, client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/jobs" && r.Method == http.MethodGet:
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]any{
+					{
+						"id":         "job-1",
+						"title":      "Alpha Job",
+						"status":     "pending",
+						"priority":   "high",
+						"metadata":   map[string]any{},
+						"created_at": now,
+						"updated_at": now,
+					},
+				},
+			})
+		case r.URL.Path == "/api/audit/scopes":
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]any{
+					{"id": "scope-1", "name": "public", "agent_count": 1},
+				},
+			})
+		case r.URL.Path == "/api/jobs" && r.Method == http.MethodPost:
+			createCalled = true
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"id":         "job-new",
+					"title":      "New Job",
+					"status":     "pending",
+					"metadata":   map[string]any{},
+					"created_at": now,
+					"updated_at": now,
+				},
+			})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+
+	model := NewJobsModel(client)
+	model.width = 90
+
+	// Init + load jobs + scopes.
+	cmd := model.Init()
+	require.NotNil(t, cmd)
+	msg := cmd()
+	model, cmd = model.Update(msg)
+	require.NotNil(t, cmd)
+	msg = cmd()
+	model, _ = model.Update(msg)
+
+	out := components.SanitizeText(model.View())
+	assert.Contains(t, out, "Jobs")
+	assert.Contains(t, out, "1 total")
+	assert.Contains(t, out, "Alpha Job")
+
+	// Search suggest + tab completion.
+	model, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	assert.Equal(t, "Alpha Job", model.searchSuggest)
+	model, _ = model.Update(tea.KeyMsg{Type: tea.KeyTab})
+	assert.Equal(t, "Alpha Job", strings.TrimSpace(model.searchBuf))
+
+	// Toggle to Add via modeFocus.
+	model, _ = model.Update(tea.KeyMsg{Type: tea.KeyUp})
+	assert.True(t, model.modeFocus)
+	model, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	assert.Equal(t, jobsViewAdd, model.view)
+
+	out = components.SanitizeText(model.View())
+	assert.Contains(t, out, "Add Job")
+
+	// Enter title.
+	for _, r := range []rune("New Job") {
+		model, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+
+	// Save.
+	var saveCmd tea.Cmd
+	model, saveCmd = model.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
+	require.NotNil(t, saveCmd)
+	msg = saveCmd()
+	model, cmd = model.Update(msg)
+	require.NotNil(t, cmd) // reload jobs
+
+	assert.True(t, createCalled)
+	assert.True(t, model.addSaved)
+	assert.Contains(t, components.SanitizeText(model.View()), "Job saved!")
+
+	// Esc should reset add state.
+	model, _ = model.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	assert.False(t, model.addSaved)
+	assert.Equal(t, "", model.addFields[jobFieldTitle].value)
+}
+
+func TestJobsDetailRendersAndEditSaves(t *testing.T) {
+	now := time.Now()
+	updateCalled := false
+
+	_, client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/api/jobs/") && r.Method == http.MethodPatch:
+			updateCalled = true
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"id":         "job-1",
+					"title":      "Alpha Job",
+					"status":     "active",
+					"metadata":   map[string]any{"role": "founder"},
+					"created_at": now,
+					"updated_at": now,
+				},
+			})
+		case r.URL.Path == "/api/jobs" && r.Method == http.MethodGet:
+			json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{}})
+		case r.URL.Path == "/api/audit/scopes":
+			json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{}})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+
+	desc := "hello"
+	priority := "high"
+	model := NewJobsModel(client)
+	model.width = 90
+	model.view = jobsViewDetail
+	model.detail = &api.Job{
+		ID:          "job-1",
+		Title:       "Alpha Job",
+		Description: &desc,
+		Status:      "active",
+		Priority:    &priority,
+		Metadata:    api.JSONMap{"role": "builder"},
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	model.metaExpanded = true
+
+	out := components.SanitizeText(model.View())
+	assert.Contains(t, out, "Job")
+	assert.Contains(t, out, "Alpha Job")
+	assert.Contains(t, out, "Description")
+	assert.Contains(t, out, "hello")
+	assert.Contains(t, out, "Metadata")
+	assert.Contains(t, out, "role")
+
+	// Enter edit mode.
+	model, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	assert.Equal(t, jobsViewEdit, model.view)
+
+	// Edit description and save.
+	model.editFocus = jobEditFieldDescription
+	for _, r := range []rune(" world") {
+		model, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	var saveCmd tea.Cmd
+	model, saveCmd = model.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
+	require.NotNil(t, saveCmd)
+	msg := saveCmd()
+	model, _ = model.Update(msg)
+
+	assert.True(t, updateCalled)
+}
+
