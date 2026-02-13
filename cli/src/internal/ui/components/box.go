@@ -265,8 +265,9 @@ func Table(title string, rows []TableRow, width int) string {
 	safeRows := make([]TableRow, len(rows))
 	for i, r := range rows {
 		safeRows[i] = TableRow{
-			Label: SanitizeOneLine(r.Label),
-			Value: SanitizeOneLine(r.Value),
+			Label:      SanitizeOneLine(r.Label),
+			Value:      SanitizeOneLine(r.Value),
+			ValueColor: r.ValueColor,
 		}
 		if lipgloss.Width(safeRows[i].Label) > maxLabel {
 			maxLabel = lipgloss.Width(safeRows[i].Label)
@@ -307,7 +308,12 @@ func Table(title string, rows []TableRow, width int) string {
 		labelText := ClampTextWidth(r.Label, labelWidth)
 		valueText := ClampTextWidth(r.Value, valueWidth)
 		label := boxLabelStyle.Render(padRight(labelText, labelWidth))
-		b.WriteString(label + "  " + boxValueStyle.Render(valueText))
+		valueStyle := boxValueStyle
+		if strings.TrimSpace(r.ValueColor) != "" {
+			// Only allow internal callers to apply styling; user-provided content is sanitized above.
+			valueStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(r.ValueColor)).Bold(true)
+		}
+		b.WriteString(label + "  " + valueStyle.Render(valueText))
 		if i < len(safeRows)-1 {
 			b.WriteString("\n")
 		}
@@ -323,6 +329,9 @@ func Table(title string, rows []TableRow, width int) string {
 type TableRow struct {
 	Label string
 	Value string
+	// ValueColor overrides the default value color for this row.
+	// It must be a lipgloss-compatible color string (e.g. "#RRGGBB").
+	ValueColor string
 }
 
 // Indent adds left padding to every line of a multi-line string.

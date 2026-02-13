@@ -72,17 +72,17 @@ type appToast struct {
 
 // App is the root TUI model that routes between tabs.
 type App struct {
-	client      *api.Client
-	config      *config.Config
-	tab         int
-	tabNav      bool
-	width       int
-	height      int
-	err         string
-	lastErrCode string
-	lastErrMsg  string
-	helpOpen    bool
-	quitConfirm bool
+	client            *api.Client
+	config            *config.Config
+	tab               int
+	tabNav            bool
+	width             int
+	height            int
+	err               string
+	lastErrCode       string
+	lastErrMsg        string
+	helpOpen          bool
+	quitConfirm       bool
 	showRecoveryHints bool
 	recoveryCommand   string
 
@@ -125,12 +125,12 @@ func NewApp(client *api.Client, cfg *config.Config) App {
 	quickstartPending := cfg != nil && cfg.QuickstartPending
 	startupChecking := client != nil
 	return App{
-		client:         client,
-		config:         cfg,
-		tab:            tabInbox,
-		tabNav:         true,
+		client:          client,
+		config:          cfg,
+		tab:             tabInbox,
+		tabNav:          true,
 		recoveryCommand: "nebula login",
-		quickstartOpen: quickstartPending,
+		quickstartOpen:  quickstartPending,
 		startupChecking: startupChecking,
 		startup: startupSummary{
 			API:      "checking",
@@ -1057,9 +1057,9 @@ func (a App) renderToast() string {
 
 func (a App) renderStartupPanel() string {
 	rows := []components.TableRow{
-		{Label: "API", Value: a.startup.API},
-		{Label: "Auth", Value: a.startup.Auth},
-		{Label: "Taxonomy", Value: a.startup.Taxonomy},
+		{Label: "API", Value: a.startup.API, ValueColor: startupStatusColor(a.startup.API)},
+		{Label: "Auth", Value: a.startup.Auth, ValueColor: startupStatusColor(a.startup.Auth)},
+		{Label: "Taxonomy", Value: a.startup.Taxonomy, ValueColor: startupStatusColor(a.startup.Taxonomy)},
 	}
 	return components.Table("Startup Checks", rows, a.width)
 }
@@ -1255,6 +1255,21 @@ func startupToastCopy(summary startupSummary) (string, string) {
 		return "error", fmt.Sprintf("Startup checks failed: API is %s.", summary.API)
 	}
 	return "warning", fmt.Sprintf("Startup checks: auth=%s, taxonomy=%s.", summary.Auth, summary.Taxonomy)
+}
+
+func startupStatusColor(status string) string {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "ok":
+		return string(ColorSuccess)
+	case "checking":
+		return string(ColorMuted)
+	case "missing", "forbidden", "timeout":
+		return string(ColorWarning)
+	case "invalid", "down", "failed", "schema_error":
+		return string(ColorError)
+	default:
+		return string(ColorMuted)
+	}
 }
 
 func (a *App) openPalette() {
