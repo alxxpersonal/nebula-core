@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -35,6 +36,11 @@ func NewClient(baseURL, apiKey string, timeout ...time.Duration) *Client {
 // SetAPIKey updates the bearer token used for subsequent requests.
 func (c *Client) SetAPIKey(apiKey string) {
 	c.apiKey = apiKey
+}
+
+// WithTimeout clones the client with a different HTTP timeout.
+func (c *Client) WithTimeout(timeout time.Duration) *Client {
+	return NewClient(c.baseURL, c.apiKey, timeout)
 }
 
 // do executes an HTTP request and returns the raw response body.
@@ -70,9 +76,8 @@ func (c *Client) do(method, path string, body any) ([]byte, int, error) {
 	}
 
 	if resp.StatusCode >= 400 {
-		var errResp apiResponse[any]
-		if json.Unmarshal(respBody, &errResp) == nil && errResp.Error != nil {
-			return nil, resp.StatusCode, fmt.Errorf("%s: %s", errResp.Error.Code, errResp.Error.Message)
+		if msg, ok := extractAPIErrorBody(respBody); ok {
+			return nil, resp.StatusCode, fmt.Errorf("%s", msg)
 		}
 		return nil, resp.StatusCode, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(respBody))
 	}
@@ -134,4 +139,62 @@ func buildQuery(path string, params QueryParams) string {
 		}
 	}
 	return path + "?" + q.Encode()
+}
+
+func extractAPIErrorBody(body []byte) (string, bool) {
+	if len(body) == 0 {
+		return "", false
+	}
+
+	var envelope apiResponse[any]
+	if err := json.Unmarshal(body, &envelope); err == nil && envelope.Error != nil {
+		return formatAPIError(envelope.Error.Code, envelope.Error.Message)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return "", false
+	}
+
+	if msg, ok := parseErrorValue(payload["error"]); ok {
+		return msg, true
+	}
+	if msg, ok := parseErrorValue(payload["detail"]); ok {
+		return msg, true
+	}
+	return "", false
+}
+
+func parseErrorValue(raw any) (string, bool) {
+	switch value := raw.(type) {
+	case string:
+		msg := strings.TrimSpace(value)
+		if msg == "" {
+			return "", false
+		}
+		return msg, true
+	case map[string]any:
+		if nested, ok := parseErrorValue(value["error"]); ok {
+			return nested, true
+		}
+		code, _ := value["code"].(string)
+		message, _ := value["message"].(string)
+		return formatAPIError(code, message)
+	}
+	return "", false
+}
+
+func formatAPIError(code, message string) (string, bool) {
+	code = strings.TrimSpace(code)
+	message = strings.TrimSpace(message)
+	switch {
+	case code != "" && message != "":
+		return fmt.Sprintf("%s: %s", code, message), true
+	case code != "":
+		return code, true
+	case message != "":
+		return message, true
+	default:
+		return "", false
+	}
 }

@@ -310,8 +310,12 @@ func (m ProtocolsModel) renderList() string {
 		return components.CenterLine("Loading protocols...", m.width)
 	}
 	if len(m.items) == 0 {
-		content := MutedStyle.Render("No protocols found.")
-		return components.Box(content, m.width)
+		return components.EmptyStateBox(
+			"Protocols",
+			"No protocols found.",
+			[]string{"Press n to create", "Press / for command palette"},
+			m.width,
+		)
 	}
 	var rows strings.Builder
 	visible := m.list.Visible()

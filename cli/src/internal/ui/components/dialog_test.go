@@ -23,3 +23,23 @@ func TestInputDialogIncludesTitleInputAndHints(t *testing.T) {
 	assert.Contains(t, clean, "> hello")
 	assert.Contains(t, clean, "enter: submit | esc: cancel")
 }
+
+func TestConfirmPreviewDialogIncludesSummaryAndChanges(t *testing.T) {
+	out := ConfirmPreviewDialog(
+		"Archive Entity",
+		[]TableRow{{Label: "Entity", Value: "Alpha"}},
+		[]DiffRow{{Label: "status", From: "active", To: "archived"}},
+		80,
+	)
+	clean := SanitizeText(out)
+
+	assert.Contains(t, clean, "Archive Entity")
+	assert.Contains(t, clean, "Summary")
+	assert.Contains(t, clean, "Entity")
+	assert.Contains(t, clean, "Alpha")
+	assert.Contains(t, clean, "Changes")
+	assert.Contains(t, clean, "status")
+	assert.Contains(t, clean, "- active")
+	assert.Contains(t, clean, "+ archived")
+	assert.Contains(t, clean, "y: confirm | n: cancel")
+}

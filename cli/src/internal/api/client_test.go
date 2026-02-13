@@ -223,6 +223,36 @@ func TestHTTPError(t *testing.T) {
 	assert.Contains(t, err.Error(), "NOT_FOUND")
 }
 
+func TestHTTPErrorNestedDetailFormat(t *testing.T) {
+	_, client := testServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"detail": map[string]any{
+				"error": map[string]any{
+					"code":    "FORBIDDEN",
+					"message": "Admin scope required",
+				},
+			},
+		})
+	})
+
+	_, err := client.GetEntity("nope")
+	require.Error(t, err)
+	assert.Equal(t, "FORBIDDEN: Admin scope required", err.Error())
+}
+
+func TestHealth(t *testing.T) {
+	_, client := testServer(t, func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodGet, r.Method)
+		assert.Equal(t, "/api/health", r.URL.Path)
+		_ = json.NewEncoder(w).Encode(map[string]any{"status": "ok"})
+	})
+
+	status, err := client.Health()
+	require.NoError(t, err)
+	assert.Equal(t, "ok", status)
+}
+
 func TestBuildQuery(t *testing.T) {
 	result := buildQuery("/api/entities", QueryParams{"status": "active", "type": "person"})
 	assert.Contains(t, result, "/api/entities?")
@@ -238,6 +268,14 @@ func TestBuildQueryEmpty(t *testing.T) {
 func TestNewClientCustomTimeout(t *testing.T) {
 	client := NewClient("http://example.com", "nbl_testkey", 5*time.Second)
 	assert.Equal(t, 5*time.Second, client.httpClient.Timeout)
+}
+
+func TestWithTimeoutClonesClient(t *testing.T) {
+	client := NewClient("http://example.com", "nbl_testkey", 30*time.Second)
+	clone := client.WithTimeout(2 * time.Second)
+
+	assert.Equal(t, 2*time.Second, clone.httpClient.Timeout)
+	assert.NotSame(t, client, clone)
 }
 
 func TestClientConcurrentRequests(t *testing.T) {

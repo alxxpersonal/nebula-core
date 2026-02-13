@@ -40,6 +40,7 @@ func LoginCmd() *cobra.Command {
 				Username:     resp.Username,
 				Theme:        "dark",
 				VimKeys:      true,
+				QuickstartPending: true,
 			}
 
 			if err := cfg.Save(); err != nil {

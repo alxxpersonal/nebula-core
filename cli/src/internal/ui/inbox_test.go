@@ -318,6 +318,9 @@ func TestInboxApproveAllFiltered(t *testing.T) {
 
 	var cmd tea.Cmd
 	model, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'A'}})
+	require.Nil(t, cmd)
+
+	model, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 	require.NotNil(t, cmd)
 	cmd()
 
@@ -381,6 +384,10 @@ func TestInboxBatchApproveSelected(t *testing.T) {
 	model, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{' '}})
 	model, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
 
+	require.Nil(t, cmd)
+
+	model, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	require.NotNil(t, cmd)
 	msg = cmd()
 	model, _ = model.Update(msg)
 
@@ -421,6 +428,10 @@ func TestInboxBatchRejectSelected(t *testing.T) {
 	model, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
 	model, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
 	model, cmd = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	require.Nil(t, cmd)
+
+	model, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	require.NotNil(t, cmd)
 	msg = cmd()
 	model, _ = model.Update(msg)
 

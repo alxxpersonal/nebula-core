@@ -289,8 +289,12 @@ func (m RelationshipsModel) renderList() string {
 	}
 
 	if len(m.items) == 0 {
-		content := MutedStyle.Render("No relationships found.")
-		return components.Box(content, m.width)
+		return components.EmptyStateBox(
+			"Relationships",
+			"No relationships found.",
+			[]string{"Press n to create", "Press / for command palette"},
+			m.width,
+		)
 	}
 
 	var rows strings.Builder
@@ -491,8 +495,22 @@ func (m RelationshipsModel) handleConfirmKeys(msg tea.KeyMsg) (RelationshipsMode
 }
 
 func (m RelationshipsModel) renderConfirm() string {
-	msg := "Archive this relationship?"
-	return components.ConfirmDialog("Confirm", msg)
+	if m.detail == nil {
+		return components.ConfirmDialog("Confirm", "Archive this relationship?")
+	}
+
+	summary := []components.TableRow{
+		{Label: "Relationship", Value: m.detail.Type},
+		{Label: "ID", Value: m.detail.ID},
+		{Label: "Source", Value: m.displayNode(m.detail.SourceID, m.detail.SourceType, m.detail.SourceName)},
+		{Label: "Target", Value: m.displayNode(m.detail.TargetID, m.detail.TargetType, m.detail.TargetName)},
+	}
+	diffs := []components.DiffRow{{
+		Label: "status",
+		From:  firstNonEmpty(m.detail.Status, "active"),
+		To:    "archived",
+	}}
+	return components.ConfirmPreviewDialog("Archive Relationship", summary, diffs, m.width)
 }
 
 // --- Create ---

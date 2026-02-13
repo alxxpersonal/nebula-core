@@ -276,8 +276,12 @@ func (m FilesModel) renderList() string {
 		return "  " + MutedStyle.Render("Loading files...")
 	}
 	if len(m.items) == 0 {
-		content := MutedStyle.Render("No files found.")
-		return components.Box(content, m.width)
+		return components.EmptyStateBox(
+			"Files",
+			"No files found.",
+			[]string{"Press tab to switch Add/Library", "Press / for command palette"},
+			m.width,
+		)
 	}
 
 	var rows strings.Builder

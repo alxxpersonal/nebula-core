@@ -1,6 +1,10 @@
 package components
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"strings"
+
+	"github.com/charmbracelet/lipgloss"
+)
 
 var dialogStyle = lipgloss.NewStyle().
 	Border(lipgloss.RoundedBorder()).
@@ -42,4 +46,21 @@ func InputDialog(title, input string) string {
 		Render("\nenter: submit | esc: cancel")
 
 	return dialogStyle.Render(header + "\n\n" + field + hint)
+}
+
+// ConfirmPreviewDialog renders a confirmation with summary rows and optional diffs.
+func ConfirmPreviewDialog(title string, summary []TableRow, diffs []DiffRow, width int) string {
+	sections := make([]string, 0, 4)
+	if len(summary) > 0 {
+		sections = append(sections, Table("Summary", summary, width))
+	}
+	if len(diffs) > 0 {
+		sections = append(sections, DiffTable("Changes", diffs, width))
+	}
+	hint := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#9ba0bf")).
+		Render("y: confirm | n: cancel")
+	sections = append(sections, hint)
+
+	return TitledBox(title, strings.Join(sections, "\n\n"), width)
 }

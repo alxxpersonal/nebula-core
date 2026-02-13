@@ -51,6 +51,7 @@ func TestSaveLoadRoundtripWithAllFields(t *testing.T) {
 		Username:     "testuser",
 		Theme:        "dark",
 		VimKeys:      true,
+		QuickstartPending: true,
 	}
 
 	err := original.Save()
@@ -64,6 +65,7 @@ func TestSaveLoadRoundtripWithAllFields(t *testing.T) {
 	assert.Equal(t, original.Username, loaded.Username)
 	assert.Equal(t, original.Theme, loaded.Theme)
 	assert.Equal(t, original.VimKeys, loaded.VimKeys)
+	assert.Equal(t, original.QuickstartPending, loaded.QuickstartPending)
 }
 
 func TestSaveConfigOverwritesExisting(t *testing.T) {

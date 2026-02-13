@@ -135,6 +135,7 @@ type EntitiesModel struct {
 	confirmReturn  entitiesView
 	confirmRelID   string
 	confirmAuditID string
+	confirmAudit   *api.AuditEntry
 
 	// relationships
 	rels       []api.Relationship
@@ -891,8 +892,12 @@ func (m EntitiesModel) renderList() string {
 	}
 
 	if len(m.items) == 0 {
-		content := MutedStyle.Render("No entities found.")
-		return components.Box(content, m.width)
+		return components.EmptyStateBox(
+			"Entities",
+			"No entities found.",
+			[]string{"Type to live-search", "Press tab to switch Add/Library", "Press / for command palette"},
+			m.width,
+		)
 	}
 
 	var rows strings.Builder
@@ -1578,11 +1583,13 @@ func (m EntitiesModel) handleConfirmKeys(msg tea.KeyMsg) (EntitiesModel, tea.Cmd
 		case "entity-archive":
 			if m.detail == nil {
 				m.view = m.confirmReturn
+				m.resetConfirmState()
 				return m, nil
 			}
 			status := "archived"
 			input := api.UpdateEntityInput{Status: &status}
 			m.view = m.confirmReturn
+			m.resetConfirmState()
 			return m, func() tea.Msg {
 				updated, err := m.client.UpdateEntity(m.detail.ID, input)
 				if err != nil {
@@ -1593,11 +1600,13 @@ func (m EntitiesModel) handleConfirmKeys(msg tea.KeyMsg) (EntitiesModel, tea.Cmd
 		case "entity-revert":
 			if m.detail == nil || m.confirmAuditID == "" {
 				m.view = m.confirmReturn
+				m.resetConfirmState()
 				return m, nil
 			}
 			entityID := m.detail.ID
 			auditID := m.confirmAuditID
 			m.view = m.confirmReturn
+			m.resetConfirmState()
 			return m, func() tea.Msg {
 				updated, err := m.client.RevertEntity(entityID, auditID)
 				if err != nil {
@@ -1608,11 +1617,13 @@ func (m EntitiesModel) handleConfirmKeys(msg tea.KeyMsg) (EntitiesModel, tea.Cmd
 		case "rel-archive":
 			if m.confirmRelID == "" {
 				m.view = m.confirmReturn
+				m.resetConfirmState()
 				return m, nil
 			}
 			status := "archived"
 			input := api.UpdateRelationshipInput{Status: &status}
 			m.view = m.confirmReturn
+			m.resetConfirmState()
 			return m, func() tea.Msg {
 				updated, err := m.client.UpdateRelationship(m.confirmRelID, input)
 				if err != nil {
@@ -1623,20 +1634,106 @@ func (m EntitiesModel) handleConfirmKeys(msg tea.KeyMsg) (EntitiesModel, tea.Cmd
 		}
 	case isKey(msg, "n"), isBack(msg):
 		m.view = m.confirmReturn
+		m.resetConfirmState()
 	}
 	return m, nil
 }
 
 func (m EntitiesModel) renderConfirm() string {
-	msg := "Are you sure?"
-	if m.confirmKind == "entity-archive" {
-		msg = "Archive this entity?"
-	} else if m.confirmKind == "entity-revert" {
-		msg = "Revert this entity to the selected version?"
-	} else if m.confirmKind == "rel-archive" {
-		msg = "Archive this relationship?"
+	title := "Confirm"
+	var summary []components.TableRow
+	var diffs []components.DiffRow
+
+	switch m.confirmKind {
+	case "entity-archive":
+		title = "Archive Entity"
+		if m.detail != nil {
+			summary = append(summary,
+				components.TableRow{Label: "Entity", Value: m.detail.Name},
+				components.TableRow{Label: "ID", Value: m.detail.ID},
+			)
+			diffs = append(diffs, components.DiffRow{
+				Label: "status",
+				From:  firstNonEmpty(m.detail.Status, "active"),
+				To:    "archived",
+			})
+		}
+	case "entity-revert":
+		title = "Revert Entity"
+		if m.detail != nil {
+			summary = append(summary,
+				components.TableRow{Label: "Entity", Value: m.detail.Name},
+				components.TableRow{Label: "ID", Value: m.detail.ID},
+				components.TableRow{Label: "Audit ID", Value: m.confirmAuditID},
+			)
+		}
+		if m.confirmAudit != nil {
+			summary = append(summary, components.TableRow{
+				Label: "Changed At",
+				Value: m.confirmAudit.ChangedAt.Format("2006-01-02 15:04"),
+			})
+			for _, row := range buildAuditDiffRows(*m.confirmAudit) {
+				diffs = append(diffs, row)
+			}
+		}
+	case "rel-archive":
+		title = "Archive Relationship"
+		if rel := m.selectedRelationshipByID(m.confirmRelID); rel != nil {
+			summary = append(summary,
+				components.TableRow{Label: "Relationship", Value: rel.Type},
+				components.TableRow{Label: "ID", Value: rel.ID},
+				components.TableRow{Label: "Source", Value: m.relationshipNodeLabel(rel.SourceName, rel.SourceID, rel.SourceType)},
+				components.TableRow{Label: "Target", Value: m.relationshipNodeLabel(rel.TargetName, rel.TargetID, rel.TargetType)},
+			)
+			diffs = append(diffs, components.DiffRow{
+				Label: "status",
+				From:  firstNonEmpty(rel.Status, "active"),
+				To:    "archived",
+			})
+		}
 	}
-	return components.Indent(components.ConfirmDialog("Confirm", msg), 1)
+
+	return components.Indent(components.ConfirmPreviewDialog(title, summary, diffs, m.width), 1)
+}
+
+func (m *EntitiesModel) resetConfirmState() {
+	m.confirmKind = ""
+	m.confirmRelID = ""
+	m.confirmAuditID = ""
+	m.confirmAudit = nil
+}
+
+func (m EntitiesModel) selectedRelationshipByID(id string) *api.Relationship {
+	if id == "" {
+		return nil
+	}
+	for i := range m.rels {
+		if m.rels[i].ID == id {
+			rel := m.rels[i]
+			return &rel
+		}
+	}
+	return nil
+}
+
+func (m EntitiesModel) relationshipNodeLabel(name, id, typ string) string {
+	label := strings.TrimSpace(name)
+	if label == "" {
+		label = shortID(id)
+	}
+	if strings.TrimSpace(typ) == "" {
+		return label
+	}
+	return fmt.Sprintf("%s (%s)", label, typ)
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return "-"
 }
 
 // --- Relationships ---

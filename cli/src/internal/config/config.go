@@ -15,6 +15,7 @@ type Config struct {
 	Username     string `yaml:"username"`
 	Theme        string `yaml:"theme"`
 	VimKeys      bool   `yaml:"vim_keys"`
+	QuickstartPending bool `yaml:"quickstart_pending,omitempty"`
 }
 
 // Path returns the config file path.

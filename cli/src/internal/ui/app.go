@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -34,6 +35,16 @@ var tabNames = []string{"Inbox", "Entities", "Relationships", "Knowledge", "Jobs
 // --- Messages ---
 
 type errMsg struct{ err error }
+type clearToastMsg struct{}
+type reloginDoneMsg struct {
+	apiKey string
+	err    error
+}
+type startupCheckedMsg struct {
+	apiErr      string
+	authErr     string
+	taxonomyErr string
+}
 type paletteEntitiesLoadedMsg struct {
 	query string
 	items []api.Entity
@@ -43,6 +54,18 @@ type paletteAction struct {
 	ID    string
 	Label string
 	Desc  string
+}
+
+type startupSummary struct {
+	API      string
+	Auth     string
+	Taxonomy string
+	Done     bool
+}
+
+type appToast struct {
+	level string
+	text  string
 }
 
 // --- App Model ---
@@ -56,8 +79,19 @@ type App struct {
 	width       int
 	height      int
 	err         string
+	lastErrCode string
+	lastErrMsg  string
 	helpOpen    bool
 	quitConfirm bool
+	showRecoveryHints bool
+	recoveryCommand   string
+
+	quickstartOpen bool
+	quickstartStep int
+
+	startupChecking bool
+	startup         startupSummary
+	toast           *appToast
 
 	paletteOpen          bool
 	paletteQuery         string
@@ -88,11 +122,21 @@ type App struct {
 func NewApp(client *api.Client, cfg *config.Config) App {
 	inbox := NewInboxModel(client)
 	inbox.confirmBulk = true
+	quickstartPending := cfg != nil && cfg.QuickstartPending
+	startupChecking := client != nil
 	return App{
 		client:         client,
 		config:         cfg,
 		tab:            tabInbox,
 		tabNav:         true,
+		recoveryCommand: "nebula login",
+		quickstartOpen: quickstartPending,
+		startupChecking: startupChecking,
+		startup: startupSummary{
+			API:      "checking",
+			Auth:     "checking",
+			Taxonomy: "checking",
+		},
 		paletteActions: defaultPaletteActions(),
 		inbox:          inbox,
 		entities:       NewEntitiesModel(client),
@@ -110,7 +154,11 @@ func NewApp(client *api.Client, cfg *config.Config) App {
 }
 
 func (a App) Init() tea.Cmd {
-	return a.inbox.Init()
+	cmds := []tea.Cmd{a.inbox.Init()}
+	if a.startupChecking {
+		cmds = append(cmds, a.runStartupCheckCmd())
+	}
+	return tea.Batch(cmds...)
 }
 
 func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -146,7 +194,49 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case errMsg:
 		a.err = msg.err.Error()
+		a.lastErrCode, a.lastErrMsg = parseErrorCodeAndMessage(a.err)
+		a.showRecoveryHints = shouldShowRecoveryHints(a.lastErrCode, a.lastErrMsg)
 		return a, nil
+	case clearToastMsg:
+		a.toast = nil
+		return a, nil
+	case reloginDoneMsg:
+		if msg.err != nil {
+			a.err = fmt.Sprintf("re-login failed: %v", msg.err)
+			a.lastErrCode, a.lastErrMsg = parseErrorCodeAndMessage(a.err)
+			a.showRecoveryHints = shouldShowRecoveryHints(a.lastErrCode, a.lastErrMsg)
+			return a, nil
+		}
+		if a.config != nil {
+			a.config.APIKey = msg.apiKey
+			if err := a.config.Save(); err != nil {
+				a.err = fmt.Sprintf("save config: %v", err)
+				a.lastErrCode, a.lastErrMsg = parseErrorCodeAndMessage(a.err)
+				a.showRecoveryHints = shouldShowRecoveryHints(a.lastErrCode, a.lastErrMsg)
+				return a, nil
+			}
+		}
+		if a.client != nil {
+			a.client.SetAPIKey(msg.apiKey)
+		}
+		a.err = ""
+		a.lastErrCode = ""
+		a.lastErrMsg = ""
+		a.showRecoveryHints = false
+		return a, a.setToast("success", "Re-login complete. API key refreshed.")
+	case startupCheckedMsg:
+		a.startupChecking = false
+		a.startup.Done = true
+		a.startup.API = classifyStartupAPI(msg.apiErr)
+		if a.startup.API == "ok" {
+			a.startup.Auth = classifyStartupAuth(msg.authErr, a.config)
+			a.startup.Taxonomy = classifyStartupTaxonomy(msg.taxonomyErr)
+		} else {
+			a.startup.Auth = "missing"
+			a.startup.Taxonomy = "failed"
+		}
+		level, text := startupToastCopy(a.startup)
+		return a, a.setToast(level, text)
 	case importExportDoneMsg:
 		if a.importExportOpen {
 			var cmd tea.Cmd
@@ -178,9 +268,6 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a.applySearchSelection(msg)
 
 	case tea.KeyMsg:
-		if a.err != "" {
-			a.err = ""
-		}
 		if a.importExportOpen {
 			var cmd tea.Cmd
 			a.impex, cmd = a.impex.Update(msg)
@@ -206,6 +293,26 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if a.paletteOpen {
 			return a.handlePaletteKeys(msg)
+		}
+		if a.quickstartOpen {
+			return a.handleQuickstartKeys(msg)
+		}
+		if a.showRecoveryHints {
+			switch {
+			case isKey(msg, "r"):
+				return a, a.reloginCmd()
+			case isKey(msg, "s"):
+				a.profile.section = 0
+				return a.switchTab(tabProfile)
+			case isKey(msg, "c"):
+				return a, a.setToast("info", a.recoveryCommand)
+			}
+		}
+		if a.err != "" {
+			a.err = ""
+			a.lastErrCode = ""
+			a.lastErrMsg = ""
+			a.showRecoveryHints = false
 		}
 
 		// Global keys
@@ -285,12 +392,23 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tabProfile:
 		a.profile, cmd = a.profile.Update(msg)
 	}
+	toastCmd := a.toastCmdForMsg(msg)
+	if toastCmd != nil && cmd != nil {
+		return a, tea.Batch(cmd, toastCmd)
+	}
+	if toastCmd != nil {
+		return a, toastCmd
+	}
 	return a, cmd
 }
 
 func (a App) View() string {
 	banner := centerBlockUniform(RenderBanner(), a.width)
 	tabs := centerBlockUniform(a.renderTabs(), a.width)
+	startupPanel := ""
+	if a.startupChecking {
+		startupPanel = "\n\n" + centerBlockUniform(a.renderStartupPanel(), a.width)
+	}
 
 	var content string
 	switch a.tab {
@@ -319,13 +437,6 @@ func (a App) View() string {
 	}
 	content = centerBlockUniform(content, a.width)
 
-	errorBox := ""
-	if a.err != "" {
-		errorBox = "\n\n" + centerBlockUniform(components.ErrorBox("Error", a.err, a.width), a.width)
-	}
-
-	hints := components.StatusBar(a.statusHints(), a.width)
-
 	if a.quitConfirm {
 		content = a.renderQuitConfirm()
 		content = centerBlockUniform(content, a.width)
@@ -338,9 +449,25 @@ func (a App) View() string {
 	} else if a.importExportOpen {
 		content = a.impex.View()
 		content = centerBlockUniform(content, a.width)
+	} else if a.quickstartOpen {
+		content = a.renderQuickstart()
+		content = centerBlockUniform(content, a.width)
 	}
 
-	return fmt.Sprintf("%s\n%s\n\n%s\n\n\n%s%s", banner, tabs, content, hints, errorBox)
+	hints := components.StatusBar(a.statusHints(), a.width)
+
+	feedback := ""
+	if a.err != "" {
+		message := a.err
+		if a.showRecoveryHints {
+			message += "\n\nRecovery: [r] re-login  [s] settings  [c] show command"
+		}
+		feedback = "\n\n" + centerBlockUniform(components.ErrorBox("Error", message, a.width), a.width)
+	} else if a.toast != nil {
+		feedback = "\n\n" + centerBlockUniform(a.renderToast(), a.width)
+	}
+
+	return fmt.Sprintf("%s\n%s%s\n\n%s\n\n\n%s%s", banner, tabs, startupPanel, content, hints, feedback)
 }
 
 func (a *App) switchTab(newTab int) (App, tea.Cmd) {
@@ -432,7 +559,22 @@ func (a App) statusHints() []string {
 			components.Hint("esc", "Back"),
 		}
 	}
-	return a.statusHintsForTab()
+	if a.quickstartOpen {
+		return []string{
+			components.Hint("←/→", "Step"),
+			components.Hint("enter", "Go"),
+			components.Hint("esc", "Skip"),
+		}
+	}
+	hints := a.statusHintsForTab()
+	if a.showRecoveryHints {
+		hints = append(hints,
+			components.Hint("r", "Re-login"),
+			components.Hint("s", "Settings"),
+			components.Hint("c", "Command"),
+		)
+	}
+	return hints
 }
 
 func (a App) statusHintsForTab() []string {
@@ -445,6 +587,12 @@ func (a App) statusHintsForTab() []string {
 
 	switch a.tab {
 	case tabInbox:
+		if a.inbox.confirming || a.inbox.rejectPreview {
+			return append(base,
+				components.Hint("y", "Confirm"),
+				components.Hint("n", "Cancel"),
+			)
+		}
 		if a.inbox.filtering {
 			return append(base,
 				components.Hint("enter", "Apply"),
@@ -830,6 +978,283 @@ func (a App) renderHelp() string {
 func (a App) renderQuitConfirm() string {
 	body := "You have unsaved changes. Quit anyway?"
 	return components.Indent(components.ConfirmDialog("Quit", body), 1)
+}
+
+func (a App) runStartupCheckCmd() tea.Cmd {
+	return func() tea.Msg {
+		var checkClient *api.Client
+		if a.client != nil {
+			checkClient = a.client.WithTimeout(700 * time.Millisecond)
+		} else {
+			apiKey := ""
+			if a.config != nil {
+				apiKey = a.config.APIKey
+			}
+			checkClient = api.NewDefaultClient(apiKey, 700*time.Millisecond)
+		}
+
+		msg := startupCheckedMsg{}
+		if _, err := checkClient.Health(); err != nil {
+			msg.apiErr = err.Error()
+			return msg
+		}
+		if _, err := checkClient.ListKeys(); err != nil {
+			msg.authErr = err.Error()
+		}
+		if _, err := checkClient.ListTaxonomy("scopes", false, "", 1, 0); err != nil {
+			msg.taxonomyErr = err.Error()
+		}
+		return msg
+	}
+}
+
+func (a *App) reloginCmd() tea.Cmd {
+	if a.client == nil || a.config == nil {
+		return func() tea.Msg {
+			return errMsg{err: fmt.Errorf("re-login unavailable; run nebula login")}
+		}
+	}
+	username := strings.TrimSpace(a.config.Username)
+	if username == "" {
+		return func() tea.Msg {
+			return errMsg{err: fmt.Errorf("username missing; run nebula login")}
+		}
+	}
+	return func() tea.Msg {
+		resp, err := a.client.Login(username)
+		if err != nil {
+			return reloginDoneMsg{err: err}
+		}
+		return reloginDoneMsg{apiKey: resp.APIKey}
+	}
+}
+
+func (a *App) setToast(level, text string) tea.Cmd {
+	a.toast = &appToast{
+		level: level,
+		text:  components.SanitizeOneLine(text),
+	}
+	return tea.Tick(2500*time.Millisecond, func(time.Time) tea.Msg {
+		return clearToastMsg{}
+	})
+}
+
+func (a App) renderToast() string {
+	if a.toast == nil {
+		return ""
+	}
+	title := "Info"
+	switch a.toast.level {
+	case "success":
+		title = "Success"
+	case "warning":
+		title = "Warning"
+	case "error":
+		return components.ErrorBox("Error", a.toast.text, a.width)
+	}
+	return components.TitledBox(title, a.toast.text, a.width)
+}
+
+func (a App) renderStartupPanel() string {
+	rows := []components.TableRow{
+		{Label: "API", Value: a.startup.API},
+		{Label: "Auth", Value: a.startup.Auth},
+		{Label: "Taxonomy", Value: a.startup.Taxonomy},
+	}
+	return components.Table("Startup Checks", rows, a.width)
+}
+
+func (a *App) toastCmdForMsg(msg tea.Msg) tea.Cmd {
+	var level, text string
+	switch msg.(type) {
+	case approvalDoneMsg:
+		level, text = "success", "Approval action completed."
+	case entityCreatedMsg:
+		level, text = "success", "Entity created."
+	case entityUpdatedMsg:
+		level, text = "success", "Entity updated."
+	case entityRevertedMsg:
+		level, text = "success", "Entity reverted."
+	case relationshipCreatedMsg:
+		level, text = "success", "Relationship created."
+	case relationshipUpdatedMsg:
+		level, text = "success", "Relationship updated."
+	case knowledgeSavedMsg, knowledgeUpdatedMsg:
+		level, text = "success", "Knowledge saved."
+	case jobCreatedMsg:
+		level, text = "success", "Job created."
+	case jobStatusUpdatedMsg:
+		level, text = "success", "Job status updated."
+	case subtaskCreatedMsg:
+		level, text = "success", "Subtask created."
+	case logCreatedMsg, logUpdatedMsg:
+		level, text = "success", "Log saved."
+	case fileCreatedMsg, fileUpdatedMsg:
+		level, text = "success", "File saved."
+	case protocolCreatedMsg, protocolUpdatedMsg:
+		level, text = "success", "Protocol saved."
+	}
+	if text == "" {
+		return nil
+	}
+	return a.setToast(level, text)
+}
+
+func (a *App) handleQuickstartKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case isBack(msg):
+		return a.finishQuickstart(true)
+	case isKey(msg, "left"):
+		if a.quickstartStep > 0 {
+			a.quickstartStep--
+		}
+	case isKey(msg, "right"), isKey(msg, "tab"):
+		if a.quickstartStep < 2 {
+			a.quickstartStep++
+		}
+	case isEnter(msg):
+		switch a.quickstartStep {
+		case 0:
+			a.tab = tabEntities
+			a.tabNav = false
+			a.entities.view = entitiesViewAdd
+			a.quickstartStep = 1
+			return *a, nil
+		case 1:
+			a.tab = tabKnow
+			a.tabNav = false
+			a.know.view = knowledgeViewAdd
+			a.quickstartStep = 2
+			return *a, nil
+		default:
+			a.tab = tabRelations
+			a.tabNav = false
+			a.rels.view = relsViewCreateSourceSearch
+			return a.finishQuickstart(false)
+		}
+	}
+	return *a, nil
+}
+
+func (a *App) finishQuickstart(skipped bool) (tea.Model, tea.Cmd) {
+	a.quickstartOpen = false
+	a.quickstartStep = 0
+	if a.config != nil {
+		a.config.QuickstartPending = false
+		if err := a.config.Save(); err != nil {
+			a.err = fmt.Sprintf("save config: %v", err)
+			a.lastErrCode, a.lastErrMsg = parseErrorCodeAndMessage(a.err)
+			a.showRecoveryHints = shouldShowRecoveryHints(a.lastErrCode, a.lastErrMsg)
+			return *a, nil
+		}
+	}
+	if skipped {
+		return *a, a.setToast("info", "Quickstart skipped.")
+	}
+	return *a, a.setToast("success", "Quickstart complete.")
+}
+
+func (a App) renderQuickstart() string {
+	type quickstartStep struct {
+		title  string
+		desc   string
+		target string
+	}
+	steps := []quickstartStep{
+		{title: "Step 1/3", desc: "Create your first entity.", target: "Entities -> Add"},
+		{title: "Step 2/3", desc: "Add knowledge to your context graph.", target: "Knowledge -> Add"},
+		{title: "Step 3/3", desc: "Link context with a relationship.", target: "Relationships -> New"},
+	}
+
+	if a.quickstartStep < 0 {
+		a.quickstartStep = 0
+	}
+	if a.quickstartStep >= len(steps) {
+		a.quickstartStep = len(steps) - 1
+	}
+	step := steps[a.quickstartStep]
+	rows := []components.TableRow{
+		{Label: "Step", Value: step.title},
+		{Label: "Action", Value: step.desc},
+		{Label: "Route", Value: step.target},
+	}
+	body := components.Table("Quickstart", rows, a.width) + "\n\n" + MutedStyle.Render("Use <-/-> to change step, Enter to continue, Esc to skip.")
+	return components.Indent(components.TitledBox("Getting Started", body, a.width), 1)
+}
+
+func parseErrorCodeAndMessage(errText string) (string, string) {
+	text := strings.TrimSpace(errText)
+	if text == "" {
+		return "", ""
+	}
+	parts := strings.SplitN(text, ":", 2)
+	if len(parts) != 2 {
+		return "", text
+	}
+	code := strings.TrimSpace(parts[0])
+	if code == "" || strings.HasPrefix(strings.ToUpper(code), "HTTP ") {
+		return "", text
+	}
+	for _, r := range code {
+		if (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '_' {
+			return "", text
+		}
+	}
+	return code, strings.TrimSpace(parts[1])
+}
+
+func shouldShowRecoveryHints(code, msg string) bool {
+	if !strings.EqualFold(strings.TrimSpace(code), "FORBIDDEN") {
+		return false
+	}
+	lower := strings.ToLower(msg)
+	return strings.Contains(lower, "scope") || strings.Contains(lower, "admin")
+}
+
+func classifyStartupAPI(errText string) string {
+	if strings.TrimSpace(errText) == "" {
+		return "ok"
+	}
+	lower := strings.ToLower(errText)
+	if strings.Contains(lower, "timeout") || strings.Contains(lower, "deadline exceeded") {
+		return "timeout"
+	}
+	return "down"
+}
+
+func classifyStartupAuth(errText string, cfg *config.Config) string {
+	if cfg == nil || strings.TrimSpace(cfg.APIKey) == "" {
+		return "missing"
+	}
+	if strings.TrimSpace(errText) == "" {
+		return "ok"
+	}
+	return "invalid"
+}
+
+func classifyStartupTaxonomy(errText string) string {
+	if strings.TrimSpace(errText) == "" {
+		return "ok"
+	}
+	lower := strings.ToLower(errText)
+	switch {
+	case strings.Contains(lower, "forbidden"), strings.Contains(lower, "scope"):
+		return "forbidden"
+	case strings.Contains(lower, "column "), strings.Contains(lower, "relation "), strings.Contains(lower, "schema"):
+		return "schema_error"
+	default:
+		return "failed"
+	}
+}
+
+func startupToastCopy(summary startupSummary) (string, string) {
+	if summary.API == "ok" && summary.Auth == "ok" && summary.Taxonomy == "ok" {
+		return "success", "Startup checks passed: API, auth, and taxonomy are healthy."
+	}
+	if summary.API != "ok" {
+		return "error", fmt.Sprintf("Startup checks failed: API is %s.", summary.API)
+	}
+	return "warning", fmt.Sprintf("Startup checks: auth=%s, taxonomy=%s.", summary.Auth, summary.Taxonomy)
 }
 
 func (a *App) openPalette() {
@@ -1219,7 +1644,7 @@ func centerBlockUniform(s string, width int) string {
 func (a App) canExitToTabNav() bool {
 	switch a.tab {
 	case tabInbox:
-		if a.inbox.detail != nil || a.inbox.rejecting {
+		if a.inbox.detail != nil || a.inbox.rejecting || a.inbox.confirming || a.inbox.rejectPreview {
 			return false
 		}
 		return a.inbox.list == nil || a.inbox.list.Selected() == 0

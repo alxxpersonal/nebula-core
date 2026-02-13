@@ -273,8 +273,12 @@ func (m JobsModel) renderList() string {
 		return MutedStyle.Render("Loading jobs...")
 	}
 	if len(m.items) == 0 {
-		content := MutedStyle.Render("No jobs found.")
-		return components.Box(content, m.width)
+		return components.EmptyStateBox(
+			"Jobs",
+			"No jobs found.",
+			[]string{"Press tab to switch Add/Library", "Press / for command palette"},
+			m.width,
+		)
 	}
 	var rows strings.Builder
 	contentWidth := components.BoxContentWidth(m.width)

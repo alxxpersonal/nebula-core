@@ -136,6 +136,31 @@ func ErrorBox(title, message string, width int) string {
 	return renderBox(errorBorder, width, header+body)
 }
 
+// EmptyStateBox renders a titled empty-state with suggested actions.
+func EmptyStateBox(title, message string, actions []string, width int) string {
+	var b strings.Builder
+	b.WriteString(boxMutedStyle.Render(SanitizeOneLine(message)))
+
+	cleanActions := make([]string, 0, len(actions))
+	for _, action := range actions {
+		item := strings.TrimSpace(SanitizeOneLine(action))
+		if item == "" {
+			continue
+		}
+		cleanActions = append(cleanActions, item)
+	}
+	if len(cleanActions) > 0 {
+		b.WriteString("\n\n")
+		b.WriteString(boxLabelStyle.Render("Try:"))
+		for _, action := range cleanActions {
+			b.WriteString("\n")
+			b.WriteString(boxMutedStyle.Render("  - " + action))
+		}
+	}
+
+	return TitledBox(SanitizeOneLine(title), b.String(), width)
+}
+
 // TitledBox renders a box with a header title.
 func TitledBox(title, content string, width int) string {
 	return titledBoxWithStyle(title, content, width, boxBorder, boxHeaderStyle, lipgloss.Color("#273540"))

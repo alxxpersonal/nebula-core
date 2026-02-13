@@ -285,8 +285,12 @@ func (m LogsModel) renderList() string {
 		return "  " + MutedStyle.Render("Loading logs...")
 	}
 	if len(m.items) == 0 {
-		content := MutedStyle.Render("No logs found.")
-		return components.Box(content, m.width)
+		return components.EmptyStateBox(
+			"Logs",
+			"No logs found.",
+			[]string{"Press tab to switch Add/Library", "Press / for command palette"},
+			m.width,
+		)
 	}
 
 	var rows strings.Builder

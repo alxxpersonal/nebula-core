@@ -36,6 +36,7 @@ type InboxModel struct {
 	confirming    bool
 	confirmBulk   bool
 	rejecting     bool
+	rejectPreview bool
 	rejectBuf     string
 	bulkRejectIDs []string
 	width         int
@@ -67,6 +68,7 @@ func (m InboxModel) Update(msg tea.Msg) (InboxModel, tea.Cmd) {
 	case approvalDoneMsg:
 		m.detail = nil
 		m.rejecting = false
+		m.rejectPreview = false
 		m.rejectBuf = ""
 		m.bulkRejectIDs = nil
 		m.confirming = false
@@ -83,7 +85,7 @@ func (m InboxModel) Update(msg tea.Msg) (InboxModel, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
-		if m.confirmBulk && m.confirming {
+		if m.confirming {
 			switch {
 			case isKey(msg, "y"):
 				m.confirming = false
@@ -93,6 +95,9 @@ func (m InboxModel) Update(msg tea.Msg) (InboxModel, tea.Cmd) {
 				return m, nil
 			}
 			return m, nil
+		}
+		if m.rejectPreview {
+			return m.handleRejectPreview(msg)
 		}
 		if m.filtering {
 			return m.handleFilterInput(msg)
@@ -121,20 +126,14 @@ func (m InboxModel) Update(msg tea.Msg) (InboxModel, tea.Cmd) {
 				return m, m.loadApprovalDiff(item.ID)
 			}
 		case isKey(msg, "a"):
-			if m.confirmBulk && m.selectedCount() > 1 {
-				m.confirming = true
-				return m, nil
-			}
-			return m.approveSelected()
+			m.confirming = true
+			return m, nil
 		case isKey(msg, "A"):
 			if m.selectedCount() == 0 {
 				m.selectAllFiltered()
 			}
-			if m.confirmBulk && m.selectedCount() > 1 {
-				m.confirming = true
-				return m, nil
-			}
-			return m.approveSelected()
+			m.confirming = true
+			return m, nil
 		case isKey(msg, "r"):
 			return m.startReject()
 		case isKey(msg, "f"):
@@ -155,13 +154,22 @@ func (m InboxModel) View() string {
 		return "  " + MutedStyle.Render("Loading approvals...")
 	}
 
-	if m.confirmBulk && m.confirming {
-		count := m.selectedCount()
-		if count == 0 {
-			count = len(m.items)
+	if m.confirming {
+		summary := m.approveSummaryRows()
+		return components.Indent(components.ConfirmPreviewDialog("Approve Requests", summary, m.approveDiffRows(), m.width), 1)
+	}
+
+	if m.rejectPreview {
+		summary := []components.TableRow{
+			{Label: "Action", Value: "reject"},
+			{Label: "Requests", Value: fmt.Sprintf("%d", len(m.bulkRejectIDs))},
+			{Label: "Notes", Value: strings.TrimSpace(m.rejectBuf)},
 		}
-		body := fmt.Sprintf("Approve %d items?", count)
-		return components.Indent(components.ConfirmDialog("Approve", body), 1)
+		diffs := []components.DiffRow{
+			{Label: "status", From: "pending", To: "rejected"},
+			{Label: "review_notes", From: "-", To: strings.TrimSpace(m.rejectBuf)},
+		}
+		return components.Indent(components.ConfirmPreviewDialog("Reject Requests", summary, diffs, m.width), 1)
 	}
 
 	if m.rejecting && m.detail != nil {
@@ -177,13 +185,21 @@ func (m InboxModel) View() string {
 	}
 
 	if len(m.items) == 0 {
-		content := MutedStyle.Render("No pending approvals.")
-		return components.Indent(components.Box(content, m.width), 1)
+		return components.Indent(components.EmptyStateBox(
+			"Inbox",
+			"No pending approvals.",
+			[]string{"Switch tabs with 1-9/0/-", "Open command palette with /"},
+			m.width,
+		), 1)
 	}
 
 	if len(m.filtered) == 0 {
-		content := MutedStyle.Render("No approvals match the filter.")
-		return components.Indent(components.Box(content, m.width), 1)
+		return components.Indent(components.EmptyStateBox(
+			"Inbox",
+			"No approvals match the filter.",
+			[]string{"Press f to update filter", "Press esc to clear"},
+			m.width,
+		), 1)
 	}
 
 	var rows strings.Builder
@@ -248,6 +264,9 @@ func (m InboxModel) loadApprovalDiff(id string) tea.Cmd {
 
 func (m InboxModel) approveSelected() (InboxModel, tea.Cmd) {
 	ids := m.selectedIDs()
+	if len(ids) == 0 && m.detail != nil {
+		ids = append(ids, m.detail.ID)
+	}
 	if len(ids) == 0 {
 		if item, ok := m.selectedItem(); ok {
 			ids = append(ids, item.ID)
@@ -256,6 +275,7 @@ func (m InboxModel) approveSelected() (InboxModel, tea.Cmd) {
 	if len(ids) == 0 {
 		return m, nil
 	}
+	m.detail = nil
 	return m, func() tea.Msg {
 		for _, id := range ids {
 			_, err := m.client.ApproveRequest(id)
@@ -272,15 +292,8 @@ func (m InboxModel) handleDetailKeys(msg tea.KeyMsg) (InboxModel, tea.Cmd) {
 	case isBack(msg):
 		m.detail = nil
 	case isKey(msg, "a"):
-		id := m.detail.ID
-		m.detail = nil
-		return m, func() tea.Msg {
-			_, err := m.client.ApproveRequest(id)
-			if err != nil {
-				return errMsg{err}
-			}
-			return approvalDoneMsg{id}
-		}
+		m.confirming = true
+		return m, nil
 	case isKey(msg, "r"):
 		m.rejecting = true
 		m.rejectBuf = ""
@@ -308,20 +321,10 @@ func (m InboxModel) handleRejectInput(msg tea.KeyMsg) (InboxModel, tea.Cmd) {
 		if len(ids) == 0 {
 			ids = []string{m.detail.ID}
 		}
-		notes := m.rejectBuf
 		m.rejecting = false
-		m.rejectBuf = ""
-		m.detail = nil
-		m.bulkRejectIDs = nil
-		return m, func() tea.Msg {
-			for _, id := range ids {
-				_, err := m.client.RejectRequest(id, notes)
-				if err != nil {
-					return errMsg{err}
-				}
-			}
-			return approvalDoneMsg{""}
-		}
+		m.rejectPreview = true
+		m.bulkRejectIDs = ids
+		return m, nil
 	case isKey(msg, "backspace"):
 		if len(m.rejectBuf) > 0 {
 			m.rejectBuf = m.rejectBuf[:len(m.rejectBuf)-1]
@@ -561,6 +564,7 @@ func (m *InboxModel) startReject() (InboxModel, tea.Cmd) {
 	if len(ids) > 0 {
 		m.bulkRejectIDs = ids
 		m.rejecting = true
+		m.rejectPreview = false
 		m.rejectBuf = ""
 		m.detail = &api.Approval{ID: ids[0]}
 		return *m, nil
@@ -568,10 +572,90 @@ func (m *InboxModel) startReject() (InboxModel, tea.Cmd) {
 	if item, ok := m.selectedItem(); ok {
 		m.detail = &item
 		m.rejecting = true
+		m.rejectPreview = false
 		m.rejectBuf = ""
 		return *m, nil
 	}
 	return *m, nil
+}
+
+func (m InboxModel) handleRejectPreview(msg tea.KeyMsg) (InboxModel, tea.Cmd) {
+	switch {
+	case isKey(msg, "y"):
+		ids := append([]string(nil), m.bulkRejectIDs...)
+		notes := m.rejectBuf
+		m.rejectPreview = false
+		m.rejectBuf = ""
+		m.detail = nil
+		m.bulkRejectIDs = nil
+		return m, func() tea.Msg {
+			for _, id := range ids {
+				_, err := m.client.RejectRequest(id, notes)
+				if err != nil {
+					return errMsg{err}
+				}
+			}
+			return approvalDoneMsg{""}
+		}
+	case isKey(msg, "n"), isBack(msg):
+		m.rejectPreview = false
+		m.rejecting = true
+		return m, nil
+	}
+	return m, nil
+}
+
+func (m InboxModel) approveSummaryRows() []components.TableRow {
+	ids := m.selectedIDs()
+	if len(ids) == 0 && m.detail != nil {
+		ids = append(ids, m.detail.ID)
+	}
+	if len(ids) == 0 {
+		if item, ok := m.selectedItem(); ok {
+			ids = append(ids, item.ID)
+		}
+	}
+
+	rows := []components.TableRow{
+		{Label: "Action", Value: "approve"},
+		{Label: "Requests", Value: fmt.Sprintf("%d", len(ids))},
+	}
+	if len(ids) == 1 {
+		rows = append(rows, components.TableRow{Label: "Request ID", Value: ids[0]})
+	}
+	return rows
+}
+
+func (m InboxModel) approveDiffRows() []components.DiffRow {
+	if m.detail == nil {
+		return nil
+	}
+	raw, ok := m.detail.ChangeDetails["changes"]
+	if !ok {
+		return nil
+	}
+	changesMap, ok := raw.(map[string]any)
+	if !ok {
+		return nil
+	}
+	rows := make([]components.DiffRow, 0, len(changesMap))
+	for field, diff := range changesMap {
+		diffObj, ok := diff.(map[string]any)
+		if !ok {
+			continue
+		}
+		from := formatAny(diffObj["from"])
+		to := formatAny(diffObj["to"])
+		if from == to {
+			continue
+		}
+		rows = append(rows, components.DiffRow{
+			Label: field,
+			From:  from,
+			To:    to,
+		})
+	}
+	return rows
 }
 
 func (m InboxModel) handleFilterInput(msg tea.KeyMsg) (InboxModel, tea.Cmd) {

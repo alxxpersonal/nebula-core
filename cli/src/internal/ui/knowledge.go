@@ -893,7 +893,12 @@ func (m KnowledgeModel) renderList() string {
 	}
 
 	if len(m.items) == 0 {
-		return components.Box(MutedStyle.Render("No knowledge found."), m.width)
+		return components.EmptyStateBox(
+			"Knowledge",
+			"No knowledge found.",
+			[]string{"Press tab to switch Add/Library", "Press / for command palette"},
+			m.width,
+		)
 	}
 
 	var rows strings.Builder

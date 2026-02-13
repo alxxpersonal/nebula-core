@@ -41,6 +41,17 @@ func TestErrorBoxIncludesMessage(t *testing.T) {
 	assert.True(t, strings.Contains(out, "Something broke"))
 }
 
+func TestEmptyStateBoxIncludesActions(t *testing.T) {
+	out := EmptyStateBox("Entities", "No entities found.", []string{"Press n to create", "Press / to search"}, 80)
+	clean := SanitizeText(out)
+
+	assert.Contains(t, clean, "Entities")
+	assert.Contains(t, clean, "No entities found.")
+	assert.Contains(t, clean, "Try:")
+	assert.Contains(t, clean, "Press n to create")
+	assert.Contains(t, clean, "Press / to search")
+}
+
 func TestTruncateRunes(t *testing.T) {
 	assert.Equal(t, "", truncateRunes("hello", 0))
 	assert.Equal(t, "he", truncateRunes("hello", 2))
