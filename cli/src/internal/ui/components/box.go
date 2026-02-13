@@ -166,6 +166,11 @@ func TitledBox(title, content string, width int) string {
 	return titledBoxWithStyle(title, content, width, boxBorder, boxHeaderStyle, lipgloss.Color("#273540"))
 }
 
+// TitledBoxWithHeaderStyle renders a titled box using the default border style but a custom title style.
+func TitledBoxWithHeaderStyle(title, content string, width int, headerStyle lipgloss.Style) string {
+	return titledBoxWithStyle(title, content, width, boxBorder, headerStyle, lipgloss.Color("#273540"))
+}
+
 func titledBoxWithStyle(title, content string, width int, boxStyle, headerStyle lipgloss.Style, borderColor lipgloss.Color) string {
 	if title == "" {
 		return renderBox(boxStyle, width, content)

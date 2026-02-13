@@ -1043,16 +1043,18 @@ func (a App) renderToast() string {
 	if a.toast == nil {
 		return ""
 	}
-	title := "Info"
 	switch a.toast.level {
 	case "success":
-		title = "Success"
+		header := lipgloss.NewStyle().Foreground(ColorSuccess).Bold(true)
+		return components.TitledBoxWithHeaderStyle("Success", a.toast.text, a.width, header)
 	case "warning":
-		title = "Warning"
+		header := lipgloss.NewStyle().Foreground(ColorWarning).Bold(true)
+		return components.TitledBoxWithHeaderStyle("Warning", a.toast.text, a.width, header)
 	case "error":
 		return components.ErrorBox("Error", a.toast.text, a.width)
+	default:
+		return components.TitledBox("Info", a.toast.text, a.width)
 	}
-	return components.TitledBox(title, a.toast.text, a.width)
 }
 
 func (a App) renderStartupPanel() string {
