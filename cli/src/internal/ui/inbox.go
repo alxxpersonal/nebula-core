@@ -252,6 +252,7 @@ func (m InboxModel) View() string {
 	}
 
 	tableRows := make([][]string, 0, len(visible))
+	activeRowRel := -1
 	var previewItem *api.Approval
 	if item, ok := m.selectedItem(); ok {
 		previewItem = &item
@@ -264,21 +265,20 @@ func (m InboxModel) View() string {
 			continue
 		}
 
-		marker := "  "
-		if m.selected[item.ID] && m.list.IsSelected(absIdx) {
-			marker = ">*"
-		} else if m.selected[item.ID] {
-			marker = "* "
-		} else if m.list.IsSelected(absIdx) {
-			marker = "> "
+		checkbox := "[ ]"
+		if m.selected[item.ID] {
+			checkbox = "[x]"
 		}
 
-		fullTitle := marker + " " + approvalTitle(item)
+		fullTitle := checkbox + " " + approvalTitle(item)
 		title := components.ClampTextWidthEllipsis(fullTitle, titleWidth)
 		action := components.ClampTextWidthEllipsis(humanizeApprovalType(item.RequestType), actionWidth)
 		who := components.ClampTextWidthEllipsis(components.SanitizeOneLine(item.AgentName), whoWidth)
 		when := item.CreatedAt.Format("01-02 15:04")
 
+		if m.list.IsSelected(absIdx) {
+			activeRowRel = len(tableRows)
+		}
 		tableRows = append(tableRows, []string{title, action, who, when})
 	}
 
@@ -291,10 +291,10 @@ func (m InboxModel) View() string {
 		countLine = fmt.Sprintf("%s · selected: %d", countLine, count)
 	}
 	countLine = MutedStyle.Render(countLine)
-	table := components.TableGrid(cols, tableRows, tableWidth)
+	table := components.TableGridWithActiveRow(cols, tableRows, tableWidth, activeRowRel)
 	preview := ""
 	if previewItem != nil {
-		preview = renderApprovalPreview(*previewItem, m.selected[previewItem.ID], previewWidth)
+		preview = renderApprovalPreviewBox(*previewItem, m.selected[previewItem.ID], previewWidth)
 	}
 
 	body := table
@@ -603,6 +603,32 @@ func humanizeApprovalType(t string) string {
 	return strings.Join(parts, " ")
 }
 
+var inboxPreviewBoxStyle = lipgloss.NewStyle().
+	Border(lipgloss.RoundedBorder()).
+	BorderForeground(ColorBorder).
+	Padding(1, 2)
+
+func renderApprovalPreviewBox(a api.Approval, picked bool, width int) string {
+	if width <= 0 {
+		return ""
+	}
+
+	contentWidth := width - inboxPreviewBoxStyle.GetHorizontalFrameSize()
+	if contentWidth < 10 {
+		contentWidth = 10
+	}
+	content := renderApprovalPreview(a, picked, contentWidth)
+
+	// lipgloss.Style.Width includes padding but excludes borders, so we only
+	// subtract left/right border widths to hit the target outer width.
+	borderW := inboxPreviewBoxStyle.GetBorderLeftSize() + inboxPreviewBoxStyle.GetBorderRightSize()
+	inner := width - borderW
+	if inner < 1 {
+		inner = 1
+	}
+	return inboxPreviewBoxStyle.Width(inner).Render(content)
+}
+
 func renderApprovalPreview(a api.Approval, picked bool, width int) string {
 	if width <= 0 {
 		return ""
@@ -749,7 +775,11 @@ func padPreviewLines(lines []string, width int) string {
 	}
 	padded := make([]string, 0, len(lines))
 	for _, line := range lines {
-		line = components.ClampTextWidth(line, width)
+		if w := lipgloss.Width(line); w > width {
+			// This should be rare because all preview rows clamp before styling.
+			// If it happens, strip ANSI so we don't break the layout.
+			line = components.ClampTextWidth(components.SanitizeText(line), width)
+		}
 		if w := lipgloss.Width(line); w < width {
 			line += strings.Repeat(" ", width-w)
 		}

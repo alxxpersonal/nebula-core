@@ -19,6 +19,15 @@ type TableColumn struct {
 var gridLineStyle = lipgloss.NewStyle().
 	Foreground(lipgloss.Color("#273540"))
 
+var gridActiveRowStyle = lipgloss.NewStyle().
+	Foreground(lipgloss.Color("#d7d9da")).
+	Background(lipgloss.Color("#1f2530")).
+	Bold(true)
+
+var gridActiveSepStyle = lipgloss.NewStyle().
+	Foreground(lipgloss.Color("#273540")).
+	Background(lipgloss.Color("#1f2530"))
+
 // TableGrid renders a table-like layout using the same rounded border glyphs
 // used by Nebula's box components.
 //
@@ -26,6 +35,12 @@ var gridLineStyle = lipgloss.NewStyle().
 // Callers should pass a tableWidth that fits inside a box content area
 // (typically components.BoxContentWidth(termWidth)).
 func TableGrid(columns []TableColumn, rows [][]string, tableWidth int) string {
+	return TableGridWithActiveRow(columns, rows, tableWidth, -1)
+}
+
+// TableGridWithActiveRow is like TableGrid but highlights one data row by index.
+// activeRow is a 0-based index into rows; pass -1 to disable highlighting.
+func TableGridWithActiveRow(columns []TableColumn, rows [][]string, tableWidth int, activeRow int) string {
 	if tableWidth <= 0 {
 		return ""
 	}
@@ -51,11 +66,11 @@ func TableGrid(columns []TableColumn, rows [][]string, tableWidth int) string {
 
 	// Build header and row lines.
 	var out []string
-	out = append(out, renderGridRow(cols, headerCells(cols), v, tableWidth, true))
+	out = append(out, renderGridRow(cols, headerCells(cols), v, tableWidth, true, false))
 	out = append(out, renderGridRule(cols, cross, h, tableWidth))
 
-	for _, row := range rows {
-		out = append(out, renderGridRow(cols, row, v, tableWidth, false))
+	for i, row := range rows {
+		out = append(out, renderGridRow(cols, row, v, tableWidth, false, i == activeRow))
 	}
 
 	return strings.Join(out, "\n")
@@ -100,13 +115,19 @@ func fitGridColumns(columns []TableColumn, sep string, tableWidth int) []TableCo
 	return fitted
 }
 
-func renderGridRow(columns []TableColumn, cells []string, sep string, tableWidth int, header bool) string {
+func renderGridRow(columns []TableColumn, cells []string, sep string, tableWidth int, header bool, active bool) string {
 	headerStyle := boxLabelStyle
 	if header {
 		headerStyle = boxLabelStyle.Bold(true)
 	}
 
-	sepStyled := gridLineStyle.Inline(true).Render(sep)
+	sepStyle := gridLineStyle
+	cellStyle := lipgloss.NewStyle()
+	if active {
+		sepStyle = gridActiveSepStyle
+		cellStyle = gridActiveRowStyle
+	}
+	sepStyled := sepStyle.Inline(true).Render(sep)
 
 	var b strings.Builder
 	for i, col := range columns {
@@ -123,6 +144,8 @@ func renderGridRow(columns []TableColumn, cells []string, sep string, tableWidth
 		if header {
 			// Inline keeps this cell as exactly one rendered line.
 			rendered = headerStyle.Inline(true).Render(rendered)
+		} else if active {
+			rendered = cellStyle.Inline(true).Render(rendered)
 		}
 		b.WriteString(rendered)
 	}
