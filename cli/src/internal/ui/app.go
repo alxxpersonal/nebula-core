@@ -1292,7 +1292,12 @@ func (a App) renderPalette() string {
 	}
 
 	var b strings.Builder
-	b.WriteString("  > " + query)
+	queryWidth := components.BoxContentWidth(a.width) - 10
+	if queryWidth < 10 {
+		queryWidth = 10
+	}
+	query = components.ClampTextWidthEllipsis(query, queryWidth)
+	b.WriteString(MetaKeyStyle.Render("Command") + MetaPunctStyle.Render(": ") + SelectedStyle.Render(query))
 	b.WriteString(AccentStyle.Render("█"))
 	b.WriteString("\n\n")
 
@@ -1302,19 +1307,50 @@ func (a App) renderPalette() string {
 	} else if len(items) == 0 {
 		b.WriteString(MutedStyle.Render("No matches."))
 	} else {
-		for i, item := range items {
-			label := components.SanitizeOneLine(item.Label)
-			desc := components.SanitizeOneLine(item.Desc)
-			line := fmt.Sprintf("%s  %s", label, MutedStyle.Render(desc))
-			if i == a.paletteIndex {
-				b.WriteString(SelectedStyle.Render("  > " + line))
-			} else {
-				b.WriteString(NormalStyle.Render("    " + line))
-			}
-			if i < len(items)-1 {
-				b.WriteString("\n")
+		contentWidth := components.BoxContentWidth(a.width)
+		sepWidth := 1
+		if br := lipgloss.RoundedBorder().Left; br != "" {
+			sepWidth = lipgloss.Width(br)
+		}
+
+		// 2 columns -> 1 separator.
+		availableCols := contentWidth - sepWidth
+		if availableCols < 20 {
+			availableCols = 20
+		}
+
+		descWidth := 34
+		actionWidth := availableCols - descWidth
+		if actionWidth < 14 {
+			actionWidth = 14
+			descWidth = availableCols - actionWidth
+			if descWidth < 12 {
+				descWidth = 12
 			}
 		}
+
+		cols := []components.TableColumn{
+			{Header: "Action", Width: actionWidth, Align: lipgloss.Left},
+			{Header: "Description", Width: descWidth, Align: lipgloss.Left},
+		}
+
+		rows := make([][]string, 0, len(items))
+		for _, item := range items {
+			label := strings.TrimSpace(components.SanitizeOneLine(item.Label))
+			if label == "" {
+				label = "-"
+			}
+			desc := strings.TrimSpace(components.SanitizeOneLine(item.Desc))
+			if desc == "" {
+				desc = "-"
+			}
+			rows = append(rows, []string{
+				components.ClampTextWidthEllipsis(label, actionWidth),
+				components.ClampTextWidthEllipsis(desc, descWidth),
+			})
+		}
+
+		b.WriteString(components.TableGridWithActiveRow(cols, rows, contentWidth, a.paletteIndex))
 	}
 
 	return components.TitledBox(title, b.String(), a.width)
