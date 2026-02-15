@@ -108,6 +108,40 @@ class TestRequireContext:
         payload = json.loads(str(exc.value))
         assert payload["error"]["code"] == "ENROLLMENT_REQUIRED"
 
+    async def test_require_context_allow_bootstrap_true_returns_none_agent(
+        self, mock_pool, mock_enums
+    ):
+        """Explicit bootstrap opt-in should return None agent without raising."""
+
+        ctx = MagicMock()
+        ctx.request_context.lifespan_context = {
+            "pool": mock_pool,
+            "enums": mock_enums,
+            "agent": None,
+            "bootstrap_mode": True,
+        }
+
+        _, _, agent = await require_context(ctx, allow_bootstrap=True)
+        assert agent is None
+
+    async def test_require_context_allow_bootstrap_false_raises_enrollment_required(
+        self, mock_pool, mock_enums
+    ):
+        """Without bootstrap opt-in, unauthenticated context should error."""
+
+        ctx = MagicMock()
+        ctx.request_context.lifespan_context = {
+            "pool": mock_pool,
+            "enums": mock_enums,
+            "agent": None,
+            "bootstrap_mode": True,
+        }
+
+        with pytest.raises(ValueError) as exc:
+            await require_context(ctx, allow_bootstrap=False)
+        payload = json.loads(str(exc.value))
+        assert payload["error"]["code"] == "ENROLLMENT_REQUIRED"
+
 
 # --- require_pool ---
 

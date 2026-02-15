@@ -157,9 +157,13 @@ async def approve(
     if payload and payload.grant_scopes is not None:
         has_grants = True
         review_details["grant_scopes"] = payload.grant_scopes
-        review_details["grant_scope_ids"] = [
-            str(scope_id) for scope_id in require_scopes(payload.grant_scopes, enums)
-        ]
+        try:
+            review_details["grant_scope_ids"] = [
+                str(scope_id)
+                for scope_id in require_scopes(payload.grant_scopes, enums)
+            ]
+        except ValueError as exc:
+            api_error("INVALID_INPUT", str(exc), 400)
     if payload and payload.grant_requires_approval is not None:
         has_grants = True
         review_details["grant_requires_approval"] = payload.grant_requires_approval

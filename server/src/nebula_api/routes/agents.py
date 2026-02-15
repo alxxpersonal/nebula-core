@@ -99,7 +99,10 @@ async def register_agent(payload: RegisterAgentBody, request: Request) -> JSONRe
     enums = request.app.state.enums
 
     # Resolve scope names to UUIDs
-    scope_ids = require_scopes(payload.requested_scopes, enums)
+    try:
+        scope_ids = require_scopes(payload.requested_scopes, enums)
+    except ValueError as exc:
+        api_error("INVALID_INPUT", str(exc), 400)
 
     pending_status_id = enums.statuses.name_to_id.get("inactive")
     if not pending_status_id:

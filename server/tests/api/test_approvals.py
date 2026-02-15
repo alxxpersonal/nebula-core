@@ -182,6 +182,159 @@ async def test_approve_register_agent_accepts_grant_fields(
 
 
 @pytest.mark.asyncio
+async def test_approve_register_agent_invalid_grant_scope_returns_4xx(
+    api, db_pool, auth_override, enums
+):
+    """Register-agent grant override should reject unknown scope names."""
+
+    auth_override["scopes"] = [enums.scopes.name_to_id["admin"]]
+    inactive_status_id = enums.statuses.name_to_id["inactive"]
+
+    agent = await db_pool.fetchrow(
+        """
+        INSERT INTO agents (name, description, scopes, requires_approval, status_id)
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING *
+        """,
+        "approval-register-agent-invalid-grant",
+        "pending enrollment",
+        [enums.scopes.name_to_id["public"]],
+        True,
+        inactive_status_id,
+    )
+
+    approval = await db_pool.fetchrow(
+        """
+        INSERT INTO approval_requests (request_type, requested_by, change_details, status)
+        VALUES ($1, $2, $3::jsonb, $4)
+        RETURNING *
+        """,
+        "register_agent",
+        agent["id"],
+        json.dumps(
+            {
+                "agent_id": str(agent["id"]),
+                "name": "approval-register-agent-invalid-grant",
+                "requested_scopes": ["public"],
+                "requested_requires_approval": True,
+                "capabilities": [],
+            }
+        ),
+        "pending",
+    )
+
+    r = await api.post(
+        f"/api/approvals/{approval['id']}/approve",
+        json={"grant_scopes": ["public", "not-real"]},
+    )
+    assert r.status_code == 400
+    assert r.json()["detail"]["error"]["code"] == "INVALID_INPUT"
+
+
+@pytest.mark.asyncio
+async def test_reject_register_agent_updates_enrollment_status_and_reason(
+    api, db_pool, auth_override, enums
+):
+    """Rejecting register_agent should mark linked enrollment as rejected with reason."""
+
+    auth_override["scopes"] = [enums.scopes.name_to_id["admin"]]
+    register = await api.post(
+        "/api/agents/register",
+        json={
+            "name": "approval-reject-enrollment-agent",
+            "requested_scopes": ["public"],
+        },
+    )
+    assert register.status_code == 201
+    approval_id = register.json()["data"]["approval_request_id"]
+
+    rejected = await api.post(
+        f"/api/approvals/{approval_id}/reject",
+        json={"review_notes": "insufficient trust evidence"},
+    )
+    assert rejected.status_code == 200
+
+    enrollment = await db_pool.fetchrow(
+        """
+        SELECT status, rejected_reason
+        FROM agent_enrollment_sessions
+        WHERE approval_request_id = $1::uuid
+        """,
+        approval_id,
+    )
+    assert enrollment["status"] == "rejected"
+    assert enrollment["rejected_reason"] == "insufficient trust evidence"
+
+
+@pytest.mark.asyncio
+async def test_approve_register_agent_persists_review_details_shape(
+    api, db_pool, auth_override, enums
+):
+    """Approval review_details should persist both grant names and grant scope ids."""
+
+    auth_override["scopes"] = [enums.scopes.name_to_id["admin"]]
+    inactive_status_id = enums.statuses.name_to_id["inactive"]
+
+    agent = await db_pool.fetchrow(
+        """
+        INSERT INTO agents (name, description, scopes, requires_approval, status_id)
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING *
+        """,
+        "approval-register-agent-review-shape",
+        "pending enrollment",
+        [enums.scopes.name_to_id["public"]],
+        True,
+        inactive_status_id,
+    )
+
+    approval = await db_pool.fetchrow(
+        """
+        INSERT INTO approval_requests (request_type, requested_by, change_details, status)
+        VALUES ($1, $2, $3::jsonb, $4)
+        RETURNING *
+        """,
+        "register_agent",
+        agent["id"],
+        json.dumps(
+            {
+                "agent_id": str(agent["id"]),
+                "name": "approval-register-agent-review-shape",
+                "requested_scopes": ["public"],
+                "requested_requires_approval": True,
+                "capabilities": [],
+            }
+        ),
+        "pending",
+    )
+
+    r = await api.post(
+        f"/api/approvals/{approval['id']}/approve",
+        json={
+            "grant_scopes": ["public", "code"],
+            "grant_requires_approval": False,
+        },
+    )
+    assert r.status_code == 200
+
+    approval_after = await db_pool.fetchrow(
+        "SELECT review_details FROM approval_requests WHERE id = $1::uuid",
+        approval["id"],
+    )
+    review_details = approval_after["review_details"]
+    if isinstance(review_details, str):
+        review_details = json.loads(review_details)
+
+    assert review_details["grant_scopes"] == ["public", "code"]
+    assert review_details["grant_requires_approval"] is False
+    assert len(review_details["grant_scope_ids"]) == 2
+    assert set(review_details["grant_scope_ids"]) == {
+        str(enums.scopes.name_to_id["public"]),
+        str(enums.scopes.name_to_id["code"]),
+    }
+
+
+@pytest.mark.asyncio
 async def test_reject_request(api, pending_approval, auth_override, enums):
     """Test reject request."""
     auth_override["scopes"] = [enums.scopes.name_to_id["admin"]]

@@ -27,6 +27,36 @@ async def test_register_agent_success(api_no_auth, db_pool, enums):
     assert "approval_request_id" in data
 
 
+async def test_register_agent_returns_registration_and_enrollment_token(api_no_auth):
+    """Register response should include registration id and one-time enrollment token."""
+
+    r = await api_no_auth.post(
+        "/api/agents/register",
+        json={
+            "name": "register-token-test-agent",
+            "requested_scopes": ["public"],
+        },
+    )
+    assert r.status_code == 201
+    data = r.json()["data"]
+    assert data["status"] == "pending_approval"
+    assert data["registration_id"]
+    assert data["enrollment_token"].startswith("nbe_")
+
+
+async def test_register_agent_invalid_scope_returns_4xx(api_no_auth):
+    """Register should reject unknown scope names."""
+
+    r = await api_no_auth.post(
+        "/api/agents/register",
+        json={
+            "name": "register-invalid-scope-agent",
+            "requested_scopes": ["not-a-real-scope"],
+        },
+    )
+    assert 400 <= r.status_code < 500
+
+
 async def test_register_duplicate_agent_returns_409(api_no_auth, test_agent_row):
     """Registering an agent with an existing name returns 409."""
 
@@ -37,6 +67,20 @@ async def test_register_duplicate_agent_returns_409(api_no_auth, test_agent_row)
         },
     )
     assert r.status_code == 409
+
+
+async def test_register_agent_requires_unique_name_under_race(api_no_auth):
+    """Sequential duplicate register calls should enforce unique name constraint."""
+
+    payload = {
+        "name": "register-race-agent",
+        "requested_scopes": ["public"],
+    }
+    first = await api_no_auth.post("/api/agents/register", json=payload)
+    second = await api_no_auth.post("/api/agents/register", json=payload)
+
+    assert first.status_code == 201
+    assert second.status_code == 409
 
 
 async def test_agent_key_authenticates(api_agent_auth, test_agent_row):

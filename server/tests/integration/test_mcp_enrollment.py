@@ -50,6 +50,36 @@ async def test_bootstrap_blocks_non_enroll_tools(bootstrap_mcp_context):
     ]
 
 
+async def test_enroll_tools_reject_authenticated_agent_context(mock_mcp_context):
+    """Enroll bootstrap tools should reject authenticated agent contexts."""
+
+    name = f"mcp-enroll-{uuid4().hex[:8]}"
+    with pytest.raises(ValueError, match="Agent already authenticated"):
+        await agent_enroll_start(
+            AgentEnrollStartInput(name=name, requested_scopes=["public"]),
+            mock_mcp_context,
+        )
+
+    with pytest.raises(ValueError, match="Agent already authenticated"):
+        await agent_enroll_wait(
+            AgentEnrollWaitInput(
+                registration_id=str(uuid4()),
+                enrollment_token="nbe_fake",
+                timeout_seconds=1,
+            ),
+            mock_mcp_context,
+        )
+
+    with pytest.raises(ValueError, match="Agent already authenticated"):
+        await agent_enroll_redeem(
+            AgentEnrollRedeemInput(
+                registration_id=str(uuid4()),
+                enrollment_token="nbe_fake",
+            ),
+            mock_mcp_context,
+        )
+
+
 async def test_enroll_start_creates_pending_approval(bootstrap_mcp_context, db_pool):
     """Enrollment start should create approval + registration token."""
 
@@ -76,6 +106,36 @@ async def test_enroll_start_creates_pending_approval(bootstrap_mcp_context, db_p
     assert approval["request_type"] == "register_agent"
 
 
+async def test_enroll_start_rejects_invalid_scope_name(bootstrap_mcp_context):
+    """Enrollment start should reject unknown scope names."""
+
+    name = f"mcp-enroll-{uuid4().hex[:8]}"
+    with pytest.raises(ValueError, match="Unknown scope"):
+        await agent_enroll_start(
+            AgentEnrollStartInput(
+                name=name,
+                requested_scopes=["definitely-not-a-scope"],
+            ),
+            bootstrap_mcp_context,
+        )
+
+
+async def test_enroll_start_rejects_duplicate_agent_name(bootstrap_mcp_context):
+    """Enrollment start should reject duplicate agent name reuse."""
+
+    name = f"mcp-enroll-{uuid4().hex[:8]}"
+    await agent_enroll_start(
+        AgentEnrollStartInput(name=name, requested_scopes=["public"]),
+        bootstrap_mcp_context,
+    )
+
+    with pytest.raises(ValueError, match="already exists"):
+        await agent_enroll_start(
+            AgentEnrollStartInput(name=name, requested_scopes=["public"]),
+            bootstrap_mcp_context,
+        )
+
+
 async def test_enroll_wait_timeout_returns_pending(bootstrap_mcp_context):
     """Wait should return pending state and retry hint when no reviewer action occurred."""
 
@@ -95,6 +155,85 @@ async def test_enroll_wait_timeout_returns_pending(bootstrap_mcp_context):
     assert waited["status"] == "pending_approval"
     assert waited["retry_after_ms"] >= 1000
     assert waited["can_redeem"] is False
+
+
+async def test_enroll_wait_caps_timeout_bounds(bootstrap_mcp_context):
+    """Enrollment wait should accept boundary timeout values 1 and 60."""
+
+    name = f"mcp-enroll-{uuid4().hex[:8]}"
+    started = await agent_enroll_start(
+        AgentEnrollStartInput(name=name, requested_scopes=["public"]),
+        bootstrap_mcp_context,
+    )
+
+    waited_min = await agent_enroll_wait(
+        AgentEnrollWaitInput(
+            registration_id=started["registration_id"],
+            enrollment_token=started["enrollment_token"],
+            timeout_seconds=1,
+        ),
+        bootstrap_mcp_context,
+    )
+    assert waited_min["status"] == "pending_approval"
+
+    waited_max = await agent_enroll_wait(
+        AgentEnrollWaitInput(
+            registration_id=started["registration_id"],
+            enrollment_token=started["enrollment_token"],
+            timeout_seconds=60,
+        ),
+        bootstrap_mcp_context,
+    )
+    assert waited_max["status"] == "pending_approval"
+
+
+async def test_enroll_wait_rejects_invalid_token(bootstrap_mcp_context):
+    """Enrollment wait should reject an invalid token."""
+
+    name = f"mcp-enroll-{uuid4().hex[:8]}"
+    started = await agent_enroll_start(
+        AgentEnrollStartInput(name=name, requested_scopes=["public"]),
+        bootstrap_mcp_context,
+    )
+
+    with pytest.raises(ValueError, match="Invalid enrollment token"):
+        await agent_enroll_wait(
+            AgentEnrollWaitInput(
+                registration_id=started["registration_id"],
+                enrollment_token="nbe_totally_wrong",
+                timeout_seconds=1,
+            ),
+            bootstrap_mcp_context,
+        )
+
+
+async def test_enroll_wait_rejects_cross_session_token(bootstrap_mcp_context):
+    """Enrollment wait should reject token/session mismatches."""
+
+    first = await agent_enroll_start(
+        AgentEnrollStartInput(
+            name=f"mcp-enroll-{uuid4().hex[:8]}",
+            requested_scopes=["public"],
+        ),
+        bootstrap_mcp_context,
+    )
+    second = await agent_enroll_start(
+        AgentEnrollStartInput(
+            name=f"mcp-enroll-{uuid4().hex[:8]}",
+            requested_scopes=["public"],
+        ),
+        bootstrap_mcp_context,
+    )
+
+    with pytest.raises(ValueError, match="Invalid enrollment token"):
+        await agent_enroll_wait(
+            AgentEnrollWaitInput(
+                registration_id=second["registration_id"],
+                enrollment_token=first["enrollment_token"],
+                timeout_seconds=1,
+            ),
+            bootstrap_mcp_context,
+        )
 
 
 async def test_enroll_approve_with_grants_applies_final_scope_and_trust(
@@ -181,6 +320,72 @@ async def test_enroll_reject_returns_reason(bootstrap_mcp_context, db_pool, test
     assert waited["can_redeem"] is False
 
 
+async def test_enroll_redeem_rejects_invalid_token(
+    bootstrap_mcp_context, db_pool, enums, test_entity
+):
+    """Enrollment redeem should reject invalid token values."""
+
+    name = f"mcp-enroll-{uuid4().hex[:8]}"
+    started = await agent_enroll_start(
+        AgentEnrollStartInput(name=name, requested_scopes=["public"]),
+        bootstrap_mcp_context,
+    )
+    session = await _get_enrollment_row(db_pool, started["registration_id"])
+    await do_approve(
+        db_pool,
+        enums,
+        str(session["approval_request_id"]),
+        str(test_entity["id"]),
+    )
+
+    with pytest.raises(ValueError, match="Invalid enrollment token"):
+        await agent_enroll_redeem(
+            AgentEnrollRedeemInput(
+                registration_id=started["registration_id"],
+                enrollment_token="nbe_invalid",
+            ),
+            bootstrap_mcp_context,
+        )
+
+
+async def test_enroll_redeem_rejects_cross_session_token(
+    bootstrap_mcp_context, db_pool, enums, test_entity
+):
+    """Enrollment redeem should reject token/session mismatches."""
+
+    first = await agent_enroll_start(
+        AgentEnrollStartInput(
+            name=f"mcp-enroll-{uuid4().hex[:8]}",
+            requested_scopes=["public"],
+        ),
+        bootstrap_mcp_context,
+    )
+    second = await agent_enroll_start(
+        AgentEnrollStartInput(
+            name=f"mcp-enroll-{uuid4().hex[:8]}",
+            requested_scopes=["public"],
+        ),
+        bootstrap_mcp_context,
+    )
+
+    second_session = await _get_enrollment_row(db_pool, second["registration_id"])
+    await do_approve(
+        db_pool,
+        enums,
+        str(second_session["approval_request_id"]),
+        str(test_entity["id"]),
+    )
+
+    with pytest.raises(ValueError, match="Invalid enrollment token"):
+        await agent_enroll_redeem(
+            AgentEnrollRedeemInput(
+                registration_id=second["registration_id"],
+                enrollment_token=first["enrollment_token"],
+            ),
+            bootstrap_mcp_context,
+        )
+
+
 async def test_enroll_redeem_is_one_time(
     bootstrap_mcp_context, db_pool, enums, test_entity
 ):
@@ -218,6 +423,44 @@ async def test_enroll_redeem_is_one_time(
             ),
             bootstrap_mcp_context,
         )
+
+
+async def test_enroll_wait_reports_redeemed_after_successful_redeem(
+    bootstrap_mcp_context, db_pool, enums, test_entity
+):
+    """Enrollment wait should report redeemed once key is issued."""
+
+    name = f"mcp-enroll-{uuid4().hex[:8]}"
+    started = await agent_enroll_start(
+        AgentEnrollStartInput(name=name, requested_scopes=["public"]),
+        bootstrap_mcp_context,
+    )
+    session = await _get_enrollment_row(db_pool, started["registration_id"])
+    await do_approve(
+        db_pool,
+        enums,
+        str(session["approval_request_id"]),
+        str(test_entity["id"]),
+    )
+
+    await agent_enroll_redeem(
+        AgentEnrollRedeemInput(
+            registration_id=started["registration_id"],
+            enrollment_token=started["enrollment_token"],
+        ),
+        bootstrap_mcp_context,
+    )
+
+    waited = await agent_enroll_wait(
+        AgentEnrollWaitInput(
+            registration_id=started["registration_id"],
+            enrollment_token=started["enrollment_token"],
+            timeout_seconds=1,
+        ),
+        bootstrap_mcp_context,
+    )
+    assert waited["status"] == "redeemed"
+    assert waited["can_redeem"] is False
 
 
 async def test_enroll_expired_wait_and_redeem(bootstrap_mcp_context, db_pool):
