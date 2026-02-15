@@ -79,13 +79,11 @@ func renderGridRow(columns []TableColumn, cells []string, sep string, tableWidth
 		if i < len(cells) {
 			text = cells[i]
 		}
-		// Caller should sanitize user-provided strings. We still ensure a single line.
-		text = SanitizeOneLine(text)
 
-		style := lipgloss.NewStyle().Width(w).MaxWidth(w).Align(col.Align)
-		rendered := style.Render(text)
+		rendered := renderGridCell(text, w, col.Align)
 		if header {
-			rendered = headerStyle.Render(rendered)
+			// Inline keeps this cell as exactly one rendered line.
+			rendered = headerStyle.Inline(true).Render(rendered)
 		}
 		b.WriteString(rendered)
 	}
@@ -97,6 +95,30 @@ func renderGridRow(columns []TableColumn, cells []string, sep string, tableWidth
 		line = truncateRunes(line, tableWidth)
 	}
 	return line
+}
+
+func renderGridCell(text string, width int, align lipgloss.Position) string {
+	if width <= 0 {
+		return ""
+	}
+
+	clamped := ClampTextWidth(text, width)
+	w := lipgloss.Width(clamped)
+	if w >= width {
+		return truncateRunes(clamped, width)
+	}
+
+	pad := width - w
+	switch align {
+	case lipgloss.Right:
+		return strings.Repeat(" ", pad) + clamped
+	case lipgloss.Center:
+		left := pad / 2
+		right := pad - left
+		return strings.Repeat(" ", left) + clamped + strings.Repeat(" ", right)
+	default:
+		return clamped + strings.Repeat(" ", pad)
+	}
 }
 
 func renderGridRule(columns []TableColumn, horiz, cross, sep string, tableWidth int) string {
