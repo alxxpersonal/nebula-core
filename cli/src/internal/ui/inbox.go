@@ -205,7 +205,13 @@ func (m InboxModel) View() string {
 
 	contentWidth := components.BoxContentWidth(m.width)
 	visible := m.list.Visible()
+	// BoxContentWidth is based on border+padding, but our box rendering style
+	// sets lipgloss.Width in a way that reduces the usable content area further.
+	// Keep the table inside the actual rendered content width to prevent wrap.
 	tableWidth := contentWidth
+	if tableWidth > 4 {
+		tableWidth -= 4
+	}
 	sepWidth := 1
 	if b := lipgloss.RoundedBorder().Left; b != "" {
 		sepWidth = lipgloss.Width(b)
@@ -217,17 +223,17 @@ func (m InboxModel) View() string {
 		availableCols = 30
 	}
 
-	titleWidth := availableCols - (2 + 14 + 10 + 14 + 16)
-	if titleWidth < 12 {
-		titleWidth = 12
+	titleWidth := availableCols - (2 + 14 + 9 + 14 + 11)
+	if titleWidth < 10 {
+		titleWidth = 10
 	}
 	cols := []components.TableColumn{
 		{Header: "", Width: 2, Align: lipgloss.Left},
 		{Header: "Title", Width: titleWidth, Align: lipgloss.Left},
 		{Header: "Action", Width: 14, Align: lipgloss.Left},
-		{Header: "Status", Width: 10, Align: lipgloss.Left},
+		{Header: "Status", Width: 9, Align: lipgloss.Left},
 		{Header: "Who", Width: 14, Align: lipgloss.Left},
-		{Header: "At", Width: 16, Align: lipgloss.Left},
+		{Header: "At", Width: 11, Align: lipgloss.Left},
 	}
 
 	tableRows := make([][]string, 0, len(visible))
@@ -252,7 +258,7 @@ func (m InboxModel) View() string {
 		action := humanizeApprovalType(item.RequestType)
 		status := components.SanitizeOneLine(item.Status)
 		who := components.SanitizeOneLine(item.AgentName)
-		when := item.CreatedAt.Format("2006-01-02 15:04")
+		when := item.CreatedAt.Format("01-02 15:04")
 
 		tableRows = append(tableRows, []string{marker, title, action, status, who, when})
 	}
