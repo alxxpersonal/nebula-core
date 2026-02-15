@@ -288,13 +288,7 @@ func (m ProfileModel) renderTaxonomy() string {
 		filterText,
 	)
 
-	previewWidth := contentWidth * 35 / 100
-	if previewWidth < 40 {
-		previewWidth = 40
-	}
-	if previewWidth > 60 {
-		previewWidth = 60
-	}
+	previewWidth := preferredPreviewWidth(contentWidth)
 
 	gap := 3
 	tableWidth := contentWidth

@@ -904,13 +904,7 @@ func (m EntitiesModel) renderList() string {
 	contentWidth := components.BoxContentWidth(m.width)
 	showCheckboxes := m.bulkCount() > 0
 
-	previewWidth := contentWidth * 35 / 100
-	if previewWidth < 40 {
-		previewWidth = 40
-	}
-	if previewWidth > 60 {
-		previewWidth = 60
-	}
+	previewWidth := preferredPreviewWidth(contentWidth)
 
 	gap := 3
 	tableWidth := contentWidth
@@ -935,7 +929,7 @@ func (m EntitiesModel) renderList() string {
 	}
 
 	typeWidth := 12
-	statusWidth := 10
+	statusWidth := 11
 	atWidth := 11
 	nameWidth := availableCols - (typeWidth + statusWidth + atWidth)
 	if nameWidth < 12 {
@@ -1382,13 +1376,7 @@ func (m EntitiesModel) renderHistory() string {
 	contentWidth := components.BoxContentWidth(m.width)
 	visible := m.historyList.Visible()
 
-	previewWidth := contentWidth * 35 / 100
-	if previewWidth < 40 {
-		previewWidth = 40
-	}
-	if previewWidth > 60 {
-		previewWidth = 60
-	}
+	previewWidth := preferredPreviewWidth(contentWidth)
 
 	gap := 3
 	tableWidth := contentWidth
@@ -2135,13 +2123,7 @@ func (m EntitiesModel) renderRelate() string {
 		contentWidth := components.BoxContentWidth(m.width)
 		visible := m.relateList.Visible()
 
-		previewWidth := contentWidth * 35 / 100
-		if previewWidth < 40 {
-			previewWidth = 40
-		}
-		if previewWidth > 60 {
-			previewWidth = 60
-		}
+		previewWidth := preferredPreviewWidth(contentWidth)
 
 		gap := 3
 		tableWidth := contentWidth
@@ -2166,7 +2148,7 @@ func (m EntitiesModel) renderRelate() string {
 		}
 
 		typeWidth := 14
-		statusWidth := 10
+		statusWidth := 11
 		nameWidth := availableCols - (typeWidth + statusWidth)
 		if nameWidth < 16 {
 			nameWidth = 16

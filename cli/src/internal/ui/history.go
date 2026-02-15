@@ -301,13 +301,7 @@ func (m HistoryModel) renderList() string {
 	contentWidth := components.BoxContentWidth(m.width)
 	visible := m.list.Visible()
 
-	previewWidth := contentWidth * 35 / 100
-	if previewWidth < 40 {
-		previewWidth = 40
-	}
-	if previewWidth > 60 {
-		previewWidth = 60
-	}
+	previewWidth := preferredPreviewWidth(contentWidth)
 
 	gap := 3
 	tableWidth := contentWidth
@@ -332,8 +326,8 @@ func (m HistoryModel) renderList() string {
 	}
 
 	atWidth := 11
-	actionWidth := 8
-	tableNameWidth := 14
+	actionWidth := 6
+	tableNameWidth := 17
 	actorWidth := availableCols - (atWidth + actionWidth + tableNameWidth)
 	if actorWidth < 14 {
 		actorWidth = 14
@@ -470,13 +464,7 @@ func (m HistoryModel) renderScopes() string {
 	contentWidth := components.BoxContentWidth(m.width)
 	visible := m.scopeList.Visible()
 
-	previewWidth := contentWidth * 35 / 100
-	if previewWidth < 40 {
-		previewWidth = 40
-	}
-	if previewWidth > 60 {
-		previewWidth = 60
-	}
+	previewWidth := preferredPreviewWidth(contentWidth)
 
 	gap := 3
 	tableWidth := contentWidth
@@ -595,13 +583,7 @@ func (m HistoryModel) renderActors() string {
 	contentWidth := components.BoxContentWidth(m.width)
 	visible := m.actorList.Visible()
 
-	previewWidth := contentWidth * 35 / 100
-	if previewWidth < 40 {
-		previewWidth = 40
-	}
-	if previewWidth > 60 {
-		previewWidth = 60
-	}
+	previewWidth := preferredPreviewWidth(contentWidth)
 
 	gap := 3
 	tableWidth := contentWidth

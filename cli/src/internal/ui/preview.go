@@ -15,6 +15,26 @@ var previewBoxStyle = lipgloss.NewStyle().
 	BorderForeground(ColorBorder).
 	Padding(1, 2)
 
+const (
+	previewWidthPercent = 32
+	previewMinWidth     = 38
+	previewMaxWidth     = 56
+)
+
+func preferredPreviewWidth(contentWidth int) int {
+	if contentWidth <= 0 {
+		return previewMinWidth
+	}
+	previewWidth := contentWidth * previewWidthPercent / 100
+	if previewWidth < previewMinWidth {
+		previewWidth = previewMinWidth
+	}
+	if previewWidth > previewMaxWidth {
+		previewWidth = previewMaxWidth
+	}
+	return previewWidth
+}
+
 func previewBoxContentWidth(width int) int {
 	if width <= 0 {
 		return 0

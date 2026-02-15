@@ -905,13 +905,7 @@ func (m KnowledgeModel) renderList() string {
 	contentWidth := components.BoxContentWidth(m.width)
 	visible := m.list.Visible()
 
-	previewWidth := contentWidth * 35 / 100
-	if previewWidth < 40 {
-		previewWidth = 40
-	}
-	if previewWidth > 60 {
-		previewWidth = 60
-	}
+	previewWidth := preferredPreviewWidth(contentWidth)
 
 	gap := 3
 	tableWidth := contentWidth
@@ -936,7 +930,7 @@ func (m KnowledgeModel) renderList() string {
 	}
 
 	typeWidth := 10
-	statusWidth := 10
+	statusWidth := 11
 	atWidth := 11
 	titleWidth := availableCols - (typeWidth + statusWidth + atWidth)
 	if titleWidth < 12 {
@@ -1544,13 +1538,7 @@ func (m KnowledgeModel) renderLinkSearch() string {
 		contentWidth := components.BoxContentWidth(m.width)
 		visible := m.linkList.Visible()
 
-		previewWidth := contentWidth * 35 / 100
-		if previewWidth < 40 {
-			previewWidth = 40
-		}
-		if previewWidth > 60 {
-			previewWidth = 60
-		}
+		previewWidth := preferredPreviewWidth(contentWidth)
 
 		gap := 3
 		tableWidth := contentWidth
@@ -1575,7 +1563,7 @@ func (m KnowledgeModel) renderLinkSearch() string {
 		}
 
 		typeWidth := 14
-		statusWidth := 10
+		statusWidth := 11
 		nameWidth := availableCols - (typeWidth + statusWidth)
 		if nameWidth < 16 {
 			nameWidth = 16

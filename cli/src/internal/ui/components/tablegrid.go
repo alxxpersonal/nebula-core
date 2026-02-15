@@ -16,6 +16,11 @@ type TableColumn struct {
 	Align  lipgloss.Position
 }
 
+const (
+	tableGridInset      = 0
+	tableGridLeftOffset = 2
+)
+
 var gridLineStyle = lipgloss.NewStyle().
 	Foreground(lipgloss.Color("#273540"))
 
@@ -27,6 +32,10 @@ var gridActiveRowStyle = lipgloss.NewStyle().
 var gridActiveSepStyle = lipgloss.NewStyle().
 	Foreground(lipgloss.Color("#273540")).
 	Background(lipgloss.Color("#1f2530"))
+
+var gridSelectedMarkStyle = lipgloss.NewStyle().
+	Foreground(lipgloss.Color("#d1606b")).
+	Bold(true)
 
 // TableGrid renders a table-like layout using the same rounded border glyphs
 // used by Nebula's box components.
@@ -92,6 +101,10 @@ func fitGridColumns(columns []TableColumn, sep string, tableWidth int) []TableCo
 	if sepW < 1 {
 		sepW = 1
 	}
+	contentWidth := tableWidth - tableGridLeftOffset - (tableGridInset * 2)
+	if contentWidth < len(fitted) {
+		contentWidth = len(fitted)
+	}
 
 	sum := 0
 	for i := range fitted {
@@ -105,7 +118,7 @@ func fitGridColumns(columns []TableColumn, sep string, tableWidth int) []TableCo
 	if len(fitted) > 1 {
 		expected += (len(fitted) - 1) * sepW
 	}
-	delta := tableWidth - expected
+	delta := contentWidth - expected
 	if len(fitted) > 0 && delta != 0 {
 		fitted[len(fitted)-1].Width += delta
 		if fitted[len(fitted)-1].Width < 1 {
@@ -130,6 +143,7 @@ func renderGridRow(columns []TableColumn, cells []string, sep string, tableWidth
 	sepStyled := sepStyle.Inline(true).Render(sep)
 
 	var b strings.Builder
+	b.WriteString(strings.Repeat(" ", tableGridLeftOffset+tableGridInset))
 	for i, col := range columns {
 		if i > 0 {
 			b.WriteString(sepStyled)
@@ -147,6 +161,9 @@ func renderGridRow(columns []TableColumn, cells []string, sep string, tableWidth
 		} else if active {
 			rendered = cellStyle.Inline(true).Render(rendered)
 		}
+		if !header {
+			rendered = strings.ReplaceAll(rendered, "[X]", gridSelectedMarkStyle.Render("[X]"))
+		}
 		b.WriteString(rendered)
 	}
 
@@ -162,6 +179,7 @@ func renderGridRule(columns []TableColumn, cross, horiz string, tableWidth int) 
 		horiz = "-"
 	}
 	var b strings.Builder
+	b.WriteString(strings.Repeat(" ", tableGridLeftOffset+tableGridInset))
 	for i, col := range columns {
 		w := col.Width
 		if w < 1 {

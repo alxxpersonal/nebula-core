@@ -205,13 +205,7 @@ func (m InboxModel) View() string {
 
 	contentWidth := components.BoxContentWidth(m.width)
 	visible := m.list.Visible()
-	previewWidth := contentWidth * 35 / 100
-	if previewWidth < 38 {
-		previewWidth = 38
-	}
-	if previewWidth > 56 {
-		previewWidth = 56
-	}
+	previewWidth := preferredPreviewWidth(contentWidth)
 
 	gap := 3
 	tableWidth := contentWidth
@@ -270,7 +264,7 @@ func (m InboxModel) View() string {
 		if showCheckboxes {
 			checkbox := "[ ]"
 			if m.selected[item.ID] {
-				checkbox = "[x]"
+				checkbox = "[X]"
 			}
 			fullTitle = checkbox + " " + fullTitle
 		}

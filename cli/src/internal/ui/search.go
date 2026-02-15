@@ -174,13 +174,7 @@ func (m SearchModel) View() string {
 		contentWidth := components.BoxContentWidth(m.width)
 		visible := m.list.Visible()
 
-		previewWidth := contentWidth * 35 / 100
-		if previewWidth < 40 {
-			previewWidth = 40
-		}
-		if previewWidth > 60 {
-			previewWidth = 60
-		}
+		previewWidth := preferredPreviewWidth(contentWidth)
 
 		gap := 3
 		tableWidth := contentWidth

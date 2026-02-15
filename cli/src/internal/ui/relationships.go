@@ -301,13 +301,7 @@ func (m RelationshipsModel) renderList() string {
 	contentWidth := components.BoxContentWidth(m.width)
 	visible := m.list.Visible()
 
-	previewWidth := contentWidth * 35 / 100
-	if previewWidth < 40 {
-		previewWidth = 40
-	}
-	if previewWidth > 60 {
-		previewWidth = 60
-	}
+	previewWidth := preferredPreviewWidth(contentWidth)
 
 	gap := 3
 	tableWidth := contentWidth
@@ -332,7 +326,7 @@ func (m RelationshipsModel) renderList() string {
 	}
 
 	relWidth := 14
-	statusWidth := 10
+	statusWidth := 11
 	atWidth := 11
 	edgeWidth := availableCols - (relWidth + statusWidth + atWidth)
 	if edgeWidth < 12 {
@@ -861,13 +855,7 @@ func (m RelationshipsModel) renderCreateSearch(title string) string {
 		contentWidth := components.BoxContentWidth(m.width)
 		visible := m.createList.Visible()
 
-		previewWidth := contentWidth * 35 / 100
-		if previewWidth < 40 {
-			previewWidth = 40
-		}
-		if previewWidth > 60 {
-			previewWidth = 60
-		}
+		previewWidth := preferredPreviewWidth(contentWidth)
 
 		gap := 3
 		tableWidth := contentWidth
@@ -892,7 +880,7 @@ func (m RelationshipsModel) renderCreateSearch(title string) string {
 		}
 
 		typeWidth := 14
-		statusWidth := 10
+		statusWidth := 11
 		nameWidth := availableCols - (typeWidth + statusWidth)
 		if nameWidth < 16 {
 			nameWidth = 16
@@ -983,13 +971,7 @@ func (m RelationshipsModel) renderCreateType() string {
 		contentWidth := components.BoxContentWidth(m.width)
 		visible := m.createTypeList.Visible()
 
-		previewWidth := contentWidth * 35 / 100
-		if previewWidth < 40 {
-			previewWidth = 40
-		}
-		if previewWidth > 60 {
-			previewWidth = 60
-		}
+		previewWidth := preferredPreviewWidth(contentWidth)
 
 		gap := 3
 		tableWidth := contentWidth

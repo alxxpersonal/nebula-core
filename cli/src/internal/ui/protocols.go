@@ -322,13 +322,7 @@ func (m ProtocolsModel) renderList() string {
 	contentWidth := components.BoxContentWidth(m.width)
 	visible := m.list.Visible()
 
-	previewWidth := contentWidth * 35 / 100
-	if previewWidth < 40 {
-		previewWidth = 40
-	}
-	if previewWidth > 60 {
-		previewWidth = 60
-	}
+	previewWidth := preferredPreviewWidth(contentWidth)
 
 	gap := 3
 	tableWidth := contentWidth
@@ -352,7 +346,7 @@ func (m ProtocolsModel) renderList() string {
 		availableCols = 30
 	}
 
-	statusWidth := 10
+	statusWidth := 11
 	atWidth := 11
 	nameWidth := 18
 	titleWidth := availableCols - (nameWidth + statusWidth + atWidth)

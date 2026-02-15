@@ -287,17 +287,17 @@ func (m ProfileModel) View() string {
 	taxonomyLabel := "Taxonomy"
 	var tabs string
 	if m.section == 0 {
-		tabs = SelectedStyle.Render(keysLabel) +
-			"   " + MutedStyle.Render(agentsLabel) +
-			"   " + MutedStyle.Render(taxonomyLabel)
+		tabs = TabActiveStyle.Render(keysLabel) +
+			" " + TabInactiveStyle.Render(agentsLabel) +
+			" " + TabInactiveStyle.Render(taxonomyLabel)
 	} else if m.section == 1 {
-		tabs = MutedStyle.Render(keysLabel) +
-			"   " + SelectedStyle.Render(agentsLabel) +
-			"   " + MutedStyle.Render(taxonomyLabel)
+		tabs = TabInactiveStyle.Render(keysLabel) +
+			" " + TabActiveStyle.Render(agentsLabel) +
+			" " + TabInactiveStyle.Render(taxonomyLabel)
 	} else {
-		tabs = MutedStyle.Render(keysLabel) +
-			"   " + MutedStyle.Render(agentsLabel) +
-			"   " + SelectedStyle.Render(taxonomyLabel)
+		tabs = TabInactiveStyle.Render(keysLabel) +
+			" " + TabInactiveStyle.Render(agentsLabel) +
+			" " + TabActiveStyle.Render(taxonomyLabel)
 	}
 	b.WriteString(components.CenterLine(tabs, m.width))
 	b.WriteString("\n\n")
@@ -441,13 +441,7 @@ func (m ProfileModel) renderKeys() string {
 	contentWidth := components.BoxContentWidth(m.width)
 	visible := m.keyList.Visible()
 
-	previewWidth := contentWidth * 35 / 100
-	if previewWidth < 40 {
-		previewWidth = 40
-	}
-	if previewWidth > 60 {
-		previewWidth = 60
-	}
+	previewWidth := preferredPreviewWidth(contentWidth)
 
 	gap := 3
 	tableWidth := contentWidth
@@ -597,13 +591,7 @@ func (m ProfileModel) renderAgents() string {
 	contentWidth := components.BoxContentWidth(m.width)
 	visible := m.agentList.Visible()
 
-	previewWidth := contentWidth * 35 / 100
-	if previewWidth < 40 {
-		previewWidth = 40
-	}
-	if previewWidth > 60 {
-		previewWidth = 60
-	}
+	previewWidth := preferredPreviewWidth(contentWidth)
 
 	gap := 3
 	tableWidth := contentWidth
@@ -627,7 +615,7 @@ func (m ProfileModel) renderAgents() string {
 		availableCols = 30
 	}
 
-	statusWidth := 10
+	statusWidth := 11
 	trustWidth := 10
 	scopesWidth := 22
 	nameWidth := availableCols - (statusWidth + trustWidth + scopesWidth)

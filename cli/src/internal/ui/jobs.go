@@ -284,13 +284,7 @@ func (m JobsModel) renderList() string {
 	contentWidth := components.BoxContentWidth(m.width)
 	visible := m.list.Visible()
 
-	previewWidth := contentWidth * 35 / 100
-	if previewWidth < 40 {
-		previewWidth = 40
-	}
-	if previewWidth > 60 {
-		previewWidth = 60
-	}
+	previewWidth := preferredPreviewWidth(contentWidth)
 
 	gap := 3
 	tableWidth := contentWidth
@@ -314,7 +308,7 @@ func (m JobsModel) renderList() string {
 		availableCols = 30
 	}
 
-	statusWidth := 10
+	statusWidth := 11
 	prioWidth := 10
 	atWidth := 11
 	titleWidth := availableCols - (statusWidth + prioWidth + atWidth)
@@ -416,6 +410,11 @@ func (m JobsModel) renderJobPreview(j api.Job, width int) string {
 	lines = append(lines, MetaKeyStyle.Render("Selected"))
 	for _, part := range wrapPreviewText(title, width) {
 		lines = append(lines, SelectedStyle.Render(part))
+	}
+	lines = append(lines, "")
+	lines = append(lines, MetaKeyStyle.Render("ID"))
+	for _, part := range wrapPreviewText(components.SanitizeOneLine(j.ID), width) {
+		lines = append(lines, MetaValueStyle.Render(part))
 	}
 	lines = append(lines, "")
 
