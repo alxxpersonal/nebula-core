@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/gravitrone/nebula-core/cli/internal/api"
 	"github.com/gravitrone/nebula-core/cli/internal/config"
@@ -437,29 +438,155 @@ func (m ProfileModel) renderKeys() string {
 		return components.Indent(components.Box(MutedStyle.Render("No API keys."), m.width), 1)
 	}
 
-	var rows strings.Builder
-	visible := m.keyList.Visible()
 	contentWidth := components.BoxContentWidth(m.width)
-	maxLabelWidth := contentWidth - 4
-	for i, label := range visible {
-		if maxLabelWidth > 0 {
-			label = components.ClampTextWidth(label, maxLabelWidth)
+	visible := m.keyList.Visible()
+
+	previewWidth := contentWidth * 35 / 100
+	if previewWidth < 40 {
+		previewWidth = 40
+	}
+	if previewWidth > 60 {
+		previewWidth = 60
+	}
+
+	gap := 3
+	tableWidth := contentWidth
+	sideBySide := contentWidth >= 110
+	if sideBySide {
+		tableWidth = contentWidth - previewWidth - gap
+		if tableWidth < 60 {
+			sideBySide = false
+			tableWidth = contentWidth
 		}
+	}
+
+	sepWidth := 1
+	if b := lipgloss.RoundedBorder().Left; b != "" {
+		sepWidth = lipgloss.Width(b)
+	}
+
+	// 4 columns -> 3 separators.
+	availableCols := tableWidth - (3 * sepWidth)
+	if availableCols < 30 {
+		availableCols = 30
+	}
+
+	prefixWidth := 12
+	atWidth := 8
+	ownerWidth := 18
+	nameWidth := availableCols - (prefixWidth + ownerWidth + atWidth)
+	if nameWidth < 14 {
+		nameWidth = 14
+		ownerWidth = availableCols - (prefixWidth + nameWidth + atWidth)
+		if ownerWidth < 12 {
+			ownerWidth = 12
+		}
+	}
+
+	cols := []components.TableColumn{
+		{Header: "Prefix", Width: prefixWidth, Align: lipgloss.Left},
+		{Header: "Name", Width: nameWidth, Align: lipgloss.Left},
+		{Header: "Owner", Width: ownerWidth, Align: lipgloss.Left},
+		{Header: "At", Width: atWidth, Align: lipgloss.Left},
+	}
+
+	tableRows := make([][]string, 0, len(visible))
+	activeRowRel := -1
+	var previewItem *api.APIKey
+	if idx := m.keyList.Selected(); idx >= 0 && idx < len(m.keys) {
+		previewItem = &m.keys[idx]
+	}
+
+	for i := range visible {
 		absIdx := m.keyList.RelToAbs(i)
+		if absIdx < 0 || absIdx >= len(m.keys) {
+			continue
+		}
+		k := m.keys[absIdx]
+
+		prefix := strings.TrimSpace(components.SanitizeOneLine(k.KeyPrefix + "..."))
+		if prefix == "..." || prefix == "" {
+			prefix = "-"
+		}
+		name := strings.TrimSpace(components.SanitizeOneLine(k.Name))
+		if name == "" {
+			name = "-"
+		}
+		owner := "-"
+		if k.EntityName != nil && strings.TrimSpace(*k.EntityName) != "" {
+			owner = strings.TrimSpace(*k.EntityName)
+		} else if k.AgentName != nil && strings.TrimSpace(*k.AgentName) != "" {
+			owner = "agent:" + strings.TrimSpace(*k.AgentName)
+		}
+		owner = components.SanitizeOneLine(owner)
+		at := k.CreatedAt.Format("01-02")
+
 		if m.section == 0 && m.keyList.IsSelected(absIdx) {
-			rows.WriteString(SelectedStyle.Render("  > " + label))
-		} else {
-			rows.WriteString(NormalStyle.Render("    " + label))
+			activeRowRel = len(tableRows)
 		}
-		if i < len(visible)-1 {
-			rows.WriteString("\n")
-		}
+		tableRows = append(tableRows, []string{
+			components.ClampTextWidthEllipsis(prefix, prefixWidth),
+			components.ClampTextWidthEllipsis(name, nameWidth),
+			components.ClampTextWidthEllipsis(owner, ownerWidth),
+			at,
+		})
 	}
 
 	title := "API Keys"
 	countLine := MutedStyle.Render(fmt.Sprintf("%d keys", len(m.keys)))
-	content := countLine + "\n\n" + rows.String()
+	table := components.TableGridWithActiveRow(cols, tableRows, tableWidth, activeRowRel)
+	preview := ""
+	if previewItem != nil {
+		content := m.renderKeyPreview(*previewItem, previewBoxContentWidth(previewWidth))
+		preview = renderPreviewBox(content, previewWidth)
+	}
+
+	body := table
+	if sideBySide && preview != "" {
+		body = lipgloss.JoinHorizontal(lipgloss.Top, table, strings.Repeat(" ", gap), preview)
+	} else if preview != "" {
+		body = table + "\n\n" + preview
+	}
+
+	content := countLine + "\n\n" + body + "\n"
 	return components.Indent(components.TitledBox(title, content, m.width), 1)
+}
+
+func (m ProfileModel) renderKeyPreview(k api.APIKey, width int) string {
+	if width <= 0 {
+		return ""
+	}
+
+	name := strings.TrimSpace(components.SanitizeOneLine(k.Name))
+	if name == "" {
+		name = "key"
+	}
+
+	owner := "-"
+	if k.EntityName != nil && strings.TrimSpace(*k.EntityName) != "" {
+		owner = strings.TrimSpace(*k.EntityName)
+	} else if k.AgentName != nil && strings.TrimSpace(*k.AgentName) != "" {
+		owner = "agent:" + strings.TrimSpace(*k.AgentName)
+	}
+
+	var lines []string
+	lines = append(lines, MetaKeyStyle.Render("Selected"))
+	for _, part := range wrapPreviewText(name, width) {
+		lines = append(lines, SelectedStyle.Render(part))
+	}
+	lines = append(lines, "")
+
+	lines = append(lines, renderPreviewRow("Prefix", k.KeyPrefix+"...", width))
+	lines = append(lines, renderPreviewRow("Owner", owner, width))
+	lines = append(lines, renderPreviewRow("Created", k.CreatedAt.Format("2006-01-02 15:04"), width))
+	if k.LastUsedAt != nil {
+		lines = append(lines, renderPreviewRow("Last Used", k.LastUsedAt.Format("2006-01-02 15:04"), width))
+	}
+	if k.ExpiresAt != nil {
+		lines = append(lines, renderPreviewRow("Expires", k.ExpiresAt.Format("2006-01-02 15:04"), width))
+	}
+
+	return padPreviewLines(lines, width)
 }
 
 func (m ProfileModel) renderAgents() string {
@@ -467,29 +594,158 @@ func (m ProfileModel) renderAgents() string {
 		return components.Indent(components.Box(MutedStyle.Render("No agents registered."), m.width), 1)
 	}
 
-	var rows strings.Builder
-	visible := m.agentList.Visible()
 	contentWidth := components.BoxContentWidth(m.width)
-	maxLabelWidth := contentWidth - 4
-	for i, label := range visible {
-		if maxLabelWidth > 0 {
-			label = components.ClampTextWidth(label, maxLabelWidth)
+	visible := m.agentList.Visible()
+
+	previewWidth := contentWidth * 35 / 100
+	if previewWidth < 40 {
+		previewWidth = 40
+	}
+	if previewWidth > 60 {
+		previewWidth = 60
+	}
+
+	gap := 3
+	tableWidth := contentWidth
+	sideBySide := contentWidth >= 110
+	if sideBySide {
+		tableWidth = contentWidth - previewWidth - gap
+		if tableWidth < 60 {
+			sideBySide = false
+			tableWidth = contentWidth
 		}
+	}
+
+	sepWidth := 1
+	if b := lipgloss.RoundedBorder().Left; b != "" {
+		sepWidth = lipgloss.Width(b)
+	}
+
+	// 4 columns -> 3 separators.
+	availableCols := tableWidth - (3 * sepWidth)
+	if availableCols < 30 {
+		availableCols = 30
+	}
+
+	statusWidth := 10
+	trustWidth := 10
+	scopesWidth := 22
+	nameWidth := availableCols - (statusWidth + trustWidth + scopesWidth)
+	if nameWidth < 14 {
+		nameWidth = 14
+		scopesWidth = availableCols - (nameWidth + statusWidth + trustWidth)
+		if scopesWidth < 14 {
+			scopesWidth = 14
+		}
+	}
+
+	cols := []components.TableColumn{
+		{Header: "Name", Width: nameWidth, Align: lipgloss.Left},
+		{Header: "Trust", Width: trustWidth, Align: lipgloss.Left},
+		{Header: "Status", Width: statusWidth, Align: lipgloss.Left},
+		{Header: "Scopes", Width: scopesWidth, Align: lipgloss.Left},
+	}
+
+	tableRows := make([][]string, 0, len(visible))
+	activeRowRel := -1
+	var previewItem *api.Agent
+	if idx := m.agentList.Selected(); idx >= 0 && idx < len(m.agents) {
+		previewItem = &m.agents[idx]
+	}
+
+	for i := range visible {
 		absIdx := m.agentList.RelToAbs(i)
+		if absIdx < 0 || absIdx >= len(m.agents) {
+			continue
+		}
+		a := m.agents[absIdx]
+
+		name := strings.TrimSpace(components.SanitizeOneLine(a.Name))
+		if name == "" {
+			name = "agent"
+		}
+		status := strings.TrimSpace(components.SanitizeOneLine(a.Status))
+		if status == "" {
+			status = "-"
+		}
+		trust := "untrusted"
+		if !a.RequiresApproval {
+			trust = "trusted"
+		}
+		scopes := "-"
+		if len(a.Scopes) > 0 {
+			scopes = strings.Join(a.Scopes, ", ")
+		}
+
 		if m.section == 1 && m.agentList.IsSelected(absIdx) {
-			rows.WriteString(SelectedStyle.Render("  > " + label))
-		} else {
-			rows.WriteString(NormalStyle.Render("    " + label))
+			activeRowRel = len(tableRows)
 		}
-		if i < len(visible)-1 {
-			rows.WriteString("\n")
-		}
+		tableRows = append(tableRows, []string{
+			components.ClampTextWidthEllipsis(name, nameWidth),
+			components.ClampTextWidthEllipsis(trust, trustWidth),
+			components.ClampTextWidthEllipsis(status, statusWidth),
+			components.ClampTextWidthEllipsis(components.SanitizeOneLine(scopes), scopesWidth),
+		})
 	}
 
 	title := "Agents"
 	countLine := MutedStyle.Render(fmt.Sprintf("%d agents", len(m.agents)))
-	content := countLine + "\n\n" + rows.String()
+	table := components.TableGridWithActiveRow(cols, tableRows, tableWidth, activeRowRel)
+	preview := ""
+	if previewItem != nil {
+		content := m.renderAgentPreview(*previewItem, previewBoxContentWidth(previewWidth))
+		preview = renderPreviewBox(content, previewWidth)
+	}
+
+	body := table
+	if sideBySide && preview != "" {
+		body = lipgloss.JoinHorizontal(lipgloss.Top, table, strings.Repeat(" ", gap), preview)
+	} else if preview != "" {
+		body = table + "\n\n" + preview
+	}
+
+	content := countLine + "\n\n" + body + "\n"
 	return components.Indent(components.TitledBox(title, content, m.width), 1)
+}
+
+func (m ProfileModel) renderAgentPreview(a api.Agent, width int) string {
+	if width <= 0 {
+		return ""
+	}
+
+	name := strings.TrimSpace(components.SanitizeOneLine(a.Name))
+	if name == "" {
+		name = "agent"
+	}
+	status := strings.TrimSpace(components.SanitizeOneLine(a.Status))
+	if status == "" {
+		status = "-"
+	}
+	trust := "untrusted"
+	if !a.RequiresApproval {
+		trust = "trusted"
+	}
+
+	var lines []string
+	lines = append(lines, MetaKeyStyle.Render("Selected"))
+	for _, part := range wrapPreviewText(name, width) {
+		lines = append(lines, SelectedStyle.Render(part))
+	}
+	lines = append(lines, "")
+
+	lines = append(lines, renderPreviewRow("Trust", trust, width))
+	lines = append(lines, renderPreviewRow("Status", status, width))
+	if len(a.Scopes) > 0 {
+		lines = append(lines, renderPreviewRow("Scopes", strings.Join(a.Scopes, ", "), width))
+	}
+	if len(a.Capabilities) > 0 {
+		lines = append(lines, renderPreviewRow("Caps", strings.Join(a.Capabilities, ", "), width))
+	}
+	if a.Description != nil && strings.TrimSpace(*a.Description) != "" {
+		lines = append(lines, renderPreviewRow("Desc", strings.TrimSpace(*a.Description), width))
+	}
+
+	return padPreviewLines(lines, width)
 }
 
 func (m ProfileModel) renderAgentDetail() string {
