@@ -1531,7 +1531,7 @@ func (m KnowledgeModel) handleLinkSearch(msg tea.KeyMsg) (KnowledgeModel, tea.Cm
 
 func (m KnowledgeModel) renderLinkSearch() string {
 	var b strings.Builder
-	b.WriteString("Search: " + m.linkQuery)
+	b.WriteString(MetaKeyStyle.Render("Search") + MetaPunctStyle.Render(": ") + SelectedStyle.Render(components.SanitizeText(m.linkQuery)))
 	b.WriteString(AccentStyle.Render("█"))
 	b.WriteString("\n\n")
 	if m.linkLoading {
@@ -1541,20 +1541,150 @@ func (m KnowledgeModel) renderLinkSearch() string {
 	} else if len(m.linkResults) == 0 {
 		b.WriteString(MutedStyle.Render("No matches."))
 	} else {
+		contentWidth := components.BoxContentWidth(m.width)
 		visible := m.linkList.Visible()
-		for i, label := range visible {
-			absIdx := m.linkList.RelToAbs(i)
-			if m.linkList.IsSelected(absIdx) {
-				b.WriteString(SelectedStyle.Render("  > " + label))
-			} else {
-				b.WriteString(NormalStyle.Render("    " + label))
-			}
-			if i < len(visible)-1 {
-				b.WriteString("\n")
+
+		previewWidth := contentWidth * 35 / 100
+		if previewWidth < 40 {
+			previewWidth = 40
+		}
+		if previewWidth > 60 {
+			previewWidth = 60
+		}
+
+		gap := 3
+		tableWidth := contentWidth
+		sideBySide := contentWidth >= 110
+		if sideBySide {
+			tableWidth = contentWidth - previewWidth - gap
+			if tableWidth < 60 {
+				sideBySide = false
+				tableWidth = contentWidth
 			}
 		}
+
+		sepWidth := 1
+		if br := lipgloss.RoundedBorder().Left; br != "" {
+			sepWidth = lipgloss.Width(br)
+		}
+
+		// 3 columns -> 2 separators.
+		availableCols := tableWidth - (2 * sepWidth)
+		if availableCols < 30 {
+			availableCols = 30
+		}
+
+		typeWidth := 14
+		statusWidth := 10
+		nameWidth := availableCols - (typeWidth + statusWidth)
+		if nameWidth < 16 {
+			nameWidth = 16
+			typeWidth = availableCols - (nameWidth + statusWidth)
+			if typeWidth < 12 {
+				typeWidth = 12
+			}
+		}
+
+		cols := []components.TableColumn{
+			{Header: "Name", Width: nameWidth, Align: lipgloss.Left},
+			{Header: "Type", Width: typeWidth, Align: lipgloss.Left},
+			{Header: "Status", Width: statusWidth, Align: lipgloss.Left},
+		}
+
+		tableRows := make([][]string, 0, len(visible))
+		activeRowRel := -1
+		var previewItem *api.Entity
+		if idx := m.linkList.Selected(); idx >= 0 && idx < len(m.linkResults) {
+			previewItem = &m.linkResults[idx]
+		}
+
+		for i := range visible {
+			absIdx := m.linkList.RelToAbs(i)
+			if absIdx < 0 || absIdx >= len(m.linkResults) {
+				continue
+			}
+			e := m.linkResults[absIdx]
+
+			name := strings.TrimSpace(components.SanitizeOneLine(e.Name))
+			if name == "" {
+				name = "entity"
+			}
+			typ := strings.TrimSpace(components.SanitizeOneLine(e.Type))
+			if typ == "" {
+				typ = "entity"
+			}
+			status := strings.TrimSpace(components.SanitizeOneLine(e.Status))
+			if status == "" {
+				status = "-"
+			}
+
+			if m.linkList.IsSelected(absIdx) {
+				activeRowRel = len(tableRows)
+			}
+			tableRows = append(tableRows, []string{
+				components.ClampTextWidthEllipsis(name, nameWidth),
+				components.ClampTextWidthEllipsis(typ, typeWidth),
+				components.ClampTextWidthEllipsis(status, statusWidth),
+			})
+		}
+
+		countLine := MutedStyle.Render(fmt.Sprintf("%d results", len(m.linkResults)))
+		table := components.TableGridWithActiveRow(cols, tableRows, tableWidth, activeRowRel)
+		preview := ""
+		if previewItem != nil {
+			content := m.renderLinkEntityPreview(*previewItem, previewBoxContentWidth(previewWidth))
+			preview = renderPreviewBox(content, previewWidth)
+		}
+
+		body := table
+		if sideBySide && preview != "" {
+			body = lipgloss.JoinHorizontal(lipgloss.Top, table, strings.Repeat(" ", gap), preview)
+		} else if preview != "" {
+			body = table + "\n\n" + preview
+		}
+
+		b.WriteString(countLine)
+		b.WriteString("\n\n")
+		b.WriteString(body)
 	}
 	return components.Indent(components.TitledBox("Link Entity", b.String(), m.width), 1)
+}
+
+func (m KnowledgeModel) renderLinkEntityPreview(e api.Entity, width int) string {
+	if width <= 0 {
+		return ""
+	}
+
+	name := strings.TrimSpace(components.SanitizeOneLine(e.Name))
+	if name == "" {
+		name = "entity"
+	}
+	typ := strings.TrimSpace(components.SanitizeOneLine(e.Type))
+	if typ == "" {
+		typ = "entity"
+	}
+	status := strings.TrimSpace(components.SanitizeOneLine(e.Status))
+	if status == "" {
+		status = "-"
+	}
+
+	var lines []string
+	lines = append(lines, MetaKeyStyle.Render("Selected"))
+	for _, part := range wrapPreviewText(name, width) {
+		lines = append(lines, SelectedStyle.Render(part))
+	}
+	lines = append(lines, "")
+
+	lines = append(lines, renderPreviewRow("Type", typ, width))
+	lines = append(lines, renderPreviewRow("Status", status, width))
+	if len(e.Tags) > 0 {
+		lines = append(lines, renderPreviewRow("Tags", strings.Join(e.Tags, ", "), width))
+	}
+	if metaPreview := metadataPreview(map[string]any(e.Metadata), 80); metaPreview != "" {
+		lines = append(lines, renderPreviewRow("Meta", metaPreview, width))
+	}
+
+	return padPreviewLines(lines, width)
 }
 
 func (m KnowledgeModel) searchLinkEntities(query string) tea.Cmd {
