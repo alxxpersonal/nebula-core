@@ -900,30 +900,100 @@ func (m EntitiesModel) renderList() string {
 		)
 	}
 
-	var rows strings.Builder
 	visible := m.list.Visible()
 	contentWidth := components.BoxContentWidth(m.width)
-	if contentWidth > 2 {
-		contentWidth -= 2
+	showCheckboxes := m.bulkCount() > 0
+
+	previewWidth := contentWidth * 35 / 100
+	if previewWidth < 40 {
+		previewWidth = 40
+	}
+	if previewWidth > 60 {
+		previewWidth = 60
+	}
+
+	gap := 3
+	tableWidth := contentWidth
+	sideBySide := contentWidth >= 110
+	if sideBySide {
+		tableWidth = contentWidth - previewWidth - gap
+		if tableWidth < 60 {
+			sideBySide = false
+			tableWidth = contentWidth
+		}
+	}
+
+	sepWidth := 1
+	if b := lipgloss.RoundedBorder().Left; b != "" {
+		sepWidth = lipgloss.Width(b)
+	}
+
+	// 4 columns -> 3 separators.
+	availableCols := tableWidth - (3 * sepWidth)
+	if availableCols < 30 {
+		availableCols = 30
+	}
+
+	typeWidth := 12
+	statusWidth := 10
+	atWidth := 11
+	nameWidth := availableCols - (typeWidth + statusWidth + atWidth)
+	if nameWidth < 12 {
+		nameWidth = 12
+	}
+	cols := []components.TableColumn{
+		{Header: "Name", Width: nameWidth, Align: lipgloss.Left},
+		{Header: "Type", Width: typeWidth, Align: lipgloss.Left},
+		{Header: "Status", Width: statusWidth, Align: lipgloss.Left},
+		{Header: "At", Width: atWidth, Align: lipgloss.Left},
+	}
+
+	tableRows := make([][]string, 0, len(visible))
+	activeRowRel := -1
+	var previewItem *api.Entity
+	if idx := m.list.Selected(); idx >= 0 && idx < len(m.items) {
+		previewItem = &m.items[idx]
 	}
 	for i := range visible {
 		absIdx := m.list.RelToAbs(i)
 		if absIdx < 0 || absIdx >= len(m.items) {
 			continue
 		}
-		prefix := "    "
-		if m.isBulkSelected(absIdx) {
-			prefix = "  ✓ "
+
+		e := m.items[absIdx]
+		name, typ := normalizeEntityNameType(components.SanitizeText(e.Name), components.SanitizeText(e.Type))
+		name = components.SanitizeOneLine(name)
+		typ = components.SanitizeOneLine(typ)
+		if typ == "" {
+			typ = "?"
 		}
-		label := formatEntityLineWidth(m.items[absIdx], contentWidth-lipgloss.Width(prefix))
+		status := strings.TrimSpace(components.SanitizeOneLine(e.Status))
+		if status == "" {
+			status = "-"
+		}
+		at := e.UpdatedAt
+		if at.IsZero() {
+			at = e.CreatedAt
+		}
+
+		displayName := name
+		if showCheckboxes {
+			checkbox := "[ ]"
+			if m.isBulkSelected(absIdx) {
+				checkbox = "[x]"
+			}
+			displayName = checkbox + " " + displayName
+		}
+
 		if m.list.IsSelected(absIdx) {
-			rows.WriteString(SelectedStyle.Render(prefix + label))
-		} else {
-			rows.WriteString(NormalStyle.Render(prefix + label))
+			activeRowRel = len(tableRows)
 		}
-		if i < len(visible)-1 {
-			rows.WriteString("\n")
-		}
+		tableRows = append(tableRows, []string{
+			components.ClampTextWidthEllipsis(displayName, nameWidth),
+			components.ClampTextWidthEllipsis(typ, typeWidth),
+			components.ClampTextWidthEllipsis(status, statusWidth),
+			at.Format("01-02 15:04"),
+		})
 	}
 
 	title := "Entities"
@@ -939,8 +1009,68 @@ func (m EntitiesModel) renderList() string {
 		}
 	}
 	countLine = MutedStyle.Render(countLine)
-	content := countLine + "\n\n" + rows.String()
+
+	table := components.TableGridWithActiveRow(cols, tableRows, tableWidth, activeRowRel)
+	preview := ""
+	if previewItem != nil {
+		content := m.renderEntityPreview(*previewItem, previewBoxContentWidth(previewWidth))
+		preview = renderPreviewBox(content, previewWidth)
+	}
+
+	body := table
+	if sideBySide && preview != "" {
+		body = lipgloss.JoinHorizontal(lipgloss.Top, table, strings.Repeat(" ", gap), preview)
+	} else if preview != "" {
+		body = table + "\n\n" + preview
+	}
+
+	content := countLine + "\n\n" + body + "\n"
 	return components.TitledBox(title, content, m.width)
+}
+
+func (m EntitiesModel) renderEntityPreview(e api.Entity, width int) string {
+	if width <= 0 {
+		return ""
+	}
+
+	name, typ := normalizeEntityNameType(components.SanitizeText(e.Name), components.SanitizeText(e.Type))
+	name = components.SanitizeOneLine(name)
+	typ = components.SanitizeOneLine(typ)
+	if typ == "" {
+		typ = "?"
+	}
+	status := strings.TrimSpace(components.SanitizeOneLine(e.Status))
+	if status == "" {
+		status = "-"
+	}
+
+	at := e.UpdatedAt
+	if at.IsZero() {
+		at = e.CreatedAt
+	}
+
+	var lines []string
+	lines = append(lines, MetaKeyStyle.Render("Selected"))
+	for _, part := range wrapPreviewText(name, width) {
+		lines = append(lines, SelectedStyle.Render(part))
+	}
+	lines = append(lines, "")
+
+	lines = append(lines, renderPreviewRow("Type", typ, width))
+	lines = append(lines, renderPreviewRow("Status", status, width))
+	lines = append(lines, renderPreviewRow("At", at.Format("01-02 15:04"), width))
+
+	if len(e.PrivacyScopeIDs) > 0 {
+		lines = append(lines, renderPreviewRow("Scopes", m.formatEntityScopes(e.PrivacyScopeIDs), width))
+	}
+	if len(e.Tags) > 0 {
+		lines = append(lines, renderPreviewRow("Tags", strings.Join(e.Tags, ", "), width))
+	}
+	if metaPreview := metadataPreview(map[string]any(e.Metadata), 80); metaPreview != "" {
+		lines = append(lines, renderPreviewRow("Preview", metaPreview, width))
+	}
+
+	return padPreviewLines(lines, width)
 }
 
 func (m *EntitiesModel) updateSearchSuggest() {

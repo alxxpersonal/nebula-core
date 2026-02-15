@@ -33,7 +33,7 @@ func TestEntitiesViewListRendersModeLineCountAndBulkSelection(t *testing.T) {
 	assert.Contains(t, clean, "selected: 1")
 	assert.Contains(t, clean, "Add")
 	assert.Contains(t, clean, "Library")
-	assert.Contains(t, clean, "✓")
+	assert.Contains(t, clean, "[x]")
 }
 
 func TestEntitiesViewAddSavedResetsOnEsc(t *testing.T) {
