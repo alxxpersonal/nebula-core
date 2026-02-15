@@ -1379,27 +1379,137 @@ func (m EntitiesModel) renderHistory() string {
 		title = fmt.Sprintf("History - %s", components.SanitizeOneLine(m.detail.Name))
 	}
 
-	var rows strings.Builder
-	visible := m.historyList.Visible()
 	contentWidth := components.BoxContentWidth(m.width)
-	maxLabelWidth := contentWidth - 4
-	for i, label := range visible {
-		if maxLabelWidth > 0 {
-			label = components.ClampTextWidth(label, maxLabelWidth)
-		}
-		absIdx := m.historyList.RelToAbs(i)
-		if m.historyList.IsSelected(absIdx) {
-			rows.WriteString(SelectedStyle.Render("  > " + label))
-		} else {
-			rows.WriteString(NormalStyle.Render("    " + label))
-		}
-		if i < len(visible)-1 {
-			rows.WriteString("\n")
+	visible := m.historyList.Visible()
+
+	previewWidth := contentWidth * 35 / 100
+	if previewWidth < 40 {
+		previewWidth = 40
+	}
+	if previewWidth > 60 {
+		previewWidth = 60
+	}
+
+	gap := 3
+	tableWidth := contentWidth
+	sideBySide := contentWidth >= 110
+	if sideBySide {
+		tableWidth = contentWidth - previewWidth - gap
+		if tableWidth < 60 {
+			sideBySide = false
+			tableWidth = contentWidth
 		}
 	}
 
-	content := rows.String()
+	sepWidth := 1
+	if b := lipgloss.RoundedBorder().Left; b != "" {
+		sepWidth = lipgloss.Width(b)
+	}
+
+	// 3 columns -> 2 separators.
+	availableCols := tableWidth - (2 * sepWidth)
+	if availableCols < 30 {
+		availableCols = 30
+	}
+
+	atWidth := 11
+	actionWidth := 10
+	fieldsWidth := availableCols - (atWidth + actionWidth)
+	if fieldsWidth < 14 {
+		fieldsWidth = 14
+		actionWidth = availableCols - (atWidth + fieldsWidth)
+		if actionWidth < 8 {
+			actionWidth = 8
+		}
+	}
+
+	cols := []components.TableColumn{
+		{Header: "At", Width: atWidth, Align: lipgloss.Left},
+		{Header: "Action", Width: actionWidth, Align: lipgloss.Left},
+		{Header: "Fields", Width: fieldsWidth, Align: lipgloss.Left},
+	}
+
+	tableRows := make([][]string, 0, len(visible))
+	activeRowRel := -1
+	var previewItem *api.AuditEntry
+	if idx := m.historyList.Selected(); idx >= 0 && idx < len(m.history) {
+		previewItem = &m.history[idx]
+	}
+
+	for i := range visible {
+		absIdx := m.historyList.RelToAbs(i)
+		if absIdx < 0 || absIdx >= len(m.history) {
+			continue
+		}
+		entry := m.history[absIdx]
+
+		action := strings.TrimSpace(components.SanitizeOneLine(entry.Action))
+		if action == "" {
+			action = "update"
+		}
+		fields := "-"
+		if n := len(entry.ChangedFields); n > 0 {
+			fields = fmt.Sprintf("%d fields", n)
+		}
+
+		if m.historyList.IsSelected(absIdx) {
+			activeRowRel = len(tableRows)
+		}
+
+		tableRows = append(tableRows, []string{
+			entry.ChangedAt.Format("01-02 15:04"),
+			components.ClampTextWidthEllipsis(strings.ToUpper(action), actionWidth),
+			components.ClampTextWidthEllipsis(fields, fieldsWidth),
+		})
+	}
+
+	countLine := MutedStyle.Render(fmt.Sprintf("%d entries", len(m.history)))
+	table := components.TableGridWithActiveRow(cols, tableRows, tableWidth, activeRowRel)
+	preview := ""
+	if previewItem != nil {
+		content := m.renderEntityHistoryPreview(*previewItem, previewBoxContentWidth(previewWidth))
+		preview = renderPreviewBox(content, previewWidth)
+	}
+
+	body := table
+	if sideBySide && preview != "" {
+		body = lipgloss.JoinHorizontal(lipgloss.Top, table, strings.Repeat(" ", gap), preview)
+	} else if preview != "" {
+		body = table + "\n\n" + preview
+	}
+
+	content := countLine + "\n\n" + body + "\n"
 	return components.Indent(components.TitledBox(title, content, m.width), 1)
+}
+
+func (m EntitiesModel) renderEntityHistoryPreview(entry api.AuditEntry, width int) string {
+	if width <= 0 {
+		return ""
+	}
+
+	action := strings.TrimSpace(components.SanitizeOneLine(entry.Action))
+	if action == "" {
+		action = "update"
+	}
+	heading := strings.ToUpper(action) + " @ " + entry.ChangedAt.Format("2006-01-02 15:04")
+
+	var lines []string
+	lines = append(lines, MetaKeyStyle.Render("Selected"))
+	for _, part := range wrapPreviewText(heading, width) {
+		lines = append(lines, SelectedStyle.Render(part))
+	}
+	lines = append(lines, "")
+
+	lines = append(lines, renderPreviewRow("Action", strings.ToUpper(action), width))
+	lines = append(lines, renderPreviewRow("At", entry.ChangedAt.Format("2006-01-02 15:04"), width))
+	if len(entry.ChangedFields) > 0 {
+		lines = append(lines, renderPreviewRow("Fields", strings.Join(entry.ChangedFields, ", "), width))
+	}
+	if entry.ChangeReason != nil && strings.TrimSpace(*entry.ChangeReason) != "" {
+		lines = append(lines, renderPreviewRow("Reason", strings.TrimSpace(*entry.ChangeReason), width))
+	}
+
+	return padPreviewLines(lines, width)
 }
 
 // --- Edit Entity ---
