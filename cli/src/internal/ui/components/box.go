@@ -53,16 +53,16 @@ var (
 )
 
 func boxWidth(width int) int {
-	// Use ~70% of terminal width, capped at 80
+	// Use most of the terminal width, capped to keep a centered layout.
 	if width <= 0 {
 		return 0
 	}
-	w := width * 70 / 100
+	w := width * 80 / 100
 	if w < 40 {
 		w = 40
 	}
-	if w > 80 {
-		w = 80
+	if w > 140 {
+		w = 140
 	}
 	return w
 }
@@ -83,7 +83,10 @@ func renderBox(style lipgloss.Style, targetWidth int, content string) string {
 	if width <= 0 {
 		return style.Render(content)
 	}
-	inner := width - style.GetHorizontalFrameSize()
+	// lipgloss.Style.Width includes padding but excludes borders, so we only
+	// subtract left/right border widths to hit the target outer width.
+	borderW := style.GetBorderLeftSize() + style.GetBorderRightSize()
+	inner := width - borderW
 	if inner < 1 {
 		inner = 1
 	}
@@ -119,6 +122,22 @@ func ClampTextWidth(text string, width int) string {
 		return cleaned
 	}
 	return truncateRunes(cleaned, width)
+}
+
+// ClampTextWidthEllipsis truncates text to the given visual width and adds "..."
+// when truncation occurs (ANSI-aware).
+func ClampTextWidthEllipsis(text string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	cleaned := SanitizeOneLine(text)
+	if lipgloss.Width(cleaned) <= width {
+		return cleaned
+	}
+	if width <= 3 {
+		return truncateRunes(cleaned, width)
+	}
+	return truncateRunes(cleaned, width-3) + "..."
 }
 
 // ActiveBox renders content inside a highlighted bordered box.
