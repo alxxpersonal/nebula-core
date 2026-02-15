@@ -524,6 +524,19 @@ func (m InboxModel) renderDetail() string {
 	}
 	sections = append(sections, components.Table("Approval Request", rows, m.width))
 
+	if len(a.ReviewDetails) > 0 {
+		var grantRows []components.TableRow
+		for k, v := range a.ReviewDetails {
+			grantRows = append(
+				grantRows,
+				components.TableRow{Label: k, Value: formatAny(v)},
+			)
+		}
+		if len(grantRows) > 0 {
+			sections = append(sections, components.Table("Reviewer Grants", grantRows, m.width))
+		}
+	}
+
 	// Change details
 	if len(a.ChangeDetails) > 0 {
 		var summaryRows []components.TableRow

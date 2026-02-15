@@ -340,6 +340,7 @@ type Approval struct {
 	RequestedBy   string    `json:"requested_by"`
 	AgentName     string    `json:"agent_name"`
 	ChangeDetails JSONMap   `json:"change_details"`
+	ReviewDetails JSONMap   `json:"review_details"`
 	Status        string    `json:"status"`
 	Notes         *string   `json:"review_notes"`
 	CreatedAt     time.Time `json:"created_at"`
