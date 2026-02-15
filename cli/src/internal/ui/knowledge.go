@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/gravitrone/nebula-core/cli/internal/api"
 	"github.com/gravitrone/nebula-core/cli/internal/ui/components"
@@ -901,27 +902,111 @@ func (m KnowledgeModel) renderList() string {
 		)
 	}
 
-	var rows strings.Builder
 	contentWidth := components.BoxContentWidth(m.width)
-	maxLabelWidth := contentWidth - 4
 	visible := m.list.Visible()
-	for i, label := range visible {
-		if maxLabelWidth > 0 {
-			label = components.ClampTextWidth(label, maxLabelWidth)
-		}
-		absIdx := m.list.RelToAbs(i)
-		if m.list.IsSelected(absIdx) {
-			rows.WriteString(SelectedStyle.Render("  > " + label))
-		} else {
-			rows.WriteString(NormalStyle.Render("    " + label))
-		}
-		if i < len(visible)-1 {
-			rows.WriteString("\n")
+
+	previewWidth := contentWidth * 35 / 100
+	if previewWidth < 40 {
+		previewWidth = 40
+	}
+	if previewWidth > 60 {
+		previewWidth = 60
+	}
+
+	gap := 3
+	tableWidth := contentWidth
+	sideBySide := contentWidth >= 110
+	if sideBySide {
+		tableWidth = contentWidth - previewWidth - gap
+		if tableWidth < 60 {
+			sideBySide = false
+			tableWidth = contentWidth
 		}
 	}
 
+	sepWidth := 1
+	if b := lipgloss.RoundedBorder().Left; b != "" {
+		sepWidth = lipgloss.Width(b)
+	}
+
+	// 4 columns -> 3 separators.
+	availableCols := tableWidth - (3 * sepWidth)
+	if availableCols < 30 {
+		availableCols = 30
+	}
+
+	typeWidth := 10
+	statusWidth := 10
+	atWidth := 11
+	titleWidth := availableCols - (typeWidth + statusWidth + atWidth)
+	if titleWidth < 12 {
+		titleWidth = 12
+	}
+	cols := []components.TableColumn{
+		{Header: "Title", Width: titleWidth, Align: lipgloss.Left},
+		{Header: "Type", Width: typeWidth, Align: lipgloss.Left},
+		{Header: "Status", Width: statusWidth, Align: lipgloss.Left},
+		{Header: "At", Width: atWidth, Align: lipgloss.Left},
+	}
+
+	tableRows := make([][]string, 0, len(visible))
+	activeRowRel := -1
+	var previewItem *api.Knowledge
+	if idx := m.list.Selected(); idx >= 0 && idx < len(m.items) {
+		previewItem = &m.items[idx]
+	}
+
+	for i := range visible {
+		absIdx := m.list.RelToAbs(i)
+		if absIdx < 0 || absIdx >= len(m.items) {
+			continue
+		}
+		k := m.items[absIdx]
+
+		title := components.ClampTextWidthEllipsis(components.SanitizeOneLine(k.Name), titleWidth)
+		typ := strings.TrimSpace(components.SanitizeOneLine(k.SourceType))
+		if typ == "" {
+			typ = "note"
+		}
+		status := strings.TrimSpace(components.SanitizeOneLine(k.Status))
+		if status == "" {
+			status = "-"
+		}
+		at := k.UpdatedAt
+		if at.IsZero() {
+			at = k.CreatedAt
+		}
+		when := at.Format("01-02 15:04")
+
+		if m.list.IsSelected(absIdx) {
+			activeRowRel = len(tableRows)
+		}
+		tableRows = append(tableRows, []string{
+			title,
+			components.ClampTextWidthEllipsis(typ, typeWidth),
+			components.ClampTextWidthEllipsis(status, statusWidth),
+			when,
+		})
+	}
+
 	countLine := fmt.Sprintf("%d total", len(m.items))
-	content := MutedStyle.Render(countLine) + "\n\n" + rows.String()
+	countLine = MutedStyle.Render(countLine)
+
+	table := components.TableGridWithActiveRow(cols, tableRows, tableWidth, activeRowRel)
+	preview := ""
+	if previewItem != nil {
+		content := m.renderKnowledgePreview(*previewItem, previewBoxContentWidth(previewWidth))
+		preview = renderPreviewBox(content, previewWidth)
+	}
+
+	body := table
+	if sideBySide && preview != "" {
+		body = lipgloss.JoinHorizontal(lipgloss.Top, table, strings.Repeat(" ", gap), preview)
+	} else if preview != "" {
+		body = table + "\n\n" + preview
+	}
+
+	content := countLine + "\n\n" + body + "\n"
 	return components.TitledBox("Knowledge", content, m.width)
 }
 
@@ -976,6 +1061,61 @@ func (m KnowledgeModel) renderDetail() string {
 	}
 
 	return strings.Join(sections, "\n\n")
+}
+
+func (m KnowledgeModel) renderKnowledgePreview(k api.Knowledge, width int) string {
+	if width <= 0 {
+		return ""
+	}
+
+	title := components.SanitizeOneLine(k.Name)
+	typ := strings.TrimSpace(components.SanitizeOneLine(k.SourceType))
+	if typ == "" {
+		typ = "note"
+	}
+	status := strings.TrimSpace(components.SanitizeOneLine(k.Status))
+	if status == "" {
+		status = "-"
+	}
+	at := k.UpdatedAt
+	if at.IsZero() {
+		at = k.CreatedAt
+	}
+
+	var lines []string
+	lines = append(lines, MetaKeyStyle.Render("Selected"))
+	for _, part := range wrapPreviewText(title, width) {
+		lines = append(lines, SelectedStyle.Render(part))
+	}
+	lines = append(lines, "")
+
+	lines = append(lines, renderPreviewRow("Type", typ, width))
+	lines = append(lines, renderPreviewRow("Status", status, width))
+	lines = append(lines, renderPreviewRow("At", at.Format("01-02 15:04"), width))
+
+	if k.URL != nil && strings.TrimSpace(*k.URL) != "" {
+		lines = append(lines, renderPreviewRow("URL", strings.TrimSpace(*k.URL), width))
+	}
+	if len(k.PrivacyScopeIDs) > 0 {
+		lines = append(lines, renderPreviewRow("Scopes", m.formatKnowledgeScopes(k.PrivacyScopeIDs), width))
+	}
+	if len(k.Tags) > 0 {
+		lines = append(lines, renderPreviewRow("Tags", strings.Join(k.Tags, ", "), width))
+	}
+
+	snippet := ""
+	if metaPreview := metadataPreview(map[string]any(k.Metadata), 80); metaPreview != "" {
+		snippet = metaPreview
+	} else if k.Content != nil {
+		snippet = truncateString(strings.TrimSpace(components.SanitizeText(*k.Content)), 80)
+	} else if k.URL != nil {
+		snippet = truncateString(strings.TrimSpace(components.SanitizeText(*k.URL)), 80)
+	}
+	if strings.TrimSpace(snippet) != "" {
+		lines = append(lines, renderPreviewRow("Preview", strings.TrimSpace(snippet), width))
+	}
+
+	return padPreviewLines(lines, width)
 }
 
 func (m *KnowledgeModel) startEdit() {
