@@ -91,7 +91,7 @@ func TestNormalizeTag(t *testing.T) {
 }
 
 func TestNormalizeScope(t *testing.T) {
-	assert.Equal(t, "personal", normalizeScope(" Personal "))
+	assert.Equal(t, "private", normalizeScope(" Private "))
 	assert.Equal(t, "vault-only", normalizeScope("#Vault Only"))
 }
 

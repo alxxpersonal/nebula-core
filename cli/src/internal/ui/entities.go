@@ -772,7 +772,7 @@ func (m EntitiesModel) saveAdd() (EntitiesModel, tea.Cmd) {
 	status := entityStatusOptions[m.addStatusIdx]
 	scopes := normalizeScopeList(m.addScopes)
 	if len(scopes) == 0 {
-		scopes = []string{"personal"}
+		scopes = []string{"private"}
 	}
 
 	input := api.CreateEntityInput{

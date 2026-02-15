@@ -54,6 +54,6 @@ func TestMetadataScopeHelpers(t *testing.T) {
 	_, ok := stripped["scopes"]
 	assert.False(t, ok)
 
-	merged := mergeMetadataScopes(stripped, []string{"personal"})
-	assert.Equal(t, []string{"personal"}, merged["scopes"])
+	merged := mergeMetadataScopes(stripped, []string{"private"})
+	assert.Equal(t, []string{"private"}, merged["scopes"])
 }

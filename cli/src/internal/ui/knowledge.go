@@ -1336,7 +1336,7 @@ func (m KnowledgeModel) save() (KnowledgeModel, tea.Cmd) {
 
 	scopes := normalizeBulkScopes(m.scopes)
 	if len(scopes) == 0 {
-		scopes = []string{"personal"}
+		scopes = []string{"private"}
 	}
 
 	input := api.CreateKnowledgeInput{
