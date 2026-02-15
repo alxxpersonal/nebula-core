@@ -6,6 +6,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/gravitrone/nebula-core/cli/internal/api"
 	"github.com/gravitrone/nebula-core/cli/internal/ui/components"
@@ -202,31 +203,58 @@ func (m InboxModel) View() string {
 		), 1)
 	}
 
-	var rows strings.Builder
 	contentWidth := components.BoxContentWidth(m.width)
-	maxLabelWidth := contentWidth - 6
 	visible := m.list.Visible()
-	for i, label := range visible {
+	tableWidth := contentWidth
+	sepWidth := 1
+	if b := lipgloss.RoundedBorder().Left; b != "" {
+		sepWidth = lipgloss.Width(b)
+	}
+
+	// 6 columns -> 5 separators.
+	availableCols := tableWidth - (5 * sepWidth)
+	if availableCols < 30 {
+		availableCols = 30
+	}
+
+	titleWidth := availableCols - (2 + 14 + 10 + 14 + 16)
+	if titleWidth < 12 {
+		titleWidth = 12
+	}
+	cols := []components.TableColumn{
+		{Header: "", Width: 2, Align: lipgloss.Left},
+		{Header: "Title", Width: titleWidth, Align: lipgloss.Left},
+		{Header: "Action", Width: 14, Align: lipgloss.Left},
+		{Header: "Status", Width: 10, Align: lipgloss.Left},
+		{Header: "Who", Width: 14, Align: lipgloss.Left},
+		{Header: "At", Width: 16, Align: lipgloss.Left},
+	}
+
+	tableRows := make([][]string, 0, len(visible))
+
+	for i := range visible {
 		absIdx := m.list.RelToAbs(i)
 		item, ok := m.itemAtFilteredIndex(absIdx)
 		if !ok {
 			continue
 		}
-		if maxLabelWidth > 0 {
-			label = components.ClampTextWidth(label, maxLabelWidth)
+
+		marker := "  "
+		if m.selected[item.ID] && m.list.IsSelected(absIdx) {
+			marker = "*>"
+		} else if m.selected[item.ID] {
+			marker = " *"
+		} else if m.list.IsSelected(absIdx) {
+			marker = " >"
 		}
-		prefix := "  - "
-		if m.selected[item.ID] {
-			prefix = "  * "
-		}
-		if m.list.IsSelected(absIdx) {
-			rows.WriteString(SelectedStyle.Render(prefix + "> " + label))
-		} else {
-			rows.WriteString(NormalStyle.Render(prefix + "  " + label))
-		}
-		if i < len(visible)-1 {
-			rows.WriteString("\n")
-		}
+
+		title := approvalTitle(item)
+		action := humanizeApprovalType(item.RequestType)
+		status := components.SanitizeOneLine(item.Status)
+		who := components.SanitizeOneLine(item.AgentName)
+		when := item.CreatedAt.Format("2006-01-02 15:04")
+
+		tableRows = append(tableRows, []string{marker, title, action, status, who, when})
 	}
 
 	title := "Inbox"
@@ -238,7 +266,8 @@ func (m InboxModel) View() string {
 		countLine = fmt.Sprintf("%s · selected: %d", countLine, count)
 	}
 	countLine = MutedStyle.Render(countLine)
-	content := countLine + "\n\n" + rows.String()
+	table := components.TableGrid(cols, tableRows, tableWidth)
+	content := countLine + "\n\n" + table + "\n"
 	return components.Indent(components.TitledBox(title, content, m.width), 1)
 }
 
@@ -466,6 +495,43 @@ func formatApprovalLine(a api.Approval) string {
 		components.SanitizeText(a.Status),
 		name,
 	)
+}
+
+func approvalTitle(a api.Approval) string {
+	if v, ok := a.ChangeDetails["name"]; ok {
+		s := strings.TrimSpace(fmt.Sprintf("%v", v))
+		if s != "" {
+			return components.SanitizeOneLine(s)
+		}
+	}
+	if v, ok := a.ChangeDetails["title"]; ok {
+		s := strings.TrimSpace(fmt.Sprintf("%v", v))
+		if s != "" {
+			return components.SanitizeOneLine(s)
+		}
+	}
+	if v, ok := a.ChangeDetails["entity_name"]; ok {
+		s := strings.TrimSpace(fmt.Sprintf("%v", v))
+		if s != "" {
+			return components.SanitizeOneLine(s)
+		}
+	}
+	return components.SanitizeOneLine(a.RequestType)
+}
+
+func humanizeApprovalType(t string) string {
+	t = strings.TrimSpace(components.SanitizeText(t))
+	if t == "" {
+		return ""
+	}
+	parts := strings.Split(strings.ToLower(t), "_")
+	for i := range parts {
+		if parts[i] == "" {
+			continue
+		}
+		parts[i] = strings.ToUpper(parts[i][:1]) + parts[i][1:]
+	}
+	return strings.Join(parts, " ")
 }
 
 func (m *InboxModel) applyFilter(resetSelection bool) {
