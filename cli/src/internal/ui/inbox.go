@@ -39,6 +39,10 @@ type InboxModel struct {
 	rejecting     bool
 	rejectPreview bool
 	rejectBuf     string
+	grantEditing  bool
+	grantApproval string
+	grantScopes   string
+	grantTrusted  bool
 	bulkRejectIDs []string
 	width         int
 	height        int
@@ -100,6 +104,9 @@ func (m InboxModel) Update(msg tea.Msg) (InboxModel, tea.Cmd) {
 		if m.rejectPreview {
 			return m.handleRejectPreview(msg)
 		}
+		if m.grantEditing {
+			return m.handleGrantInput(msg)
+		}
 		if m.filtering {
 			return m.handleFilterInput(msg)
 		}
@@ -127,8 +134,7 @@ func (m InboxModel) Update(msg tea.Msg) (InboxModel, tea.Cmd) {
 				return m, m.loadApprovalDiff(item.ID)
 			}
 		case isKey(msg, "a"):
-			m.confirming = true
-			return m, nil
+			return m.beginApproveFlow()
 		case isKey(msg, "A"):
 			if m.selectedCount() == 0 {
 				m.selectAllFiltered()
@@ -171,6 +177,10 @@ func (m InboxModel) View() string {
 			{Label: "review_notes", From: "-", To: strings.TrimSpace(m.rejectBuf)},
 		}
 		return components.Indent(components.ConfirmPreviewDialog("Reject Requests", summary, diffs, m.width), 1)
+	}
+
+	if m.grantEditing {
+		return m.renderGrantEditor()
 	}
 
 	if m.rejecting && m.detail != nil {
@@ -352,18 +362,109 @@ func (m InboxModel) approveSelected() (InboxModel, tea.Cmd) {
 	}
 }
 
+func (m InboxModel) beginApproveFlow() (InboxModel, tea.Cmd) {
+	ids := m.selectedIDs()
+	if len(ids) == 0 && m.detail != nil {
+		ids = append(ids, m.detail.ID)
+	}
+	if len(ids) == 0 {
+		if item, ok := m.selectedItem(); ok {
+			ids = append(ids, item.ID)
+		}
+	}
+	if len(ids) == 1 {
+		if approval, ok := m.findApprovalByID(ids[0]); ok && approval.RequestType == "register_agent" {
+			m.grantEditing = true
+			m.grantApproval = approval.ID
+			m.grantScopes = strings.Join(requestedScopesFromApproval(approval), ",")
+			m.grantTrusted = requestedRequiresApprovalFromApproval(approval)
+			return m, nil
+		}
+	}
+	m.confirming = true
+	return m, nil
+}
+
 func (m InboxModel) handleDetailKeys(msg tea.KeyMsg) (InboxModel, tea.Cmd) {
 	switch {
 	case isBack(msg):
 		m.detail = nil
 	case isKey(msg, "a"):
-		m.confirming = true
-		return m, nil
+		return m.beginApproveFlow()
 	case isKey(msg, "r"):
 		m.rejecting = true
 		m.rejectBuf = ""
 	}
 	return m, nil
+}
+
+func (m InboxModel) handleGrantInput(msg tea.KeyMsg) (InboxModel, tea.Cmd) {
+	switch {
+	case isBack(msg):
+		m.grantEditing = false
+		m.grantApproval = ""
+		m.grantScopes = ""
+		m.grantTrusted = false
+		return m, nil
+	case isKey(msg, "t"):
+		m.grantTrusted = !m.grantTrusted
+		return m, nil
+	case isEnter(msg):
+		scopes := parseScopesCSV(m.grantScopes)
+		if len(scopes) == 0 {
+			return m, func() tea.Msg {
+				return errMsg{fmt.Errorf("at least one scope is required")}
+			}
+		}
+		trusted := m.grantTrusted
+		approveID := m.grantApproval
+		input := &api.ApproveRequestInput{
+			GrantScopes:           scopes,
+			GrantRequiresApproval: &trusted,
+		}
+		m.grantEditing = false
+		m.grantApproval = ""
+		m.grantScopes = ""
+		m.grantTrusted = false
+		m.detail = nil
+		return m, func() tea.Msg {
+			_, err := m.client.ApproveRequestWithInput(approveID, input)
+			if err != nil {
+				return errMsg{err}
+			}
+			return approvalDoneMsg{approveID}
+		}
+	case isKey(msg, "backspace"):
+		if len(m.grantScopes) > 0 {
+			m.grantScopes = m.grantScopes[:len(m.grantScopes)-1]
+		}
+		return m, nil
+	default:
+		s := msg.String()
+		if len(s) == 1 || s == " " {
+			m.grantScopes += s
+		}
+	}
+	return m, nil
+}
+
+func (m InboxModel) renderGrantEditor() string {
+	mode := "true"
+	if !m.grantTrusted {
+		mode = "false"
+	}
+	lines := []string{
+		"Approve register_agent with reviewer grants.",
+		"",
+		"Scopes (comma separated): " + m.grantScopes,
+		"requires_approval: " + mode + " (press t to toggle)",
+		"",
+		MutedStyle.Render("enter submit  |  esc cancel"),
+	}
+	return components.Indent(
+		components.TitledBox("Approve Agent Enrollment", strings.Join(lines, "\n"), m.width),
+		1,
+	)
 }
 
 func (m InboxModel) handleRejectInput(msg tea.KeyMsg) (InboxModel, tea.Cmd) {
@@ -813,6 +914,67 @@ func (m InboxModel) approveSummaryRows() []components.TableRow {
 		rows = append(rows, components.TableRow{Label: "Request ID", Value: ids[0]})
 	}
 	return rows
+}
+
+func (m InboxModel) findApprovalByID(id string) (api.Approval, bool) {
+	for _, item := range m.items {
+		if item.ID == id {
+			return item, true
+		}
+	}
+	return api.Approval{}, false
+}
+
+func requestedScopesFromApproval(a api.Approval) []string {
+	raw := a.ChangeDetails["requested_scopes"]
+	scopes := parseStringList(raw)
+	if len(scopes) == 0 {
+		scopes = []string{"public"}
+	}
+	return scopes
+}
+
+func requestedRequiresApprovalFromApproval(a api.Approval) bool {
+	raw, ok := a.ChangeDetails["requested_requires_approval"]
+	if !ok {
+		return true
+	}
+	if value, ok := raw.(bool); ok {
+		return value
+	}
+	return true
+}
+
+func parseStringList(raw any) []string {
+	switch value := raw.(type) {
+	case []string:
+		return value
+	case []any:
+		out := make([]string, 0, len(value))
+		for _, item := range value {
+			text := strings.TrimSpace(fmt.Sprintf("%v", item))
+			if text != "" {
+				out = append(out, text)
+			}
+		}
+		return out
+	case string:
+		return parseScopesCSV(value)
+	default:
+		return nil
+	}
+}
+
+func parseScopesCSV(raw string) []string {
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		scope := strings.TrimSpace(part)
+		if scope != "" {
+			out = append(out, scope)
+		}
+	}
+	return out
 }
 
 func (m InboxModel) approveDiffRows() []components.DiffRow {

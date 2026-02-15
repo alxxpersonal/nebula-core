@@ -345,6 +345,13 @@ type Approval struct {
 	CreatedAt     time.Time `json:"created_at"`
 }
 
+// ApproveRequestInput defines optional reviewer grants for approval execution.
+type ApproveRequestInput struct {
+	ReviewNotes           *string  `json:"review_notes,omitempty"`
+	GrantScopes           []string `json:"grant_scopes,omitempty"`
+	GrantRequiresApproval *bool    `json:"grant_requires_approval,omitempty"`
+}
+
 // ApprovalDiff represents server computed diff for approval requests.
 type ApprovalDiff struct {
 	ApprovalID  string         `json:"approval_id"`
@@ -461,16 +468,19 @@ type Agent struct {
 
 // RegisterAgentInput defines the fields required to register a new agent.
 type RegisterAgentInput struct {
-	Name            string   `json:"name"`
-	Description     string   `json:"description,omitempty"`
-	RequestedScopes []string `json:"requested_scopes"`
-	Capabilities    []string `json:"capabilities,omitempty"`
+	Name                      string   `json:"name"`
+	Description               string   `json:"description,omitempty"`
+	RequestedScopes           []string `json:"requested_scopes"`
+	RequestedRequiresApproval bool     `json:"requested_requires_approval,omitempty"`
+	Capabilities              []string `json:"capabilities,omitempty"`
 }
 
 // AgentRegistration response containing the ID and approval status.
 type AgentRegistration struct {
 	AgentID           string `json:"agent_id"`
 	ApprovalRequestID string `json:"approval_request_id"`
+	RegistrationID    string `json:"registration_id,omitempty"`
+	EnrollmentToken   string `json:"enrollment_token,omitempty"`
 	Status            string `json:"status"`
 }
 

@@ -21,7 +21,15 @@ func (c *Client) GetApproval(id string) (*Approval, error) {
 }
 
 func (c *Client) ApproveRequest(id string) (*Approval, error) {
-	data, err := c.post(fmt.Sprintf("/api/approvals/%s/approve", id), nil)
+	return c.ApproveRequestWithInput(id, nil)
+}
+
+func (c *Client) ApproveRequestWithInput(id string, input *ApproveRequestInput) (*Approval, error) {
+	var body any
+	if input != nil {
+		body = input
+	}
+	data, err := c.post(fmt.Sprintf("/api/approvals/%s/approve", id), body)
 	if err != nil {
 		return nil, err
 	}

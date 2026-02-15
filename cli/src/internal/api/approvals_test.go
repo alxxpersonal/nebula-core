@@ -122,3 +122,28 @@ func TestGetApprovalDiff(t *testing.T) {
 		assert.Equal(t, "archived", changes["to"])
 	}
 }
+
+func TestApproveRequestWithInput(t *testing.T) {
+	var body map[string]any
+	_, client := testServer(t, func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPost, r.Method)
+		assert.Contains(t, r.URL.Path, "/approve")
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+		w.Write(jsonResponse(map[string]any{
+			"id":           "ap-1",
+			"status":       "approved",
+			"request_type": "register_agent",
+		}))
+	})
+
+	trust := false
+	input := &ApproveRequestInput{
+		GrantScopes:           []string{"public", "code"},
+		GrantRequiresApproval: &trust,
+	}
+	approval, err := client.ApproveRequestWithInput("ap-1", input)
+	require.NoError(t, err)
+	assert.Equal(t, "approved", approval.Status)
+	assert.Equal(t, []any{"public", "code"}, body["grant_scopes"])
+	assert.Equal(t, false, body["grant_requires_approval"])
+}

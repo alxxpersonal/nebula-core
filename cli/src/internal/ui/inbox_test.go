@@ -394,6 +394,87 @@ func TestInboxBatchApproveSelected(t *testing.T) {
 	assert.ElementsMatch(t, []string{"ap-1", "ap-2"}, approved)
 }
 
+func TestInboxApproveRegisterAgentOpensGrantEditor(t *testing.T) {
+	_, client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]any{
+			"data": []map[string]any{
+				{
+					"id":           "ap-register",
+					"status":       "pending",
+					"request_type": "register_agent",
+					"agent_name":   "bootstrap-agent",
+					"requested_by": "agent-id",
+					"change_details": map[string]any{
+						"requested_scopes":            []string{"public", "code"},
+						"requested_requires_approval": false,
+					},
+					"created_at": time.Now(),
+				},
+			},
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	})
+
+	model := NewInboxModel(client)
+	cmd := model.Init()
+	model, _ = model.Update(cmd())
+
+	model, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	assert.True(t, model.grantEditing)
+	assert.Equal(t, "ap-register", model.grantApproval)
+	assert.Equal(t, "public,code", model.grantScopes)
+	assert.False(t, model.grantTrusted)
+}
+
+func TestInboxApproveRegisterAgentSendsGrantPayload(t *testing.T) {
+	approvedBody := map[string]any{}
+	_, client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/approvals/pending":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]any{
+					{
+						"id":           "ap-register",
+						"status":       "pending",
+						"request_type": "register_agent",
+						"agent_name":   "bootstrap-agent",
+						"requested_by": "agent-id",
+						"change_details": map[string]any{
+							"requested_scopes":            []string{"public"},
+							"requested_requires_approval": true,
+						},
+						"created_at": time.Now(),
+					},
+				},
+			})
+		case strings.HasSuffix(r.URL.Path, "/approve"):
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&approvedBody))
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"id":     "ap-register",
+					"status": "approved",
+				},
+			})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+
+	model := NewInboxModel(client)
+	cmd := model.Init()
+	model, _ = model.Update(cmd())
+
+	model, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	require.True(t, model.grantEditing)
+	model, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+	model, cmd = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	require.NotNil(t, cmd)
+	model, _ = model.Update(cmd())
+
+	assert.Equal(t, []any{"public"}, approvedBody["grant_scopes"])
+	assert.Equal(t, false, approvedBody["grant_requires_approval"])
+}
+
 func TestInboxBatchRejectSelected(t *testing.T) {
 	var rejected []string
 	_, client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
