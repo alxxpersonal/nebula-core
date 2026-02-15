@@ -134,6 +134,7 @@ from nebula_mcp.models import (
     UpdateTaxonomyInput,
 )
 from nebula_mcp.query_loader import QueryLoader
+from nebula_mcp.schema import load_schema_contract
 from nebula_mcp.semantic import rank_semantic_candidates
 
 QUERIES = QueryLoader(Path(__file__).resolve().parents[1] / "queries")
@@ -666,6 +667,17 @@ async def _run_bulk_import(
         "errors": errors,
         "items": created,
     }
+
+
+# --- Schema Tools ---
+
+
+@mcp.tool()
+async def get_schema(ctx: Context) -> dict:
+    """Return the canonical schema contract (active taxonomy + constraints)."""
+
+    pool, _enums, _agent = await require_context(ctx)
+    return await load_schema_contract(pool)
 
 
 # --- Admin Tools ---
