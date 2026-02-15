@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/gravitrone/nebula-core/cli/internal/api"
 	"github.com/gravitrone/nebula-core/cli/internal/ui/components"
@@ -284,23 +285,89 @@ func (m FilesModel) renderList() string {
 		)
 	}
 
-	var rows strings.Builder
 	contentWidth := components.BoxContentWidth(m.width)
-	maxLabelWidth := contentWidth - 4
 	visible := m.list.Visible()
-	for i, label := range visible {
-		if maxLabelWidth > 0 {
-			label = components.ClampTextWidth(label, maxLabelWidth)
+
+	previewWidth := contentWidth * 35 / 100
+	if previewWidth < 40 {
+		previewWidth = 40
+	}
+	if previewWidth > 60 {
+		previewWidth = 60
+	}
+
+	gap := 3
+	tableWidth := contentWidth
+	sideBySide := contentWidth >= 110
+	if sideBySide {
+		tableWidth = contentWidth - previewWidth - gap
+		if tableWidth < 60 {
+			sideBySide = false
+			tableWidth = contentWidth
 		}
+	}
+
+	sepWidth := 1
+	if b := lipgloss.RoundedBorder().Left; b != "" {
+		sepWidth = lipgloss.Width(b)
+	}
+
+	// 4 columns -> 3 separators.
+	availableCols := tableWidth - (3 * sepWidth)
+	if availableCols < 30 {
+		availableCols = 30
+	}
+
+	statusWidth := 10
+	sizeWidth := 10
+	atWidth := 11
+	fileWidth := availableCols - (statusWidth + sizeWidth + atWidth)
+	if fileWidth < 12 {
+		fileWidth = 12
+	}
+	cols := []components.TableColumn{
+		{Header: "File", Width: fileWidth, Align: lipgloss.Left},
+		{Header: "Status", Width: statusWidth, Align: lipgloss.Left},
+		{Header: "Size", Width: sizeWidth, Align: lipgloss.Right},
+		{Header: "At", Width: atWidth, Align: lipgloss.Left},
+	}
+
+	tableRows := make([][]string, 0, len(visible))
+	activeRowRel := -1
+	var previewItem *api.File
+	if idx := m.list.Selected(); idx >= 0 && idx < len(m.items) {
+		previewItem = &m.items[idx]
+	}
+
+	for i := range visible {
 		absIdx := m.list.RelToAbs(i)
+		if absIdx < 0 || absIdx >= len(m.items) {
+			continue
+		}
+		f := m.items[absIdx]
+
+		status := strings.TrimSpace(components.SanitizeOneLine(f.Status))
+		if status == "" {
+			status = "-"
+		}
+		size := "-"
+		if f.SizeBytes != nil {
+			size = formatFileSize(*f.SizeBytes)
+		}
+		at := f.UpdatedAt
+		if at.IsZero() {
+			at = f.CreatedAt
+		}
+
 		if m.list.IsSelected(absIdx) {
-			rows.WriteString(SelectedStyle.Render("  > " + label))
-		} else {
-			rows.WriteString(NormalStyle.Render("    " + label))
+			activeRowRel = len(tableRows)
 		}
-		if i < len(visible)-1 {
-			rows.WriteString("\n")
-		}
+		tableRows = append(tableRows, []string{
+			components.ClampTextWidthEllipsis(components.SanitizeOneLine(f.Filename), fileWidth),
+			components.ClampTextWidthEllipsis(status, statusWidth),
+			components.ClampTextWidthEllipsis(size, sizeWidth),
+			at.Format("01-02 15:04"),
+		})
 	}
 
 	countLine := fmt.Sprintf("%d total", len(m.items))
@@ -310,8 +377,75 @@ func (m FilesModel) renderList() string {
 			countLine = fmt.Sprintf("%s · next: %s", countLine, strings.TrimSpace(m.searchSuggest))
 		}
 	}
-	content := MutedStyle.Render(countLine) + "\n\n" + rows.String()
+	countLine = MutedStyle.Render(countLine)
+
+	table := components.TableGridWithActiveRow(cols, tableRows, tableWidth, activeRowRel)
+	preview := ""
+	if previewItem != nil {
+		content := m.renderFilePreview(*previewItem, previewBoxContentWidth(previewWidth))
+		preview = renderPreviewBox(content, previewWidth)
+	}
+
+	body := table
+	if sideBySide && preview != "" {
+		body = lipgloss.JoinHorizontal(lipgloss.Top, table, strings.Repeat(" ", gap), preview)
+	} else if preview != "" {
+		body = table + "\n\n" + preview
+	}
+
+	content := countLine + "\n\n" + body + "\n"
 	return components.TitledBox("Files", content, m.width)
+}
+
+func (m FilesModel) renderFilePreview(f api.File, width int) string {
+	if width <= 0 {
+		return ""
+	}
+
+	name := components.SanitizeOneLine(f.Filename)
+	if strings.TrimSpace(name) == "" {
+		name = "file"
+	}
+	status := strings.TrimSpace(components.SanitizeOneLine(f.Status))
+	if status == "" {
+		status = "-"
+	}
+	size := "-"
+	if f.SizeBytes != nil {
+		size = formatFileSize(*f.SizeBytes)
+	}
+	at := f.UpdatedAt
+	if at.IsZero() {
+		at = f.CreatedAt
+	}
+
+	var lines []string
+	lines = append(lines, MetaKeyStyle.Render("Selected"))
+	for _, part := range wrapPreviewText(name, width) {
+		lines = append(lines, SelectedStyle.Render(part))
+	}
+	lines = append(lines, "")
+
+	lines = append(lines, renderPreviewRow("Status", status, width))
+	lines = append(lines, renderPreviewRow("Size", size, width))
+	lines = append(lines, renderPreviewRow("At", at.Format("01-02 15:04"), width))
+	if strings.TrimSpace(f.FilePath) != "" {
+		lines = append(lines, renderPreviewRow("Path", f.FilePath, width))
+	}
+	if f.MimeType != nil && strings.TrimSpace(*f.MimeType) != "" {
+		lines = append(lines, renderPreviewRow("MIME", strings.TrimSpace(*f.MimeType), width))
+	}
+	if f.Checksum != nil && strings.TrimSpace(*f.Checksum) != "" {
+		lines = append(lines, renderPreviewRow("SHA", strings.TrimSpace(*f.Checksum), width))
+	}
+	if len(f.Tags) > 0 {
+		lines = append(lines, renderPreviewRow("Tags", strings.Join(f.Tags, ", "), width))
+	}
+	if metaPreview := metadataPreview(map[string]any(f.Metadata), 80); metaPreview != "" {
+		lines = append(lines, renderPreviewRow("Preview", metaPreview, width))
+	}
+
+	return padPreviewLines(lines, width)
 }
 
 func (m FilesModel) handleListKeys(msg tea.KeyMsg) (FilesModel, tea.Cmd) {
