@@ -36,7 +36,9 @@ func TestHistoryViewRendersListAndFiltersLine(t *testing.T) {
 
 	out := components.SanitizeText(model.View())
 	assert.Contains(t, out, "History")
-	assert.Contains(t, out, "Filters: table:entities action:create")
+	assert.Contains(t, out, "Filters:")
+	assert.Contains(t, out, "table:entities")
+	assert.Contains(t, out, "action:create")
 	assert.Contains(t, out, "scope:scope-1")
 	assert.Contains(t, out, "CREATE")
 	assert.Contains(t, out, "entities")

@@ -546,7 +546,11 @@ func formatAuditFilters(filter auditFilter) string {
 	if len(parts) == 0 {
 		return ""
 	}
-	return "Filters: " + strings.Join(parts, " ")
+	if len(parts) == 1 {
+		return "Filters: " + parts[0]
+	}
+	// Avoid lipgloss word-wrapping splitting filter tokens (for example "scope:...").
+	return "Filters:\n  " + strings.Join(parts, "\n  ")
 }
 
 func buildAuditDiffRows(entry api.AuditEntry) []components.DiffRow {
