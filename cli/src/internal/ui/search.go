@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/gravitrone/nebula-core/cli/internal/api"
 	"github.com/gravitrone/nebula-core/cli/internal/ui/components"
@@ -153,7 +154,13 @@ func (m SearchModel) View() string {
 	var b strings.Builder
 	b.WriteString(MutedStyle.Render(fmt.Sprintf("Mode: %s (tab to toggle)", m.mode)))
 	b.WriteString("\n\n")
-	b.WriteString("  > " + components.SanitizeText(m.query))
+	query := components.SanitizeText(m.query)
+	queryWidth := components.BoxContentWidth(m.width) - 8
+	if queryWidth < 10 {
+		queryWidth = 10
+	}
+	query = components.ClampTextWidthEllipsis(query, queryWidth)
+	b.WriteString(MetaKeyStyle.Render("Query") + MetaPunctStyle.Render(": ") + SelectedStyle.Render(query))
 	b.WriteString(AccentStyle.Render("█"))
 	b.WriteString("\n\n")
 
@@ -165,25 +172,189 @@ func (m SearchModel) View() string {
 		b.WriteString(MutedStyle.Render("No matches."))
 	} else {
 		contentWidth := components.BoxContentWidth(m.width)
-		maxLabelWidth := contentWidth - 4
 		visible := m.list.Visible()
-		for i, label := range visible {
-			if maxLabelWidth > 0 {
-				label = components.ClampTextWidth(label, maxLabelWidth)
-			}
-			absIdx := m.list.RelToAbs(i)
-			if m.list.IsSelected(absIdx) {
-				b.WriteString(SelectedStyle.Render("  > " + label))
-			} else {
-				b.WriteString(NormalStyle.Render("    " + label))
-			}
-			if i < len(visible)-1 {
-				b.WriteString("\n")
+
+		previewWidth := contentWidth * 35 / 100
+		if previewWidth < 40 {
+			previewWidth = 40
+		}
+		if previewWidth > 60 {
+			previewWidth = 60
+		}
+
+		gap := 3
+		tableWidth := contentWidth
+		sideBySide := contentWidth >= 110
+		if sideBySide {
+			tableWidth = contentWidth - previewWidth - gap
+			if tableWidth < 60 {
+				sideBySide = false
+				tableWidth = contentWidth
 			}
 		}
+
+		sepWidth := 1
+		if br := lipgloss.RoundedBorder().Left; br != "" {
+			sepWidth = lipgloss.Width(br)
+		}
+
+		// 3 columns -> 2 separators.
+		availableCols := tableWidth - (2 * sepWidth)
+		if availableCols < 30 {
+			availableCols = 30
+		}
+
+		kindWidth := 10
+		infoWidth := 28
+		titleWidth := availableCols - (kindWidth + infoWidth)
+		if titleWidth < 16 {
+			titleWidth = 16
+			infoWidth = availableCols - (titleWidth + kindWidth)
+			if infoWidth < 14 {
+				infoWidth = 14
+			}
+		}
+
+		cols := []components.TableColumn{
+			{Header: "Title", Width: titleWidth, Align: lipgloss.Left},
+			{Header: "Kind", Width: kindWidth, Align: lipgloss.Left},
+			{Header: "Info", Width: infoWidth, Align: lipgloss.Left},
+		}
+
+		tableRows := make([][]string, 0, len(visible))
+		activeRowRel := -1
+		var previewItem *searchEntry
+		if idx := m.list.Selected(); idx >= 0 && idx < len(m.items) {
+			previewItem = &m.items[idx]
+		}
+
+		for i := range visible {
+			absIdx := m.list.RelToAbs(i)
+			if absIdx < 0 || absIdx >= len(m.items) {
+				continue
+			}
+			entry := m.items[absIdx]
+
+			kind := strings.TrimSpace(components.SanitizeOneLine(entry.kind))
+			if kind == "" {
+				kind = "-"
+			}
+			title := strings.TrimSpace(components.SanitizeOneLine(entry.label))
+			if title == "" {
+				title = "-"
+			}
+			info := strings.TrimSpace(components.SanitizeOneLine(entry.desc))
+			if info == "" {
+				info = "-"
+			}
+
+			if m.list.IsSelected(absIdx) {
+				activeRowRel = len(tableRows)
+			}
+
+			tableRows = append(tableRows, []string{
+				components.ClampTextWidthEllipsis(title, titleWidth),
+				components.ClampTextWidthEllipsis(kind, kindWidth),
+				components.ClampTextWidthEllipsis(info, infoWidth),
+			})
+		}
+
+		countLine := MutedStyle.Render(fmt.Sprintf("%d results", len(m.items)))
+		table := components.TableGridWithActiveRow(cols, tableRows, tableWidth, activeRowRel)
+		preview := ""
+		if previewItem != nil {
+			content := m.renderSearchPreview(*previewItem, previewBoxContentWidth(previewWidth))
+			preview = renderPreviewBox(content, previewWidth)
+		}
+
+		body := table
+		if sideBySide && preview != "" {
+			body = lipgloss.JoinHorizontal(lipgloss.Top, table, strings.Repeat(" ", gap), preview)
+		} else if preview != "" {
+			body = table + "\n\n" + preview
+		}
+
+		b.WriteString(countLine)
+		b.WriteString("\n\n")
+		b.WriteString(body)
 	}
 
 	return components.Indent(components.TitledBox("Search", b.String(), m.width), 1)
+}
+
+func (m SearchModel) renderSearchPreview(entry searchEntry, width int) string {
+	if width <= 0 {
+		return ""
+	}
+
+	title := strings.TrimSpace(components.SanitizeOneLine(entry.label))
+	if title == "" {
+		title = "result"
+	}
+
+	var lines []string
+	lines = append(lines, MetaKeyStyle.Render("Selected"))
+	for _, part := range wrapPreviewText(title, width) {
+		lines = append(lines, SelectedStyle.Render(part))
+	}
+	lines = append(lines, "")
+
+	kind := strings.TrimSpace(components.SanitizeOneLine(entry.kind))
+	if kind == "" {
+		kind = "-"
+	}
+	lines = append(lines, renderPreviewRow("Kind", kind, width))
+	if strings.TrimSpace(entry.id) != "" {
+		lines = append(lines, renderPreviewRow("ID", shortID(entry.id), width))
+	}
+	if strings.TrimSpace(entry.desc) != "" {
+		lines = append(lines, renderPreviewRow("Info", entry.desc, width))
+	}
+
+	if entry.entity != nil {
+		typ := strings.TrimSpace(components.SanitizeOneLine(entry.entity.Type))
+		if typ != "" {
+			lines = append(lines, renderPreviewRow("Type", typ, width))
+		}
+		status := strings.TrimSpace(components.SanitizeOneLine(entry.entity.Status))
+		if status != "" {
+			lines = append(lines, renderPreviewRow("Status", status, width))
+		}
+		if len(entry.entity.Tags) > 0 {
+			lines = append(lines, renderPreviewRow("Tags", strings.Join(entry.entity.Tags, ", "), width))
+		}
+	} else if entry.knowledge != nil {
+		src := strings.TrimSpace(components.SanitizeOneLine(entry.knowledge.SourceType))
+		if src != "" {
+			lines = append(lines, renderPreviewRow("Source", src, width))
+		}
+		status := strings.TrimSpace(components.SanitizeOneLine(entry.knowledge.Status))
+		if status != "" {
+			lines = append(lines, renderPreviewRow("Status", status, width))
+		}
+		if entry.knowledge.URL != nil && strings.TrimSpace(*entry.knowledge.URL) != "" {
+			lines = append(lines, renderPreviewRow("URL", strings.TrimSpace(*entry.knowledge.URL), width))
+		}
+		if len(entry.knowledge.Tags) > 0 {
+			lines = append(lines, renderPreviewRow("Tags", strings.Join(entry.knowledge.Tags, ", "), width))
+		}
+		if snippet := previewStringValue(entry.knowledge.Metadata, "snippet"); snippet != "" {
+			lines = append(lines, renderPreviewRow("Snippet", snippet, width))
+		}
+	} else if entry.job != nil {
+		status := strings.TrimSpace(components.SanitizeOneLine(entry.job.Status))
+		if status != "" {
+			lines = append(lines, renderPreviewRow("Status", status, width))
+		}
+		if entry.job.Priority != nil && strings.TrimSpace(*entry.job.Priority) != "" {
+			lines = append(lines, renderPreviewRow("Priority", strings.TrimSpace(*entry.job.Priority), width))
+		}
+		if metaPreview := metadataPreview(map[string]any(entry.job.Metadata), 80); metaPreview != "" {
+			lines = append(lines, renderPreviewRow("Meta", metaPreview, width))
+		}
+	}
+
+	return padPreviewLines(lines, width)
 }
 
 func (m *SearchModel) search(query string) tea.Cmd {
