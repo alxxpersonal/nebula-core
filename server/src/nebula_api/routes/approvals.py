@@ -189,6 +189,13 @@ async def approve(
         )
     except ValueError as exc:
         api_error("EXECUTION_FAILED", str(exc), 400)
+    except Exception as exc:
+        # Execution errors should not bubble as raw 500s. The helper marks the
+        # request as approved-failed, so we can surface a controlled payload.
+        failed_row = await pool.fetchrow(QUERIES["approvals/get_request"], approval_id)
+        failed = dict(failed_row) if failed_row else {}
+        msg = failed.get("execution_error") or str(exc) or "Approval execution failed"
+        api_error("EXECUTION_FAILED", msg, 409)
     return success(result)
 
 

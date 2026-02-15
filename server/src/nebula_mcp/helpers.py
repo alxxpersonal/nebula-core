@@ -431,6 +431,11 @@ async def approve_request(
 
     executor = EXECUTORS.get(approval["request_type"])
     if not executor:
+        await pool.execute(
+            QUERIES["approvals/mark_failed"],
+            f"No executor for: {approval['request_type']}",
+            approval_id,
+        )
         raise ValueError(f"No executor for: {approval['request_type']}")
 
     try:
