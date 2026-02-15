@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/gravitrone/nebula-core/cli/internal/api"
 	"github.com/gravitrone/nebula-core/cli/internal/ui/components"
@@ -280,23 +281,89 @@ func (m JobsModel) renderList() string {
 			m.width,
 		)
 	}
-	var rows strings.Builder
 	contentWidth := components.BoxContentWidth(m.width)
-	maxLabelWidth := contentWidth - 4
 	visible := m.list.Visible()
-	for i, label := range visible {
-		if maxLabelWidth > 0 {
-			label = components.ClampTextWidth(label, maxLabelWidth)
+
+	previewWidth := contentWidth * 35 / 100
+	if previewWidth < 40 {
+		previewWidth = 40
+	}
+	if previewWidth > 60 {
+		previewWidth = 60
+	}
+
+	gap := 3
+	tableWidth := contentWidth
+	sideBySide := contentWidth >= 110
+	if sideBySide {
+		tableWidth = contentWidth - previewWidth - gap
+		if tableWidth < 60 {
+			sideBySide = false
+			tableWidth = contentWidth
 		}
+	}
+
+	sepWidth := 1
+	if b := lipgloss.RoundedBorder().Left; b != "" {
+		sepWidth = lipgloss.Width(b)
+	}
+
+	// 4 columns -> 3 separators.
+	availableCols := tableWidth - (3 * sepWidth)
+	if availableCols < 30 {
+		availableCols = 30
+	}
+
+	statusWidth := 10
+	prioWidth := 10
+	atWidth := 11
+	titleWidth := availableCols - (statusWidth + prioWidth + atWidth)
+	if titleWidth < 12 {
+		titleWidth = 12
+	}
+	cols := []components.TableColumn{
+		{Header: "Title", Width: titleWidth, Align: lipgloss.Left},
+		{Header: "Status", Width: statusWidth, Align: lipgloss.Left},
+		{Header: "Priority", Width: prioWidth, Align: lipgloss.Left},
+		{Header: "At", Width: atWidth, Align: lipgloss.Left},
+	}
+
+	tableRows := make([][]string, 0, len(visible))
+	activeRowRel := -1
+	var previewItem *api.Job
+	if idx := m.list.Selected(); idx >= 0 && idx < len(m.items) {
+		previewItem = &m.items[idx]
+	}
+
+	for i := range visible {
 		absIdx := m.list.RelToAbs(i)
+		if absIdx < 0 || absIdx >= len(m.items) {
+			continue
+		}
+		j := m.items[absIdx]
+
+		status := strings.TrimSpace(components.SanitizeOneLine(j.Status))
+		if status == "" {
+			status = "-"
+		}
+		priority := "-"
+		if j.Priority != nil && strings.TrimSpace(*j.Priority) != "" {
+			priority = strings.TrimSpace(components.SanitizeOneLine(*j.Priority))
+		}
+		at := j.UpdatedAt
+		if at.IsZero() {
+			at = j.CreatedAt
+		}
+
 		if m.list.IsSelected(absIdx) {
-			rows.WriteString(SelectedStyle.Render("  > " + label))
-		} else {
-			rows.WriteString(NormalStyle.Render("    " + label))
+			activeRowRel = len(tableRows)
 		}
-		if i < len(visible)-1 {
-			rows.WriteString("\n")
-		}
+		tableRows = append(tableRows, []string{
+			components.ClampTextWidthEllipsis(components.SanitizeOneLine(j.Title), titleWidth),
+			components.ClampTextWidthEllipsis(status, statusWidth),
+			components.ClampTextWidthEllipsis(priority, prioWidth),
+			at.Format("01-02 15:04"),
+		})
 	}
 	title := "Jobs"
 	countLine := fmt.Sprintf("%d total", len(m.items))
@@ -307,8 +374,64 @@ func (m JobsModel) renderList() string {
 		}
 	}
 	countLine = MutedStyle.Render(countLine)
-	content := countLine + "\n\n" + rows.String()
+
+	table := components.TableGridWithActiveRow(cols, tableRows, tableWidth, activeRowRel)
+	preview := ""
+	if previewItem != nil {
+		content := m.renderJobPreview(*previewItem, previewBoxContentWidth(previewWidth))
+		preview = renderPreviewBox(content, previewWidth)
+	}
+
+	body := table
+	if sideBySide && preview != "" {
+		body = lipgloss.JoinHorizontal(lipgloss.Top, table, strings.Repeat(" ", gap), preview)
+	} else if preview != "" {
+		body = table + "\n\n" + preview
+	}
+
+	content := countLine + "\n\n" + body + "\n"
 	return components.TitledBox(title, content, m.width)
+}
+
+func (m JobsModel) renderJobPreview(j api.Job, width int) string {
+	if width <= 0 {
+		return ""
+	}
+
+	title := components.SanitizeOneLine(j.Title)
+	status := strings.TrimSpace(components.SanitizeOneLine(j.Status))
+	if status == "" {
+		status = "-"
+	}
+	priority := "-"
+	if j.Priority != nil && strings.TrimSpace(*j.Priority) != "" {
+		priority = strings.TrimSpace(components.SanitizeOneLine(*j.Priority))
+	}
+	at := j.UpdatedAt
+	if at.IsZero() {
+		at = j.CreatedAt
+	}
+
+	var lines []string
+	lines = append(lines, MetaKeyStyle.Render("Selected"))
+	for _, part := range wrapPreviewText(title, width) {
+		lines = append(lines, SelectedStyle.Render(part))
+	}
+	lines = append(lines, "")
+
+	lines = append(lines, renderPreviewRow("Status", status, width))
+	lines = append(lines, renderPreviewRow("Priority", priority, width))
+	lines = append(lines, renderPreviewRow("At", at.Format("01-02 15:04"), width))
+
+	if j.Description != nil && strings.TrimSpace(*j.Description) != "" {
+		desc := truncateString(strings.TrimSpace(components.SanitizeText(*j.Description)), 120)
+		lines = append(lines, renderPreviewRow("Notes", desc, width))
+	}
+	if metaPreview := metadataPreview(map[string]any(j.Metadata), 80); metaPreview != "" {
+		lines = append(lines, renderPreviewRow("Preview", metaPreview, width))
+	}
+
+	return padPreviewLines(lines, width)
 }
 
 func (m JobsModel) handleListKeys(msg tea.KeyMsg) (JobsModel, tea.Cmd) {
