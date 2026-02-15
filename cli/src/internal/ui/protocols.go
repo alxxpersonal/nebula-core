@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/gravitrone/nebula-core/cli/internal/api"
 	"github.com/gravitrone/nebula-core/cli/internal/ui/components"
@@ -317,32 +318,179 @@ func (m ProtocolsModel) renderList() string {
 			m.width,
 		)
 	}
-	var rows strings.Builder
-	visible := m.list.Visible()
+
 	contentWidth := components.BoxContentWidth(m.width)
-	maxLabelWidth := contentWidth - 4
-	for i, label := range visible {
-		if maxLabelWidth > 0 {
-			label = components.ClampTextWidth(label, maxLabelWidth)
-		}
-		absIdx := m.list.RelToAbs(i)
-		if m.list.IsSelected(absIdx) {
-			rows.WriteString(SelectedStyle.Render("  > " + label))
-		} else {
-			rows.WriteString(NormalStyle.Render("    " + label))
-		}
-		if i < len(visible)-1 {
-			rows.WriteString("\n")
+	visible := m.list.Visible()
+
+	previewWidth := contentWidth * 35 / 100
+	if previewWidth < 40 {
+		previewWidth = 40
+	}
+	if previewWidth > 60 {
+		previewWidth = 60
+	}
+
+	gap := 3
+	tableWidth := contentWidth
+	sideBySide := contentWidth >= 110
+	if sideBySide {
+		tableWidth = contentWidth - previewWidth - gap
+		if tableWidth < 60 {
+			sideBySide = false
+			tableWidth = contentWidth
 		}
 	}
+
+	sepWidth := 1
+	if b := lipgloss.RoundedBorder().Left; b != "" {
+		sepWidth = lipgloss.Width(b)
+	}
+
+	// 4 columns -> 3 separators.
+	availableCols := tableWidth - (3 * sepWidth)
+	if availableCols < 30 {
+		availableCols = 30
+	}
+
+	statusWidth := 10
+	atWidth := 11
+	nameWidth := 18
+	titleWidth := availableCols - (nameWidth + statusWidth + atWidth)
+	if titleWidth < 14 {
+		titleWidth = 14
+		nameWidth = availableCols - (titleWidth + statusWidth + atWidth)
+		if nameWidth < 12 {
+			nameWidth = 12
+		}
+	}
+
+	cols := []components.TableColumn{
+		{Header: "Name", Width: nameWidth, Align: lipgloss.Left},
+		{Header: "Title", Width: titleWidth, Align: lipgloss.Left},
+		{Header: "Status", Width: statusWidth, Align: lipgloss.Left},
+		{Header: "At", Width: atWidth, Align: lipgloss.Left},
+	}
+
+	tableRows := make([][]string, 0, len(visible))
+	activeRowRel := -1
+	var previewItem *api.Protocol
+	if idx := m.list.Selected(); idx >= 0 && idx < len(m.items) {
+		previewItem = &m.items[idx]
+	}
+
+	for i := range visible {
+		absIdx := m.list.RelToAbs(i)
+		if absIdx < 0 || absIdx >= len(m.items) {
+			continue
+		}
+		p := m.items[absIdx]
+
+		name := strings.TrimSpace(components.SanitizeOneLine(p.Name))
+		if name == "" {
+			name = "protocol"
+		}
+		title := strings.TrimSpace(components.SanitizeOneLine(p.Title))
+		if title == "" {
+			title = "-"
+		}
+		status := strings.TrimSpace(components.SanitizeOneLine(p.Status))
+		if status == "" {
+			status = "-"
+		}
+		at := p.UpdatedAt
+		if at.IsZero() {
+			at = p.CreatedAt
+		}
+
+		if m.list.IsSelected(absIdx) {
+			activeRowRel = len(tableRows)
+		}
+		tableRows = append(tableRows, []string{
+			components.ClampTextWidthEllipsis(name, nameWidth),
+			components.ClampTextWidthEllipsis(title, titleWidth),
+			components.ClampTextWidthEllipsis(status, statusWidth),
+			at.Format("01-02 15:04"),
+		})
+	}
+
 	title := "Protocols"
 	countLine := fmt.Sprintf("%d total", len(m.items))
 	if strings.TrimSpace(m.searchBuf) != "" {
 		countLine = fmt.Sprintf("%s · search: %s", countLine, strings.TrimSpace(m.searchBuf))
 	}
 	countLine = MutedStyle.Render(countLine)
-	content := countLine + "\n\n" + rows.String()
+
+	table := components.TableGridWithActiveRow(cols, tableRows, tableWidth, activeRowRel)
+	preview := ""
+	if previewItem != nil {
+		content := m.renderProtocolPreview(*previewItem, previewBoxContentWidth(previewWidth))
+		preview = renderPreviewBox(content, previewWidth)
+	}
+
+	body := table
+	if sideBySide && preview != "" {
+		body = lipgloss.JoinHorizontal(lipgloss.Top, table, strings.Repeat(" ", gap), preview)
+	} else if preview != "" {
+		body = table + "\n\n" + preview
+	}
+
+	content := countLine + "\n\n" + body + "\n"
 	return components.TitledBox(title, content, m.width)
+}
+
+func (m ProtocolsModel) renderProtocolPreview(p api.Protocol, width int) string {
+	if width <= 0 {
+		return ""
+	}
+
+	name := strings.TrimSpace(components.SanitizeOneLine(p.Name))
+	if name == "" {
+		name = "protocol"
+	}
+	title := strings.TrimSpace(components.SanitizeOneLine(p.Title))
+	heading := name
+	if title != "" {
+		heading = title
+	}
+	status := strings.TrimSpace(components.SanitizeOneLine(p.Status))
+	if status == "" {
+		status = "-"
+	}
+	at := p.UpdatedAt
+	if at.IsZero() {
+		at = p.CreatedAt
+	}
+
+	var lines []string
+	lines = append(lines, MetaKeyStyle.Render("Selected"))
+	for _, part := range wrapPreviewText(heading, width) {
+		lines = append(lines, SelectedStyle.Render(part))
+	}
+	lines = append(lines, "")
+
+	lines = append(lines, renderPreviewRow("Name", name, width))
+	lines = append(lines, renderPreviewRow("Status", status, width))
+	lines = append(lines, renderPreviewRow("At", at.Format("2006-01-02 15:04"), width))
+	if p.Version != nil && strings.TrimSpace(*p.Version) != "" {
+		lines = append(lines, renderPreviewRow("Version", strings.TrimSpace(*p.Version), width))
+	}
+	if p.ProtocolType != nil && strings.TrimSpace(*p.ProtocolType) != "" {
+		lines = append(lines, renderPreviewRow("Type", strings.TrimSpace(*p.ProtocolType), width))
+	}
+	if len(p.AppliesTo) > 0 {
+		lines = append(lines, renderPreviewRow("Applies", strings.Join(p.AppliesTo, ", "), width))
+	}
+	if len(p.Tags) > 0 {
+		lines = append(lines, renderPreviewRow("Tags", strings.Join(p.Tags, ", "), width))
+	}
+	if p.Content != nil && strings.TrimSpace(*p.Content) != "" {
+		lines = append(lines, renderPreviewRow("Content", strings.TrimSpace(*p.Content), width))
+	}
+	if metaPreview := metadataPreview(map[string]any(p.Metadata), 80); metaPreview != "" {
+		lines = append(lines, renderPreviewRow("Meta", metaPreview, width))
+	}
+
+	return padPreviewLines(lines, width)
 }
 
 // --- Detail ---
