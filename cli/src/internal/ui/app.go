@@ -45,6 +45,10 @@ type startupCheckedMsg struct {
 	authErr     string
 	taxonomyErr string
 }
+type onboardingLoginDoneMsg struct {
+	resp *api.LoginResponse
+	err  error
+}
 type paletteEntitiesLoadedMsg struct {
 	query string
 	items []api.Entity
@@ -86,6 +90,10 @@ type App struct {
 	showRecoveryHints bool
 	recoveryCommand   string
 
+	onboarding     bool
+	onboardingName string
+	onboardingBusy bool
+
 	quickstartOpen bool
 	quickstartStep int
 
@@ -122,14 +130,16 @@ type App struct {
 func NewApp(client *api.Client, cfg *config.Config) App {
 	inbox := NewInboxModel(client)
 	inbox.confirmBulk = true
+	onboarding := cfg == nil
 	quickstartPending := cfg != nil && cfg.QuickstartPending
-	startupChecking := client != nil
+	startupChecking := client != nil && !onboarding
 	return App{
 		client:          client,
 		config:          cfg,
 		tab:             tabInbox,
 		tabNav:          true,
 		recoveryCommand: "nebula login",
+		onboarding:      onboarding,
 		quickstartOpen:  quickstartPending,
 		startupChecking: startupChecking,
 		startup: startupSummary{
@@ -154,6 +164,9 @@ func NewApp(client *api.Client, cfg *config.Config) App {
 }
 
 func (a App) Init() tea.Cmd {
+	if a.onboarding {
+		return nil
+	}
 	cmds := []tea.Cmd{a.inbox.Init()}
 	if a.startupChecking {
 		cmds = append(cmds, a.runStartupCheckCmd())
@@ -224,6 +237,52 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.lastErrMsg = ""
 		a.showRecoveryHints = false
 		return a, a.setToast("success", "Re-login complete. API key refreshed.")
+	case onboardingLoginDoneMsg:
+		a.onboardingBusy = false
+		if msg.err != nil {
+			a.err = fmt.Sprintf("login failed: %v", msg.err)
+			a.lastErrCode, a.lastErrMsg = parseErrorCodeAndMessage(a.err)
+			a.showRecoveryHints = shouldShowRecoveryHints(a.lastErrCode, a.lastErrMsg)
+			return a, nil
+		}
+		if msg.resp == nil {
+			a.err = "login failed: empty response"
+			return a, nil
+		}
+		cfg := &config.Config{
+			APIKey:            msg.resp.APIKey,
+			UserEntityID:      msg.resp.EntityID,
+			Username:          msg.resp.Username,
+			Theme:             "dark",
+			VimKeys:           true,
+			QuickstartPending: true,
+		}
+		if err := cfg.Save(); err != nil {
+			a.err = fmt.Sprintf("save config: %v", err)
+			return a, nil
+		}
+		a.config = cfg
+		if a.client == nil {
+			a.client = api.NewDefaultClient(cfg.APIKey)
+		} else {
+			a.client.SetAPIKey(cfg.APIKey)
+		}
+		a.profile.client = a.client
+		a.profile.config = cfg
+		a.onboarding = false
+		a.onboardingName = ""
+		a.quickstartOpen = cfg.QuickstartPending
+		a.err = ""
+		a.lastErrCode = ""
+		a.lastErrMsg = ""
+		a.showRecoveryHints = false
+		a.startupChecking = true
+		a.startup = startupSummary{
+			API:      "checking",
+			Auth:     "checking",
+			Taxonomy: "checking",
+		}
+		return a, tea.Batch(a.inbox.Init(), a.runStartupCheckCmd(), a.setToast("success", "Logged in. Welcome to Nebula."))
 	case startupCheckedMsg:
 		a.startupChecking = false
 		a.startup.Done = true
@@ -268,6 +327,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a.applySearchSelection(msg)
 
 	case tea.KeyMsg:
+		if a.onboarding {
+			return a.handleOnboardingKeys(msg)
+		}
 		if a.importExportOpen {
 			var cmd tea.Cmd
 			a.impex, cmd = a.impex.Update(msg)
@@ -449,6 +511,9 @@ func (a App) View() string {
 	} else if a.importExportOpen {
 		content = a.impex.View()
 		content = centerBlockUniform(content, a.width)
+	} else if a.onboarding {
+		content = a.renderOnboarding()
+		content = centerBlockUniform(content, a.width)
 	} else if a.quickstartOpen {
 		content = a.renderQuickstart()
 		content = centerBlockUniform(content, a.width)
@@ -557,6 +622,19 @@ func (a App) statusHints() []string {
 	if a.helpOpen {
 		return []string{
 			components.Hint("esc", "Back"),
+		}
+	}
+	if a.onboarding {
+		if a.onboardingBusy {
+			return []string{
+				components.Hint("enter", "Logging in"),
+				components.Hint("q", "Quit"),
+			}
+		}
+		return []string{
+			components.Hint("type", "Username"),
+			components.Hint("enter", "Login"),
+			components.Hint("q", "Quit"),
 		}
 	}
 	if a.quickstartOpen {
@@ -1138,6 +1216,73 @@ func (a *App) handleQuickstartKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return *a, nil
 }
 
+func (a *App) handleOnboardingKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if isQuit(msg) {
+		return *a, tea.Quit
+	}
+	if a.onboardingBusy {
+		return *a, nil
+	}
+	if isEnter(msg) {
+		username := strings.TrimSpace(a.onboardingName)
+		if username == "" {
+			a.err = "username is required"
+			return *a, nil
+		}
+		a.err = ""
+		a.onboardingBusy = true
+		return *a, a.onboardingLoginCmd(username)
+	}
+	if isKey(msg, "backspace", "ctrl+h", "delete", "backspace2") {
+		runes := []rune(a.onboardingName)
+		if len(runes) > 0 {
+			a.onboardingName = string(runes[:len(runes)-1])
+		}
+		return *a, nil
+	}
+	if msg.Type == tea.KeyRunes {
+		a.onboardingName += msg.String()
+	}
+	return *a, nil
+}
+
+func (a *App) onboardingLoginCmd(username string) tea.Cmd {
+	name := strings.TrimSpace(username)
+	return func() tea.Msg {
+		client := a.client
+		if client == nil {
+			client = api.NewDefaultClient("")
+		}
+		resp, err := client.Login(name)
+		return onboardingLoginDoneMsg{resp: resp, err: err}
+	}
+}
+
+func (a App) renderOnboarding() string {
+	prompt := components.SanitizeOneLine(strings.TrimSpace(a.onboardingName))
+	if prompt == "" {
+		prompt = ""
+	}
+	line := "> " + prompt
+	if !a.onboardingBusy {
+		line += "█"
+	}
+	status := MutedStyle.Render("Enter your Nebula username to create or resume your local session.")
+	hint := MutedStyle.Render("Press Enter to login.")
+	if a.onboardingBusy {
+		hint = MutedStyle.Render("Logging in...")
+	}
+	body := strings.Join([]string{
+		status,
+		"",
+		MetaKeyStyle.Render("Username"),
+		SelectedStyle.Render(line),
+		"",
+		hint,
+	}, "\n")
+	return components.TitledBox("Onboarding", body, a.width)
+}
+
 func (a *App) finishQuickstart(skipped bool) (tea.Model, tea.Cmd) {
 	a.quickstartOpen = false
 	a.quickstartStep = 0
@@ -1175,12 +1320,16 @@ func (a App) renderQuickstart() string {
 		a.quickstartStep = len(steps) - 1
 	}
 	step := steps[a.quickstartStep]
-	rows := []components.TableRow{
-		{Label: "Step", Value: step.title},
-		{Label: "Action", Value: step.desc},
-		{Label: "Route", Value: step.target},
+
+	labelStyle := MetaKeyStyle.Copy().Bold(true)
+	valueStyle := NormalStyle
+
+	rows := []string{
+		labelStyle.Render("Step") + "   " + valueStyle.Render(step.title),
+		labelStyle.Render("Action") + " " + valueStyle.Render(step.desc),
+		labelStyle.Render("Route") + "  " + valueStyle.Render(step.target),
 	}
-	body := components.Table("Quickstart", rows, a.width) + "\n\n" + MutedStyle.Render("Use <-/-> to change step, Enter to continue, Esc to skip.")
+	body := strings.Join(rows, "\n\n") + "\n\n" + MutedStyle.Render("Use <-/-> to change step, Enter to continue, Esc to skip.")
 	return components.Indent(components.TitledBox("Getting Started", body, a.width), 1)
 }
 

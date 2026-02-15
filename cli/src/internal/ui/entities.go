@@ -974,7 +974,7 @@ func (m EntitiesModel) renderList() string {
 		if showCheckboxes {
 			checkbox := "[ ]"
 			if m.isBulkSelected(absIdx) {
-				checkbox = "[x]"
+				checkbox = "[X]"
 			}
 			displayName = checkbox + " " + displayName
 		}

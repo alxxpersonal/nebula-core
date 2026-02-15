@@ -162,7 +162,7 @@ func renderGridRow(columns []TableColumn, cells []string, sep string, tableWidth
 			rendered = cellStyle.Inline(true).Render(rendered)
 		}
 		if !header {
-			rendered = strings.ReplaceAll(rendered, "[X]", gridSelectedMarkStyle.Render("[X]"))
+			rendered = highlightSelectionMarkers(rendered)
 		}
 		b.WriteString(rendered)
 	}
@@ -219,4 +219,10 @@ func renderGridCell(text string, width int, align lipgloss.Position) string {
 	default:
 		return clamped + strings.Repeat(" ", pad)
 	}
+}
+
+func highlightSelectionMarkers(value string) string {
+	highlighted := strings.ReplaceAll(value, "[X]", gridSelectedMarkStyle.Render("[X]"))
+	highlighted = strings.ReplaceAll(highlighted, "[x]", gridSelectedMarkStyle.Render("[x]"))
+	return highlighted
 }

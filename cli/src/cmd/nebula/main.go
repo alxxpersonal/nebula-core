@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -44,11 +45,22 @@ func init() {
 func runTUI() error {
 	cfg, err := config.Load()
 	if err != nil {
-		fmt.Println("not logged in. run 'nebula login' first.")
-		return err
+		if errors.Is(err, os.ErrNotExist) {
+			if !isInteractiveTerminal(os.Stdin) || !isInteractiveTerminal(os.Stdout) {
+				fmt.Println("not logged in. run 'nebula login' first.")
+				return err
+			}
+			cfg = nil
+		} else {
+			return err
+		}
 	}
 
-	client := api.NewDefaultClient(cfg.APIKey)
+	apiKey := ""
+	if cfg != nil {
+		apiKey = cfg.APIKey
+	}
+	client := api.NewDefaultClient(apiKey)
 	app := ui.NewApp(client, cfg)
 
 	p := tea.NewProgram(app, tea.WithAltScreen())
@@ -56,4 +68,15 @@ func runTUI() error {
 		return fmt.Errorf("tui error: %w", err)
 	}
 	return nil
+}
+
+func isInteractiveTerminal(file *os.File) bool {
+	if file == nil {
+		return false
+	}
+	info, err := file.Stat()
+	if err != nil {
+		return false
+	}
+	return info.Mode()&os.ModeCharDevice != 0
 }
