@@ -178,14 +178,17 @@ async def approve(
             400,
         )
 
-    result = await do_approve(
-        pool,
-        enums,
-        approval_id,
-        str(auth["entity_id"]),
-        review_details=review_details if review_details else None,
-        review_notes=review_notes,
-    )
+    try:
+        result = await do_approve(
+            pool,
+            enums,
+            approval_id,
+            str(auth["entity_id"]),
+            review_details=review_details if review_details else None,
+            review_notes=review_notes,
+        )
+    except ValueError as exc:
+        api_error("EXECUTION_FAILED", str(exc), 400)
     return success(result)
 
 
