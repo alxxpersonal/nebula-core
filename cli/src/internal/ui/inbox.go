@@ -253,6 +253,7 @@ func (m InboxModel) View() string {
 
 	tableRows := make([][]string, 0, len(visible))
 	activeRowRel := -1
+	showCheckboxes := len(m.selected) > 0
 	var previewItem *api.Approval
 	if item, ok := m.selectedItem(); ok {
 		previewItem = &item
@@ -265,12 +266,14 @@ func (m InboxModel) View() string {
 			continue
 		}
 
-		checkbox := "[ ]"
-		if m.selected[item.ID] {
-			checkbox = "[x]"
+		fullTitle := approvalTitle(item)
+		if showCheckboxes {
+			checkbox := "[ ]"
+			if m.selected[item.ID] {
+				checkbox = "[x]"
+			}
+			fullTitle = checkbox + " " + fullTitle
 		}
-
-		fullTitle := checkbox + " " + approvalTitle(item)
 		title := components.ClampTextWidthEllipsis(fullTitle, titleWidth)
 		action := components.ClampTextWidthEllipsis(humanizeApprovalType(item.RequestType), actionWidth)
 		who := components.ClampTextWidthEllipsis(components.SanitizeOneLine(item.AgentName), whoWidth)
