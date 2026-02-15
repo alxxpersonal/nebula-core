@@ -65,6 +65,47 @@ async def test_login_ensures_admin_scope(api_no_auth, db_pool, enums):
 
 
 @pytest.mark.asyncio
+async def test_login_existing_user_backfills_baseline_scopes(api_no_auth, db_pool, enums):
+    """Login should backfill baseline scopes for existing users."""
+
+    status_id = enums.statuses.name_to_id["active"]
+    type_id = enums.entity_types.name_to_id["person"]
+    public_scope = enums.scopes.name_to_id["public"]
+    baseline = {
+        enums.scopes.name_to_id["public"],
+        enums.scopes.name_to_id["personal"],
+        enums.scopes.name_to_id["code"],
+        enums.scopes.name_to_id["vault-only"],
+        enums.scopes.name_to_id["admin"],
+    }
+
+    existing = await db_pool.fetchrow(
+        """
+        INSERT INTO entities (name, type_id, status_id, privacy_scope_ids, tags, metadata)
+        VALUES ($1, $2, $3, $4::uuid[], $5, $6::jsonb)
+        RETURNING id
+        """,
+        "login-baseline-backfill-user",
+        type_id,
+        status_id,
+        [public_scope],
+        [],
+        "{}",
+    )
+
+    r = await api_no_auth.post(
+        "/api/keys/login", json={"username": "login-baseline-backfill-user"}
+    )
+    assert r.status_code == 200
+    assert r.json()["data"]["entity_id"] == str(existing["id"])
+
+    refreshed = await db_pool.fetchrow(
+        "SELECT privacy_scope_ids FROM entities WHERE id = $1::uuid", existing["id"]
+    )
+    assert set(refreshed["privacy_scope_ids"] or []) == baseline
+
+
+@pytest.mark.asyncio
 async def test_create_additional_key(api):
     """Test create additional key."""
 

@@ -81,7 +81,9 @@ async def login(payload: LoginInput, request: Request) -> dict[str, Any]:
 
     pool = request.app.state.pool
     enums = request.app.state.enums
-    admin_scope_id = require_scopes(["admin"], enums)[0]
+    baseline_scope_ids = require_scopes(
+        ["public", "personal", "code", "vault-only", "admin"], enums
+    )
 
     # Find existing entity by name + type person
     entity = await pool.fetchrow(
@@ -92,12 +94,9 @@ async def login(payload: LoginInput, request: Request) -> dict[str, Any]:
 
     if not entity:
         status_id = require_status("active", enums)
-        scope_ids = require_scopes(
-            ["public", "personal", "code", "vault-only", "admin"], enums
-        )
         entity = await pool.fetchrow(
             QUERIES["entities/create"],
-            scope_ids,
+            baseline_scope_ids,
             payload.username,
             require_entity_type("person", enums),
             status_id,
@@ -106,7 +105,9 @@ async def login(payload: LoginInput, request: Request) -> dict[str, Any]:
             None,
         )
     else:
-        scope_ids = _append_scope(entity.get("privacy_scope_ids"), admin_scope_id)
+        scope_ids = list(entity.get("privacy_scope_ids") or [])
+        for scope_id in baseline_scope_ids:
+            scope_ids = _append_scope(scope_ids, scope_id)
         if scope_ids != (entity.get("privacy_scope_ids") or []):
             entity = await pool.fetchrow(
                 """
