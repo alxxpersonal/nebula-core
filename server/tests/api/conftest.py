@@ -25,8 +25,7 @@ async def test_entity(db_pool, enums):
     type_id = enums.entity_types.name_to_id["person"]
     scope_ids = [
         enums.scopes.name_to_id["public"],
-        enums.scopes.name_to_id["personal"],
-        enums.scopes.name_to_id["code"],
+        enums.scopes.name_to_id["private"],
     ]
 
     row = await db_pool.fetchrow(
@@ -45,7 +44,7 @@ async def test_entity(db_pool, enums):
                 "first_name": "API",
                 "context_segments": [
                     {"text": "public info", "scopes": ["public"]},
-                    {"text": "private info", "scopes": ["personal"]},
+                    {"text": "private info", "scopes": ["private"]},
                 ],
             }
         ),
@@ -59,8 +58,7 @@ async def auth_override(test_entity, enums):
 
     scope_ids = [
         enums.scopes.name_to_id["public"],
-        enums.scopes.name_to_id["personal"],
-        enums.scopes.name_to_id["code"],
+        enums.scopes.name_to_id["private"],
     ]
 
     auth_dict = {
@@ -137,7 +135,7 @@ async def test_agent_row(db_pool, enums):
     status_id = enums.statuses.name_to_id["active"]
     scope_ids = [
         enums.scopes.name_to_id["public"],
-        enums.scopes.name_to_id["personal"],
+        enums.scopes.name_to_id["private"],
     ]
 
     row = await db_pool.fetchrow(
@@ -202,7 +200,7 @@ async def agent_auth_override(test_agent_row, enums):
 
     scope_ids = [
         enums.scopes.name_to_id["public"],
-        enums.scopes.name_to_id["personal"],
+        enums.scopes.name_to_id["private"],
     ]
 
     auth_dict = {

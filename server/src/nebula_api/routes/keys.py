@@ -82,7 +82,7 @@ async def login(payload: LoginInput, request: Request) -> dict[str, Any]:
     pool = request.app.state.pool
     enums = request.app.state.enums
     baseline_scope_ids = require_scopes(
-        ["public", "personal", "code", "vault-only", "admin"], enums
+        ["public", "private", "sensitive", "admin"], enums
     )
 
     # Find existing entity by name + type person

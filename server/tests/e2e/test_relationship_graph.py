@@ -35,11 +35,11 @@ async def _make_entity(pool, enums, name):
 
 @pytest.mark.asyncio
 async def test_symmetric_auto_sync(db_pool, enums):
-    """Inserting a symmetric friends-with relationship creates both directions."""
+    """Inserting a symmetric relationship creates both directions."""
 
     a = await _make_entity(db_pool, enums, "graph-sym-a")
     b = await _make_entity(db_pool, enums, "graph-sym-b")
-    type_id = enums.relationship_types.name_to_id["friends-with"]
+    type_id = enums.relationship_types.name_to_id["related-to"]
     status_id = enums.statuses.name_to_id["active"]
 
     await db_pool.execute(
@@ -89,7 +89,7 @@ async def test_archive_cascades_to_relationship(db_pool, enums):
 
     a = await _make_entity(db_pool, enums, "graph-archive-a")
     b = await _make_entity(db_pool, enums, "graph-archive-b")
-    type_id = enums.relationship_types.name_to_id["friends-with"]
+    type_id = enums.relationship_types.name_to_id["related-to"]
     active_id = enums.statuses.name_to_id["active"]
 
     await db_pool.execute(
@@ -129,11 +129,11 @@ async def test_archive_cascades_to_relationship(db_pool, enums):
 
 @pytest.mark.asyncio
 async def test_asymmetric_direction(db_pool, enums):
-    """Inserting works-on A->B creates only the forward edge, not the reverse."""
+    """Inserting an asymmetric relationship creates only the forward edge."""
 
     a = await _make_entity(db_pool, enums, "graph-asym-a")
     b = await _make_entity(db_pool, enums, "graph-asym-b")
-    type_id = enums.relationship_types.name_to_id["works-on"]
+    type_id = enums.relationship_types.name_to_id["depends-on"]
     status_id = enums.statuses.name_to_id["active"]
 
     await db_pool.execute(

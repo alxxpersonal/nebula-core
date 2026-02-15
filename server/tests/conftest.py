@@ -33,6 +33,7 @@ MIGRATION_FILES = [
     "014_mcp_agent_enrollment.sql",
     "015_add_default_log_types.sql",
     "016_jobs_privacy_scopes.sql",
+    "017_enterprise_defaults.sql",
 ]
 
 TEST_DB = os.getenv("NEBULA_TEST_DB", "postgres")

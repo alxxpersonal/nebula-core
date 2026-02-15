@@ -59,7 +59,7 @@ async def _make_relationship(db_pool, enums, source_id, target_id, properties):
 
     status_id = enums.statuses.name_to_id["active"]
     # Use an asymmetric type to avoid known symmetric trigger recursion behavior.
-    rel_type_id = enums.relationship_types.name_to_id["works-on"]
+    rel_type_id = enums.relationship_types.name_to_id["depends-on"]
     row = await db_pool.fetchrow(
         """
         INSERT INTO relationships (source_type, source_id, target_type, target_id, type_id, status_id, properties)

@@ -113,11 +113,11 @@ async def test_query_jobs_includes_other_agents_jobs_in_scope(db_pool, enums):
 async def test_get_job_denies_agent_outside_scopes(db_pool, enums):
     """Job read should be denied when scopes do not overlap."""
 
-    owner = await _make_agent(db_pool, enums, "job-owner-scopes", ["personal"], False)
+    owner = await _make_agent(db_pool, enums, "job-owner-scopes", ["private"], False)
     other = await _make_agent(db_pool, enums, "job-viewer-scopes", ["public"], False)
 
     status_id = enums.statuses.name_to_id["active"]
-    private_scope_ids = [enums.scopes.name_to_id["personal"]]
+    private_scope_ids = [enums.scopes.name_to_id["private"]]
     job = await db_pool.fetchrow(
         """
         INSERT INTO jobs (title, status_id, agent_id, metadata, privacy_scope_ids)

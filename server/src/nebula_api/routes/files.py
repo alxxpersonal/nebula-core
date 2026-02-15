@@ -19,7 +19,7 @@ from nebula_mcp.query_loader import QueryLoader
 QUERIES = QueryLoader(Path(__file__).resolve().parents[2] / "queries")
 
 router = APIRouter()
-ADMIN_SCOPE_NAMES = {"vault-only", "sensitive"}
+ADMIN_SCOPE_NAMES = {"admin"}
 
 
 def _is_admin(auth: dict, enums: EnumRegistry) -> bool:

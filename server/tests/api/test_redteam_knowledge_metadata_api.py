@@ -84,11 +84,11 @@ async def test_api_query_knowledge_filters_context_segments(db_pool, enums):
     metadata = {
         "context_segments": [
             {"text": "public info", "scopes": ["public"]},
-            {"text": "private info", "scopes": ["personal"]},
+            {"text": "private info", "scopes": ["private"]},
         ]
     }
     knowledge = await _make_knowledge(
-        db_pool, enums, "Mixed Scope", ["public", "personal"], metadata
+        db_pool, enums, "Mixed Scope", ["public", "private"], metadata
     )
     agent = await _make_agent(db_pool, enums, "knowledge-viewer")
 
@@ -107,7 +107,7 @@ async def test_api_query_knowledge_filters_context_segments(db_pool, enums):
     assert data
     segments = data[0]["metadata"].get("context_segments", [])
 
-    assert all("personal" not in seg.get("scopes", []) for seg in segments)
+    assert all("private" not in seg.get("scopes", []) for seg in segments)
 
 
 @pytest.mark.asyncio
@@ -117,11 +117,11 @@ async def test_api_get_knowledge_filters_context_segments(db_pool, enums):
     metadata = {
         "context_segments": [
             {"text": "public info", "scopes": ["public"]},
-            {"text": "private info", "scopes": ["personal"]},
+            {"text": "private info", "scopes": ["private"]},
         ]
     }
     knowledge = await _make_knowledge(
-        db_pool, enums, "Mixed Scope", ["public", "personal"], metadata
+        db_pool, enums, "Mixed Scope", ["public", "private"], metadata
     )
     agent = await _make_agent(db_pool, enums, "knowledge-viewer-2")
 
@@ -135,4 +135,4 @@ async def test_api_get_knowledge_filters_context_segments(db_pool, enums):
 
     assert resp.status_code == 200
     segments = resp.json()["data"]["metadata"].get("context_segments", [])
-    assert all("personal" not in seg.get("scopes", []) for seg in segments)
+    assert all("private" not in seg.get("scopes", []) for seg in segments)

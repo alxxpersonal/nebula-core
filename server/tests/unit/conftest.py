@@ -45,53 +45,36 @@ def mock_enums():
         scopes=_make_section(
             [
                 "public",
-                "personal",
-                "vault-only",
-                "uni",
-                "code",
-                "health",
-                "social",
+                "private",
                 "sensitive",
+                "admin",
                 "blacklisted",
             ]
         ),
         relationship_types=_make_section(
             [
-                "friends-with",
-                "works-on",
-                "teaches",
-                "about",
-                "mentions",
-                "created-by",
-                "inner-circle",
-                "dating",
                 "related-to",
+                "depends-on",
+                "references",
+                "blocks",
+                "assigned-to",
+                "owns",
             ]
         ),
         entity_types=_make_section(
             [
                 "person",
+                "organization",
                 "project",
                 "tool",
-                "organization",
-                "course",
-                "idea",
-                "framework",
-                "paper",
-                "university",
+                "document",
             ]
         ),
         log_types=_make_section(
             [
-                "gym-session",
-                "weight",
-                "mood",
-                "sleep",
-                "calories",
-                "workout",
-                "meditation",
-                "reading",
-                "water-intake",
+                "event",
+                "note",
+                "metric",
             ]
         ),
     )

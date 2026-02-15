@@ -140,7 +140,7 @@ QUERIES = QueryLoader(Path(__file__).resolve().parents[1] / "queries")
 
 load_dotenv()
 
-ADMIN_SCOPES = {"admin", "vault-only"}
+ADMIN_SCOPES = {"admin"}
 
 TAXONOMY_KIND_MAP = {
     "scopes": {

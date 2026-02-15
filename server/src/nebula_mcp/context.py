@@ -24,7 +24,7 @@ AgentDict = dict[str, Any]
 LOCAL_INSECURE_MODE_ENV = "NEBULA_MCP_LOCAL_INSECURE"
 LOCAL_INSECURE_AGENT_ENV = "NEBULA_MCP_LOCAL_AGENT_NAME"
 LOCAL_INSECURE_DEFAULT_AGENT = "local-dev-agent"
-LOCAL_INSECURE_SCOPE_ORDER = ("public", "personal", "code", "vault-only", "admin")
+LOCAL_INSECURE_SCOPE_ORDER = ("public", "private", "sensitive", "admin")
 
 
 def enrollment_required_error() -> ValueError:

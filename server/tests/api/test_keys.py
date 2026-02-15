@@ -34,7 +34,7 @@ async def test_login_ensures_admin_scope(api_no_auth, db_pool, enums):
     status_id = enums.statuses.name_to_id["active"]
     type_id = enums.entity_types.name_to_id["person"]
     public_scope = enums.scopes.name_to_id["public"]
-    personal_scope = enums.scopes.name_to_id["personal"]
+    private_scope = enums.scopes.name_to_id["private"]
     admin_scope = enums.scopes.name_to_id["admin"]
 
     existing = await db_pool.fetchrow(
@@ -46,7 +46,7 @@ async def test_login_ensures_admin_scope(api_no_auth, db_pool, enums):
         "login-admin-scope-user",
         type_id,
         status_id,
-        [public_scope, personal_scope],
+        [public_scope, private_scope],
         [],
         "{}",
     )
@@ -73,9 +73,8 @@ async def test_login_existing_user_backfills_baseline_scopes(api_no_auth, db_poo
     public_scope = enums.scopes.name_to_id["public"]
     baseline = {
         enums.scopes.name_to_id["public"],
-        enums.scopes.name_to_id["personal"],
-        enums.scopes.name_to_id["code"],
-        enums.scopes.name_to_id["vault-only"],
+        enums.scopes.name_to_id["private"],
+        enums.scopes.name_to_id["sensitive"],
         enums.scopes.name_to_id["admin"],
     }
 

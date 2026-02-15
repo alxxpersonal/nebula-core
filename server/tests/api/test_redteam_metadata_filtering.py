@@ -37,10 +37,10 @@ async def test_api_query_entities_filters_context_segments(api, db_pool, enums):
     metadata = {
         "context_segments": [
             {"text": "public info", "scopes": ["public"]},
-            {"text": "private info", "scopes": ["personal"]},
+            {"text": "private info", "scopes": ["private"]},
         ]
     }
-    await _make_entity(db_pool, enums, "Mixed Scope", ["public", "personal"], metadata)
+    await _make_entity(db_pool, enums, "Mixed Scope", ["public", "private"], metadata)
 
     resp = await api.get("/api/entities")
     assert resp.status_code == 200
@@ -48,7 +48,7 @@ async def test_api_query_entities_filters_context_segments(api, db_pool, enums):
     assert data
     segments = data[0]["metadata"].get("context_segments", [])
 
-    assert all("personal" not in seg.get("scopes", []) for seg in segments)
+    assert all("private" not in seg.get("scopes", []) for seg in segments)
 
 
 @pytest.mark.asyncio
@@ -58,12 +58,12 @@ async def test_api_search_entities_filters_context_segments(api, db_pool, enums)
     metadata = {
         "context_segments": [
             {"text": "public info", "scopes": ["public"]},
-            {"text": "private info", "scopes": ["personal"]},
+            {"text": "private info", "scopes": ["private"]},
         ],
         "signal": "needle",
     }
     await _make_entity(
-        db_pool, enums, "Metadata Leak", ["public", "personal"], metadata
+        db_pool, enums, "Metadata Leak", ["public", "private"], metadata
     )
 
     resp = await api.post(
@@ -75,7 +75,7 @@ async def test_api_search_entities_filters_context_segments(api, db_pool, enums)
     assert data
     segments = data[0]["metadata"].get("context_segments", [])
 
-    assert all("personal" not in seg.get("scopes", []) for seg in segments)
+    assert all("private" not in seg.get("scopes", []) for seg in segments)
 
 
 @pytest.mark.asyncio
@@ -83,7 +83,7 @@ async def test_api_search_entities_hides_private_entities(api, db_pool, enums):
     """API metadata search should not return private-only entities."""
 
     metadata = {"signal": "private-only"}
-    await _make_entity(db_pool, enums, "Private Node", ["personal"], metadata)
+    await _make_entity(db_pool, enums, "Private Node", ["private"], metadata)
 
     resp = await api.post(
         "/api/entities/search",

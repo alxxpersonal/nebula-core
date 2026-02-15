@@ -89,7 +89,7 @@ class TestRequireRelationshipType:
     def test_valid_relationship_type(self, mock_enums):
         """Return UUID for a known relationship type name."""
 
-        result = require_relationship_type("friends-with", mock_enums)
+        result = require_relationship_type("related-to", mock_enums)
         assert isinstance(result, UUID)
 
     def test_unknown_relationship_type_raises(self, mock_enums):
@@ -108,7 +108,7 @@ class TestRequireScopes:
     def test_valid_scope_list(self, mock_enums):
         """Return list of UUIDs for known scope names."""
 
-        result = require_scopes(["public", "personal"], mock_enums)
+        result = require_scopes(["public", "private"], mock_enums)
         assert len(result) == 2
         assert all(isinstance(uid, UUID) for uid in result)
 
@@ -134,7 +134,7 @@ class TestRequireLogType:
     def test_valid_log_type(self, mock_enums):
         """Return UUID for a known log type name."""
 
-        result = require_log_type("gym-session", mock_enums)
+        result = require_log_type("note", mock_enums)
         assert isinstance(result, UUID)
 
     def test_empty_log_type_raises(self, mock_enums):

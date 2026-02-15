@@ -92,7 +92,7 @@ async def _make_log(db_pool, enums):
     """Insert a log node for graph privacy tests."""
 
     status_id = enums.statuses.name_to_id["active"]
-    log_type_id = enums.log_types.name_to_id["workout"]
+    log_type_id = enums.log_types.name_to_id["note"]
 
     row = await db_pool.fetchrow(
         """
@@ -189,7 +189,7 @@ async def test_graph_neighbors_hides_hidden_log(db_pool, enums):
         str(log_row["id"]),
         "entity",
         str(public_entity["id"]),
-        "logged-by",
+        "related-to",
     )
     await _attach_relationship(
         db_pool,
@@ -198,7 +198,7 @@ async def test_graph_neighbors_hides_hidden_log(db_pool, enums):
         str(log_row["id"]),
         "entity",
         str(private_entity["id"]),
-        "logged-by",
+        "related-to",
     )
 
     viewer = await _make_agent(db_pool, enums, "graph-log-viewer", ["public"])
@@ -273,7 +273,7 @@ async def test_graph_shortest_path_hides_hidden_log(db_pool, enums):
         str(log_row["id"]),
         "entity",
         str(public_entity["id"]),
-        "logged-by",
+        "related-to",
     )
     await _attach_relationship(
         db_pool,
@@ -282,7 +282,7 @@ async def test_graph_shortest_path_hides_hidden_log(db_pool, enums):
         str(log_row["id"]),
         "entity",
         str(private_entity["id"]),
-        "logged-by",
+        "related-to",
     )
 
     viewer = await _make_agent(db_pool, enums, "path-log-viewer", ["public"])

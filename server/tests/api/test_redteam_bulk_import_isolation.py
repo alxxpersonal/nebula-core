@@ -96,7 +96,7 @@ async def test_bulk_import_entities_scope_escalation(db_pool, enums):
                 "name": "Escalated Entity",
                 "type": "person",
                 "status": "active",
-                "scopes": ["personal"],
+                "scopes": ["private"],
                 "tags": ["redteam"],
                 "metadata": {"note": "private"},
             }
@@ -115,7 +115,7 @@ async def test_bulk_import_entities_scope_escalation(db_pool, enums):
         assert data.get("failed", 0) >= 1 or data.get("created", 0) == 0
         return
     scopes = items[0]["scopes"]
-    assert "personal" not in scopes
+    assert "private" not in scopes
 
 
 @pytest.mark.asyncio
@@ -220,7 +220,7 @@ async def test_bulk_import_knowledge_scope_escalation(db_pool, enums):
                 "title": "Escalated Knowledge",
                 "source_type": "note",
                 "content": "secret",
-                "scopes": ["personal"],
+                "scopes": ["private"],
                 "tags": ["redteam"],
                 "metadata": {"note": "private"},
             }
@@ -239,4 +239,4 @@ async def test_bulk_import_knowledge_scope_escalation(db_pool, enums):
         assert data.get("failed", 0) >= 1 or data.get("created", 0) == 0
         return
     scopes = items[0]["scopes"]
-    assert "personal" not in scopes
+    assert "private" not in scopes

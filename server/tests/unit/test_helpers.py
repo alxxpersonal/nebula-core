@@ -42,10 +42,10 @@ class TestFilterContextSegments:
         meta = {
             "context_segments": [
                 {"text": "a", "scopes": ["public"]},
-                {"text": "b", "scopes": ["personal"]},
+                {"text": "b", "scopes": ["private"]},
             ]
         }
-        result = filter_context_segments(meta, ["public", "personal"])
+        result = filter_context_segments(meta, ["public", "private"])
         assert len(result["context_segments"]) == 2
 
     def test_none_match(self):
@@ -53,7 +53,7 @@ class TestFilterContextSegments:
 
         meta = {
             "context_segments": [
-                {"text": "a", "scopes": ["vault-only"]},
+                {"text": "a", "scopes": ["admin"]},
                 {"text": "b", "scopes": ["sensitive"]},
             ]
         }
@@ -66,20 +66,20 @@ class TestFilterContextSegments:
         meta = {
             "context_segments": [
                 {"text": "public note", "scopes": ["public"]},
-                {"text": "secret note", "scopes": ["vault-only"]},
-                {"text": "personal note", "scopes": ["personal"]},
+                {"text": "secret note", "scopes": ["admin"]},
+                {"text": "private note", "scopes": ["private"]},
             ]
         }
-        result = filter_context_segments(meta, ["public", "personal"])
+        result = filter_context_segments(meta, ["public", "private"])
         texts = [s["text"] for s in result["context_segments"]]
-        assert texts == ["public note", "personal note"]
+        assert texts == ["public note", "private note"]
 
     def test_multi_scope_segment(self):
         """Keep segment if any of its scopes match agent scopes."""
 
         meta = {
             "context_segments": [
-                {"text": "multi", "scopes": ["public", "personal"]},
+                {"text": "multi", "scopes": ["public", "private"]},
             ]
         }
         result = filter_context_segments(meta, ["public"])
@@ -92,7 +92,7 @@ class TestFilterContextSegments:
         meta = {
             "context_segments": [
                 {"text": "a", "scopes": ["public"]},
-                {"text": "b", "scopes": ["vault-only"]},
+                {"text": "b", "scopes": ["admin"]},
             ]
         }
         original = copy.deepcopy(meta)

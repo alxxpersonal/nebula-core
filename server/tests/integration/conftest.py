@@ -24,9 +24,9 @@ async def test_agent(db_pool, enums):
     status_id = enums.statuses.name_to_id["active"]
     scope_ids = [
         enums.scopes.name_to_id["public"],
-        enums.scopes.name_to_id["personal"],
-        enums.scopes.name_to_id["code"],
-        enums.scopes.name_to_id["vault-only"],
+        enums.scopes.name_to_id["private"],
+        enums.scopes.name_to_id["sensitive"],
+        enums.scopes.name_to_id["admin"],
     ]
 
     row = await db_pool.fetchrow(

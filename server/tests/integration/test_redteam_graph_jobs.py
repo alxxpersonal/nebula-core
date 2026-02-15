@@ -119,7 +119,7 @@ async def test_graph_neighbors_hides_out_of_scope_jobs(db_pool, enums):
     owner = await _make_agent(db_pool, enums, "job-owner", ["public"])
     viewer = await _make_agent(db_pool, enums, "job-viewer", ["public"])
     entity = await _make_entity(db_pool, enums, "Public Node", ["public"])
-    job = await _make_job(db_pool, enums, "Private Job", owner["id"], ["personal"])
+    job = await _make_job(db_pool, enums, "Private Job", owner["id"], ["private"])
     await _make_relationship(
         db_pool, enums, "entity", str(entity["id"]), "job", job["id"]
     )
@@ -144,7 +144,7 @@ async def test_graph_shortest_path_hides_out_of_scope_jobs(db_pool, enums):
     owner = await _make_agent(db_pool, enums, "path-owner", ["public"])
     viewer = await _make_agent(db_pool, enums, "path-viewer", ["public"])
     entity = await _make_entity(db_pool, enums, "Path Node", ["public"])
-    job = await _make_job(db_pool, enums, "Path Job", owner["id"], ["personal"])
+    job = await _make_job(db_pool, enums, "Path Job", owner["id"], ["private"])
     await _make_relationship(
         db_pool, enums, "entity", str(entity["id"]), "job", job["id"]
     )

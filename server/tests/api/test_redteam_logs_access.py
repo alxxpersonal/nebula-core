@@ -61,7 +61,7 @@ async def _make_log(db_pool, enums):
     """Insert a test log entry for log access scenarios."""
 
     status_id = enums.statuses.name_to_id["active"]
-    log_type_id = enums.log_types.name_to_id["workout"]
+    log_type_id = enums.log_types.name_to_id["note"]
 
     row = await db_pool.fetchrow(
         """
@@ -82,7 +82,7 @@ async def _attach_log(db_pool, enums, log_id, entity_id):
     """Attach a log to an entity via relationships."""
 
     status_id = enums.statuses.name_to_id["active"]
-    rel_type_id = enums.relationship_types.name_to_id["logged-by"]
+    rel_type_id = enums.relationship_types.name_to_id["related-to"]
 
     await db_pool.execute(
         """

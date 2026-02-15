@@ -82,7 +82,7 @@ async def test_api_agent_query_entities_hides_private(db_pool, enums):
     """Public-only agents should not list private entities."""
 
     public_entity = await _make_entity(db_pool, enums, "Public", ["public"])
-    private_entity = await _make_entity(db_pool, enums, "Private", ["personal"])
+    private_entity = await _make_entity(db_pool, enums, "Private", ["private"])
     agent = await _make_agent(db_pool, enums, "public-agent", ["public"])
 
     app.dependency_overrides[require_auth] = _auth_override(
@@ -107,7 +107,7 @@ async def test_api_agent_query_entities_hides_private(db_pool, enums):
 async def test_api_agent_get_entity_denies_private(db_pool, enums):
     """Public-only agents should be blocked from private entities."""
 
-    private_entity = await _make_entity(db_pool, enums, "Private 2", ["personal"])
+    private_entity = await _make_entity(db_pool, enums, "Private 2", ["private"])
     agent = await _make_agent(db_pool, enums, "public-agent-2", ["public"])
 
     app.dependency_overrides[require_auth] = _auth_override(

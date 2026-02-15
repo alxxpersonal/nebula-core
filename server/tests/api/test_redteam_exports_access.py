@@ -153,10 +153,10 @@ async def test_export_entities_filters_context_segments(db_pool, enums):
     metadata = {
         "context_segments": [
             {"text": "public info", "scopes": ["public"]},
-            {"text": "private info", "scopes": ["personal"]},
+            {"text": "private info", "scopes": ["private"]},
         ]
     }
-    await _make_entity(db_pool, enums, "Mixed Scope", ["public", "personal"], metadata)
+    await _make_entity(db_pool, enums, "Mixed Scope", ["public", "private"], metadata)
 
     agent = await _make_agent(db_pool, enums, "export-viewer")
     app.dependency_overrides[require_auth] = _auth_override(agent["id"], enums)
@@ -171,15 +171,15 @@ async def test_export_entities_filters_context_segments(db_pool, enums):
     data = resp.json()["data"]["items"]
     assert data
     segments = data[0]["metadata"].get("context_segments", [])
-    assert all("personal" not in seg.get("scopes", []) for seg in segments)
+    assert all("private" not in seg.get("scopes", []) for seg in segments)
 
 
 @pytest.mark.asyncio
 async def test_export_entities_denies_scope_override(db_pool, enums):
     """Export entities should not allow requesting scopes outside caller access."""
 
-    metadata = {"context_segments": [{"text": "secret", "scopes": ["personal"]}]}
-    await _make_entity(db_pool, enums, "Sensitive", ["personal"], metadata)
+    metadata = {"context_segments": [{"text": "secret", "scopes": ["private"]}]}
+    await _make_entity(db_pool, enums, "Sensitive", ["private"], metadata)
 
     viewer = await _make_agent(db_pool, enums, "export-scope-viewer")
     app.dependency_overrides[require_auth] = _auth_override(viewer["id"], enums)
@@ -187,7 +187,7 @@ async def test_export_entities_denies_scope_override(db_pool, enums):
     app.state.enums = enums
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        resp = await client.get("/api/export/entities?scopes=personal")
+        resp = await client.get("/api/export/entities?scopes=private")
     app.dependency_overrides.pop(require_auth, None)
 
     assert resp.status_code == 400
@@ -202,7 +202,7 @@ async def test_export_context_filters_jobs_by_agent(db_pool, enums):
     owner = await _make_agent(db_pool, enums, "job-owner-export")
     viewer = await _make_agent(db_pool, enums, "job-viewer-export")
     public_job = await _make_job(db_pool, enums, owner["id"], ["public"])
-    private_job = await _make_job(db_pool, enums, owner["id"], ["personal"])
+    private_job = await _make_job(db_pool, enums, owner["id"], ["private"])
 
     app.dependency_overrides[require_auth] = _auth_override(viewer["id"], enums)
     app.state.pool = db_pool
@@ -229,7 +229,7 @@ async def test_export_context_filters_job_relationships(db_pool, enums):
         db_pool, enums, "Public Link", ["public"], {"note": "public"}
     )
     public_job = await _make_job(db_pool, enums, owner["id"], ["public"])
-    private_job = await _make_job(db_pool, enums, owner["id"], ["personal"])
+    private_job = await _make_job(db_pool, enums, owner["id"], ["private"])
     public_rel = await _make_relationship(
         db_pool, enums, "job", public_job["id"], "entity", str(entity["id"])
     )
@@ -259,7 +259,7 @@ async def test_export_jobs_filters_by_agent(db_pool, enums):
     owner = await _make_agent(db_pool, enums, "job-owner-export-jobs")
     viewer = await _make_agent(db_pool, enums, "job-viewer-export-jobs")
     public_job = await _make_job(db_pool, enums, owner["id"], ["public"])
-    private_job = await _make_job(db_pool, enums, owner["id"], ["personal"])
+    private_job = await _make_job(db_pool, enums, owner["id"], ["private"])
 
     app.dependency_overrides[require_auth] = _auth_override(viewer["id"], enums)
     app.state.pool = db_pool
@@ -283,11 +283,11 @@ async def test_export_knowledge_filters_context_segments(db_pool, enums):
     metadata = {
         "context_segments": [
             {"text": "public info", "scopes": ["public"]},
-            {"text": "private info", "scopes": ["personal"]},
+            {"text": "private info", "scopes": ["private"]},
         ]
     }
     await _make_knowledge(
-        db_pool, enums, "Knowledge Mixed", ["public", "personal"], metadata
+        db_pool, enums, "Knowledge Mixed", ["public", "private"], metadata
     )
 
     viewer = await _make_agent(db_pool, enums, "knowledge-export-viewer")
@@ -302,15 +302,15 @@ async def test_export_knowledge_filters_context_segments(db_pool, enums):
     assert resp.status_code == 200
     items = resp.json()["data"]["items"]
     segments = items[0]["metadata"].get("context_segments", [])
-    assert all("personal" not in seg.get("scopes", []) for seg in segments)
+    assert all("private" not in seg.get("scopes", []) for seg in segments)
 
 
 @pytest.mark.asyncio
 async def test_export_knowledge_denies_scope_override(db_pool, enums):
     """Export knowledge should not allow requesting scopes outside caller access."""
 
-    metadata = {"context_segments": [{"text": "secret", "scopes": ["personal"]}]}
-    await _make_knowledge(db_pool, enums, "Sensitive Knowledge", ["personal"], metadata)
+    metadata = {"context_segments": [{"text": "secret", "scopes": ["private"]}]}
+    await _make_knowledge(db_pool, enums, "Sensitive Knowledge", ["private"], metadata)
 
     viewer = await _make_agent(db_pool, enums, "knowledge-scope-viewer")
     app.dependency_overrides[require_auth] = _auth_override(viewer["id"], enums)
@@ -318,7 +318,7 @@ async def test_export_knowledge_denies_scope_override(db_pool, enums):
     app.state.enums = enums
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        resp = await client.get("/api/export/knowledge?scopes=personal")
+        resp = await client.get("/api/export/knowledge?scopes=private")
     app.dependency_overrides.pop(require_auth, None)
 
     assert resp.status_code == 400
@@ -333,7 +333,7 @@ async def test_export_relationships_filters_job_ownership(db_pool, enums):
     owner = await _make_agent(db_pool, enums, "rel-job-owner")
     viewer = await _make_agent(db_pool, enums, "rel-job-viewer")
     public_job = await _make_job(db_pool, enums, owner["id"], ["public"])
-    private_job = await _make_job(db_pool, enums, owner["id"], ["personal"])
+    private_job = await _make_job(db_pool, enums, owner["id"], ["private"])
     entity = await _make_entity(
         db_pool, enums, "Public Link", ["public"], {"note": "public"}
     )

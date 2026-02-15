@@ -75,13 +75,13 @@ async def _make_entity_with_segments(pool, enums, name, scope_names, segments):
 
 @pytest.mark.asyncio
 async def test_agent_denied_when_scope_mismatch(db_pool, enums):
-    """Agent with only health scope cannot access a code-scoped entity."""
+    """Agent with only public scope cannot access a private entity."""
 
     agent = await _make_agent_with_scopes(
-        db_pool, enums, "health-only-agent", ["health"]
+        db_pool, enums, "public-only-agent", ["public"]
     )
 
-    code_scope_id = enums.scopes.name_to_id["code"]
+    private_scope_id = enums.scopes.name_to_id["private"]
     status_id = enums.statuses.name_to_id["active"]
     type_id = enums.entity_types.name_to_id["project"]
 
@@ -91,8 +91,8 @@ async def test_agent_denied_when_scope_mismatch(db_pool, enums):
         VALUES ($1, $2, $3, $4)
         RETURNING *
         """,
-        [code_scope_id],
-        "code-only-project",
+        [private_scope_id],
+        "private-only-project",
         type_id,
         status_id,
     )
@@ -108,17 +108,17 @@ async def test_agent_denied_when_scope_mismatch(db_pool, enums):
 
 @pytest.mark.asyncio
 async def test_context_segments_filtered_by_scope(db_pool, enums):
-    """Agent with public scope only sees public segments, not personal ones."""
+    """Agent with public scope only sees public segments, not private ones."""
 
     agent = await _make_agent_with_scopes(db_pool, enums, "public-agent", ["public"])
 
     segments = [
         {"text": "Public info about the person", "scopes": ["public"]},
-        {"text": "Private details about the person", "scopes": ["personal"]},
+        {"text": "Private details about the person", "scopes": ["private"]},
     ]
 
     entity = await _make_entity_with_segments(
-        db_pool, enums, "multi-scope-person", ["public", "personal"], segments
+        db_pool, enums, "multi-scope-person", ["public", "private"], segments
     )
 
     ctx = _mock_ctx(db_pool, enums, dict(agent))
@@ -139,19 +139,19 @@ async def test_context_segments_filtered_by_scope(db_pool, enums):
 
 @pytest.mark.asyncio
 async def test_agent_with_all_scopes_sees_all_segments(db_pool, enums):
-    """Agent with both public and personal scopes sees all segments."""
+    """Agent with both public and private scopes sees all segments."""
 
     agent = await _make_agent_with_scopes(
-        db_pool, enums, "all-scope-agent", ["public", "personal"]
+        db_pool, enums, "all-scope-agent", ["public", "private"]
     )
 
     segments = [
         {"text": "Public info", "scopes": ["public"]},
-        {"text": "Personal info", "scopes": ["personal"]},
+        {"text": "Private info", "scopes": ["private"]},
     ]
 
     entity = await _make_entity_with_segments(
-        db_pool, enums, "full-scope-person", ["public", "personal"], segments
+        db_pool, enums, "full-scope-person", ["public", "private"], segments
     )
 
     ctx = _mock_ctx(db_pool, enums, dict(agent))

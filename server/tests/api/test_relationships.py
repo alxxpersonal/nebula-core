@@ -100,7 +100,7 @@ async def test_update_relationship(api):
             "source_id": str(e1["id"]),
             "target_type": "entity",
             "target_id": str(e2["id"]),
-            "relationship_type": "works-on",
+            "relationship_type": "depends-on",
         },
     )
     rel_id = cr.json()["data"]["id"]

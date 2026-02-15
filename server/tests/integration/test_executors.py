@@ -151,7 +151,7 @@ class TestCreateEntity:
                 "name": "Jane Doe",
                 "type": "person",
                 "status": "active",
-                "scopes": ["personal"],
+                "scopes": ["private"],
                 "metadata": {
                     "first_name": "Jane",
                     "last_name": "Doe",
@@ -174,7 +174,7 @@ class TestCreateEntity:
                     "name": "Bad Month Person",
                     "type": "person",
                     "status": "active",
-                    "scopes": ["personal"],
+                    "scopes": ["private"],
                     "metadata": {"birth_month": 13},
                 },
             )
@@ -215,7 +215,7 @@ class TestCreateEntity:
                     "scopes": ["public"],
                     "metadata": {
                         "context_segments": [
-                            {"text": "private info", "scopes": ["personal"]},
+                            {"text": "private info", "scopes": ["private"]},
                         ],
                     },
                 },
@@ -347,7 +347,7 @@ class TestCreateRelationship:
                 "source_id": str(test_entity["id"]),
                 "target_type": "entity",
                 "target_id": str(target["id"]),
-                "relationship_type": "works-on",
+                "relationship_type": "depends-on",
             },
         )
 

@@ -83,7 +83,7 @@ async def _make_log(db_pool, enums):
     """Insert a test log for write isolation scenarios."""
 
     status_id = enums.statuses.name_to_id["active"]
-    log_type_id = enums.log_types.name_to_id["workout"]
+    log_type_id = enums.log_types.name_to_id["note"]
 
     row = await db_pool.fetchrow(
         """
@@ -196,7 +196,7 @@ async def test_api_update_log_denies_private_attachment(db_pool, enums):
         private_entity["id"],
         "log",
         log_row["id"],
-        "logged-by",
+        "related-to",
     )
     viewer = await _make_agent(db_pool, enums, "log-viewer", ["public"], False)
 

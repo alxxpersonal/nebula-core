@@ -314,10 +314,10 @@ async def test_enroll_approve_with_grants_applies_final_scope_and_trust(
         str(session["approval_request_id"]),
         str(test_entity["id"]),
         review_details={
-            "grant_scopes": ["public", "code"],
+            "grant_scopes": ["public", "private"],
             "grant_scope_ids": [
                 str(enums.scopes.name_to_id["public"]),
-                str(enums.scopes.name_to_id["code"]),
+                str(enums.scopes.name_to_id["private"]),
             ],
             "grant_requires_approval": False,
         },
@@ -342,7 +342,7 @@ async def test_enroll_approve_with_grants_applies_final_scope_and_trust(
     assert refreshed_agent["requires_approval"] is False
     assert set(refreshed_agent["scopes"]) == {
         enums.scopes.name_to_id["public"],
-        enums.scopes.name_to_id["code"],
+        enums.scopes.name_to_id["private"],
     }
 
 

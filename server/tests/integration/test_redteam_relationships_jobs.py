@@ -121,7 +121,7 @@ async def test_get_relationships_hides_out_of_scope_job_links(db_pool, enums):
     owner = await _make_agent(db_pool, enums, "rel-owner", ["public"])
     viewer = await _make_agent(db_pool, enums, "rel-viewer", ["public"])
     entity = await _make_entity(db_pool, enums, "Public Node", ["public"])
-    job = await _make_job(db_pool, enums, "Private Job", owner["id"], ["personal"])
+    job = await _make_job(db_pool, enums, "Private Job", owner["id"], ["private"])
     rel = await _make_relationship(
         db_pool, enums, "entity", str(entity["id"]), "job", job["id"]
     )
@@ -146,7 +146,7 @@ async def test_query_relationships_hides_out_of_scope_job_links(db_pool, enums):
     owner = await _make_agent(db_pool, enums, "rel-owner-2", ["public"])
     viewer = await _make_agent(db_pool, enums, "rel-viewer-2", ["public"])
     entity = await _make_entity(db_pool, enums, "Public Node 2", ["public"])
-    job = await _make_job(db_pool, enums, "Private Job 2", owner["id"], ["personal"])
+    job = await _make_job(db_pool, enums, "Private Job 2", owner["id"], ["private"])
     rel = await _make_relationship(
         db_pool, enums, "job", job["id"], "entity", str(entity["id"])
     )

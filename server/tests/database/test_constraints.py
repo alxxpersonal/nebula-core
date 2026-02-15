@@ -52,7 +52,7 @@ async def test_relationship_source_type_check_rejects_invalid(db_pool, enums):
     """Relationships table rejects an invalid source_type."""
 
     target = await _make_entity(db_pool, enums, "src-type-target")
-    type_id = enums.relationship_types.name_to_id["works-on"]
+    type_id = enums.relationship_types.name_to_id["depends-on"]
     status_id = enums.statuses.name_to_id["active"]
 
     with pytest.raises((asyncpg.CheckViolationError, asyncpg.RaiseError)):
@@ -73,7 +73,7 @@ async def test_relationship_target_type_check_rejects_invalid(db_pool, enums):
     """Relationships table rejects an invalid target_type."""
 
     source = await _make_entity(db_pool, enums, "tgt-type-source")
-    type_id = enums.relationship_types.name_to_id["works-on"]
+    type_id = enums.relationship_types.name_to_id["depends-on"]
     status_id = enums.statuses.name_to_id["active"]
 
     with pytest.raises((asyncpg.CheckViolationError, asyncpg.RaiseError)):
@@ -95,7 +95,7 @@ async def test_relationship_unique_rejects_duplicate(db_pool, enums):
 
     a = await _make_entity(db_pool, enums, "uniq-a")
     b = await _make_entity(db_pool, enums, "uniq-b")
-    type_id = enums.relationship_types.name_to_id["works-on"]
+    type_id = enums.relationship_types.name_to_id["depends-on"]
     status_id = enums.statuses.name_to_id["active"]
 
     await db_pool.execute(

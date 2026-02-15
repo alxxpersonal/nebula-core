@@ -122,13 +122,13 @@ async def test_get_entity_not_found(mock_mcp_context, test_agent):
 
 
 async def test_get_entity_access_denied(db_pool, enums):
-    """An agent with only health scope should not access a code-scoped entity."""
+    """An agent with only public scope should not access a private entity."""
 
     from unittest.mock import MagicMock
 
-    # Create a health-only agent
+    # Create a public-only agent
     status_id = enums.statuses.name_to_id["active"]
-    health_scope_id = enums.scopes.name_to_id["health"]
+    public_scope_id = enums.scopes.name_to_id["public"]
 
     health_agent = await db_pool.fetchrow(
         """
@@ -136,16 +136,16 @@ async def test_get_entity_access_denied(db_pool, enums):
         VALUES ($1, $2, $3, $4, $5)
         RETURNING *
         """,
-        "health-agent",
-        "Health-only agent",
-        [health_scope_id],
+        "public-agent",
+        "Public-only agent",
+        [public_scope_id],
         False,
         status_id,
     )
 
-    # Create a code-scoped entity
+    # Create a private-scoped entity
     type_id = enums.entity_types.name_to_id["project"]
-    code_scope_id = enums.scopes.name_to_id["code"]
+    private_scope_id = enums.scopes.name_to_id["private"]
 
     entity = await db_pool.fetchrow(
         """
@@ -153,15 +153,15 @@ async def test_get_entity_access_denied(db_pool, enums):
         VALUES ($1, $2, $3, $4, $5, $6::jsonb)
         RETURNING *
         """,
-        "Code Project",
+        "Private Project",
         type_id,
         status_id,
-        [code_scope_id],
-        ["code"],
+        [private_scope_id],
+        ["private"],
         "{}",
     )
 
-    # build context with the health-only agent
+    # build context with the public-only agent
     ctx = MagicMock()
     ctx.request_context.lifespan_context = {
         "pool": db_pool,
@@ -310,7 +310,7 @@ async def test_create_relationship(
         source_id=str(test_entity["id"]),
         target_type="entity",
         target_id=str(target["id"]),
-        relationship_type="works-on",
+        relationship_type="depends-on",
     )
 
     result = await create_relationship(payload, mock_mcp_context)

@@ -97,7 +97,7 @@ async def _make_log(db_pool, enums):
     """Insert a log record for attachment isolation tests."""
 
     status_id = enums.statuses.name_to_id["active"]
-    log_type_id = enums.log_types.name_to_id["workout"]
+    log_type_id = enums.log_types.name_to_id["note"]
     row = await db_pool.fetchrow(
         """
         INSERT INTO logs (log_type_id, timestamp, value, status_id, metadata)
@@ -187,7 +187,7 @@ async def test_api_file_hidden_when_attached_to_out_of_scope_job(db_pool, enums)
 
     owner = await _make_agent(db_pool, enums, "file-job-owner", ["public"])
     viewer = await _make_agent(db_pool, enums, "file-job-viewer", ["public"])
-    job = await _make_job(db_pool, enums, "Owner Job", owner["id"], ["personal"])
+    job = await _make_job(db_pool, enums, "Owner Job", owner["id"], ["private"])
     file_row = await _make_file(db_pool, enums)
     await _attach_relationship(
         db_pool, enums, "job", job["id"], "file", file_row["id"], "has-file"
@@ -247,7 +247,7 @@ async def test_api_log_hidden_when_attached_to_out_of_scope_job(db_pool, enums):
 
     owner = await _make_agent(db_pool, enums, "log-job-owner", ["public"])
     viewer = await _make_agent(db_pool, enums, "log-job-viewer", ["public"])
-    job = await _make_job(db_pool, enums, "Owner Job", owner["id"], ["personal"])
+    job = await _make_job(db_pool, enums, "Owner Job", owner["id"], ["private"])
     log_row = await _make_log(db_pool, enums)
     await _attach_relationship(
         db_pool, enums, "log", log_row["id"], "job", job["id"], "related-to"

@@ -151,7 +151,7 @@ async def test_approve_register_agent_accepts_grant_fields(
     r = await api.post(
         f"/api/approvals/{approval['id']}/approve",
         json={
-            "grant_scopes": ["public", "code"],
+            "grant_scopes": ["public", "private"],
             "grant_requires_approval": False,
             "review_notes": "approved with expanded scopes",
         },
@@ -166,7 +166,7 @@ async def test_approve_register_agent_accepts_grant_fields(
     assert refreshed["requires_approval"] is False
     assert set(refreshed["scopes"]) == {
         enums.scopes.name_to_id["public"],
-        enums.scopes.name_to_id["code"],
+        enums.scopes.name_to_id["private"],
     }
 
     approval_after = await db_pool.fetchrow(
@@ -177,7 +177,7 @@ async def test_approve_register_agent_accepts_grant_fields(
     review_details = approval_after["review_details"]
     if isinstance(review_details, str):
         review_details = json.loads(review_details)
-    assert review_details["grant_scopes"] == ["public", "code"]
+    assert review_details["grant_scopes"] == ["public", "private"]
     assert review_details["grant_requires_approval"] is False
 
 
@@ -311,7 +311,7 @@ async def test_approve_register_agent_persists_review_details_shape(
     r = await api.post(
         f"/api/approvals/{approval['id']}/approve",
         json={
-            "grant_scopes": ["public", "code"],
+            "grant_scopes": ["public", "private"],
             "grant_requires_approval": False,
         },
     )
@@ -325,12 +325,12 @@ async def test_approve_register_agent_persists_review_details_shape(
     if isinstance(review_details, str):
         review_details = json.loads(review_details)
 
-    assert review_details["grant_scopes"] == ["public", "code"]
+    assert review_details["grant_scopes"] == ["public", "private"]
     assert review_details["grant_requires_approval"] is False
     assert len(review_details["grant_scope_ids"]) == 2
     assert set(review_details["grant_scope_ids"]) == {
         str(enums.scopes.name_to_id["public"]),
-        str(enums.scopes.name_to_id["code"]),
+        str(enums.scopes.name_to_id["private"]),
     }
 
 

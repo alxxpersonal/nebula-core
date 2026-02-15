@@ -54,11 +54,11 @@ async def test_query_knowledge_filters_context_segments(db_pool, enums):
     metadata = {
         "context_segments": [
             {"text": "public info", "scopes": ["public"]},
-            {"text": "private info", "scopes": ["personal"]},
+            {"text": "private info", "scopes": ["private"]},
         ]
     }
     await _make_knowledge(
-        db_pool, enums, "Mixed Scope", ["public", "personal"], metadata
+        db_pool, enums, "Mixed Scope", ["public", "private"], metadata
     )
 
     public_agent = {
@@ -72,4 +72,4 @@ async def test_query_knowledge_filters_context_segments(db_pool, enums):
     assert rows
     segments = rows[0]["metadata"].get("context_segments", [])
 
-    assert all("personal" not in seg.get("scopes", []) for seg in segments)
+    assert all("private" not in seg.get("scopes", []) for seg in segments)

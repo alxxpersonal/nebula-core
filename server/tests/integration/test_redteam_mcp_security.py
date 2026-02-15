@@ -63,7 +63,7 @@ async def _make_entity(db_pool, enums, name, scopes):
 async def test_query_entities_respects_agent_scopes(db_pool, enums, test_entity):
     """Agents should not see entities outside their scopes."""
 
-    private_entity = await _make_entity(db_pool, enums, "Private Node", ["personal"])
+    private_entity = await _make_entity(db_pool, enums, "Private Node", ["private"])
 
     public_agent = {
         "id": "test-agent",
@@ -82,7 +82,7 @@ async def test_query_entities_respects_agent_scopes(db_pool, enums, test_entity)
 async def test_get_entity_denies_private_scope(db_pool, enums):
     """Agents should be denied when fetching private entities."""
 
-    private_entity = await _make_entity(db_pool, enums, "Private Node", ["personal"])
+    private_entity = await _make_entity(db_pool, enums, "Private Node", ["private"])
 
     public_agent = {
         "id": "test-agent",

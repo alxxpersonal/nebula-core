@@ -133,7 +133,7 @@ async def test_get_relationships_hides_foreign_job_links(db_pool, enums):
     entity = await _make_entity(db_pool, enums, "Public Node")
     public_job = await _make_job(db_pool, enums, "Public Job", owner["id"], ["public"])
     private_job = await _make_job(
-        db_pool, enums, "Private Job", owner["id"], ["personal"]
+        db_pool, enums, "Private Job", owner["id"], ["private"]
     )
     public_rel = await _make_relationship(
         db_pool, enums, "entity", str(entity["id"]), "job", public_job["id"]
@@ -165,7 +165,7 @@ async def test_query_relationships_hides_foreign_job_links(db_pool, enums):
     entity = await _make_entity(db_pool, enums, "Public Node 2")
     public_job = await _make_job(db_pool, enums, "Public Job 2", owner["id"], ["public"])
     private_job = await _make_job(
-        db_pool, enums, "Private Job 2", owner["id"], ["personal"]
+        db_pool, enums, "Private Job 2", owner["id"], ["private"]
     )
     public_rel = await _make_relationship(
         db_pool, enums, "job", public_job["id"], "entity", str(entity["id"])

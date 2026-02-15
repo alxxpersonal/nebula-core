@@ -54,10 +54,10 @@ async def test_query_entities_filters_context_segments(db_pool, enums):
     metadata = {
         "context_segments": [
             {"text": "public info", "scopes": ["public"]},
-            {"text": "private info", "scopes": ["personal"]},
+            {"text": "private info", "scopes": ["private"]},
         ]
     }
-    await _make_entity(db_pool, enums, "Mixed Scope", ["public", "personal"], metadata)
+    await _make_entity(db_pool, enums, "Mixed Scope", ["public", "private"], metadata)
 
     public_agent = {
         "id": "public-agent",
@@ -69,7 +69,7 @@ async def test_query_entities_filters_context_segments(db_pool, enums):
     assert rows
     segments = rows[0]["metadata"].get("context_segments", [])
 
-    assert all("personal" not in seg.get("scopes", []) for seg in segments)
+    assert all("private" not in seg.get("scopes", []) for seg in segments)
 
 
 @pytest.mark.asyncio
@@ -79,12 +79,12 @@ async def test_search_entities_by_metadata_filters_context_segments(db_pool, enu
     metadata = {
         "context_segments": [
             {"text": "public info", "scopes": ["public"]},
-            {"text": "private info", "scopes": ["personal"]},
+            {"text": "private info", "scopes": ["private"]},
         ],
         "signal": "needle",
     }
     await _make_entity(
-        db_pool, enums, "Metadata Leak", ["public", "personal"], metadata
+        db_pool, enums, "Metadata Leak", ["public", "private"], metadata
     )
 
     public_agent = {
@@ -98,7 +98,7 @@ async def test_search_entities_by_metadata_filters_context_segments(db_pool, enu
     assert rows
     segments = rows[0]["metadata"].get("context_segments", [])
 
-    assert all("personal" not in seg.get("scopes", []) for seg in segments)
+    assert all("private" not in seg.get("scopes", []) for seg in segments)
 
 
 @pytest.mark.asyncio
@@ -106,7 +106,7 @@ async def test_search_entities_by_metadata_hides_private_entities(db_pool, enums
     """Metadata search should not return entities outside agent scopes."""
 
     metadata = {"signal": "private-only"}
-    await _make_entity(db_pool, enums, "Private Node", ["personal"], metadata)
+    await _make_entity(db_pool, enums, "Private Node", ["private"], metadata)
 
     public_agent = {
         "id": "public-agent",

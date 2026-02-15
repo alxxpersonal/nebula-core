@@ -65,7 +65,7 @@ async def test_symmetric_relationship_creates_reverse(db_pool, enums):
 
     a = await _make_entity(db_pool, enums, "sym-a")
     b = await _make_entity(db_pool, enums, "sym-b")
-    type_id = enums.relationship_types.name_to_id["friends-with"]
+    type_id = enums.relationship_types.name_to_id["related-to"]
     status_id = enums.statuses.name_to_id["active"]
 
     await db_pool.execute(
@@ -99,7 +99,7 @@ async def test_symmetric_delete_cascades_reverse(db_pool, enums):
 
     a = await _make_entity(db_pool, enums, "sym-del-a")
     b = await _make_entity(db_pool, enums, "sym-del-b")
-    type_id = enums.relationship_types.name_to_id["friends-with"]
+    type_id = enums.relationship_types.name_to_id["related-to"]
     status_id = enums.statuses.name_to_id["active"]
 
     forward = await db_pool.fetchrow(
@@ -139,7 +139,7 @@ async def test_asymmetric_no_reverse(db_pool, enums):
 
     a = await _make_entity(db_pool, enums, "asym-a")
     b = await _make_entity(db_pool, enums, "asym-b")
-    type_id = enums.relationship_types.name_to_id["works-on"]
+    type_id = enums.relationship_types.name_to_id["depends-on"]
     status_id = enums.statuses.name_to_id["active"]
 
     await db_pool.execute(
@@ -175,7 +175,7 @@ async def test_polymorphic_ref_fake_source_raises(db_pool, enums):
     """Inserting a relationship with a nonexistent source entity raises RaiseError."""
 
     target = await _make_entity(db_pool, enums, "poly-target")
-    type_id = enums.relationship_types.name_to_id["works-on"]
+    type_id = enums.relationship_types.name_to_id["depends-on"]
     status_id = enums.statuses.name_to_id["active"]
     fake_uuid = "00000000-0000-0000-0000-000000000000"
 
@@ -197,7 +197,7 @@ async def test_polymorphic_ref_fake_target_raises(db_pool, enums):
     """Inserting a relationship with a nonexistent target entity raises RaiseError."""
 
     source = await _make_entity(db_pool, enums, "poly-source")
-    type_id = enums.relationship_types.name_to_id["works-on"]
+    type_id = enums.relationship_types.name_to_id["depends-on"]
     status_id = enums.statuses.name_to_id["active"]
     fake_uuid = "00000000-0000-0000-0000-000000000000"
 
@@ -223,7 +223,7 @@ async def test_status_cascade_to_relationships(db_pool, enums):
 
     a = await _make_entity(db_pool, enums, "cascade-a")
     b = await _make_entity(db_pool, enums, "cascade-b")
-    type_id = enums.relationship_types.name_to_id["friends-with"]
+    type_id = enums.relationship_types.name_to_id["related-to"]
     active_id = enums.statuses.name_to_id["active"]
 
     await db_pool.execute(
