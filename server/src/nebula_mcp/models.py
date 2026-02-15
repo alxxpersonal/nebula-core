@@ -1132,6 +1132,17 @@ class AgentEnrollRedeemInput(BaseModel):
         return _sanitize_text(v)
 
 
+class AgentAuthAttachInput(BaseModel):
+    """Input payload for attaching an API key to current MCP session."""
+
+    api_key: str = Field(..., description="Agent API key to attach for this session")
+
+    @field_validator("api_key", mode="before")
+    @classmethod
+    def _clean_api_key(cls, v: str | None) -> str | None:
+        return _sanitize_text(v)
+
+
 # --- Taxonomy Input Models ---
 
 

@@ -21,6 +21,11 @@ QUERIES = QueryLoader(Path(__file__).resolve().parents[1] / "queries")
 
 AgentDict = dict[str, Any]
 
+LOCAL_INSECURE_MODE_ENV = "NEBULA_MCP_LOCAL_INSECURE"
+LOCAL_INSECURE_AGENT_ENV = "NEBULA_MCP_LOCAL_AGENT_NAME"
+LOCAL_INSECURE_DEFAULT_AGENT = "local-dev-agent"
+LOCAL_INSECURE_SCOPE_ORDER = ("public", "personal", "code", "vault-only", "admin")
+
 
 def enrollment_required_error() -> ValueError:
     """Build a structured error for unauthenticated bootstrap callers."""
@@ -33,6 +38,7 @@ def enrollment_required_error() -> ValueError:
                 "agent_enroll_start",
                 "agent_enroll_wait",
                 "agent_enroll_redeem",
+                "agent_auth_attach",
             ],
         }
     }
@@ -174,16 +180,6 @@ async def authenticate_agent(pool: Pool) -> AgentDict:
     Raises:
         ValueError: If key missing, invalid, or agent inactive.
     """
-    from pathlib import Path
-
-    from argon2 import PasswordHasher
-    from argon2.exceptions import VerifyMismatchError
-
-    from .query_loader import QueryLoader
-
-    QUERIES = QueryLoader(Path(__file__).resolve().parents[1] / "queries")
-    ph = PasswordHasher()
-
     api_key = os.environ.get("NEBULA_API_KEY")
     if not api_key:
         raise ValueError(
@@ -191,31 +187,92 @@ async def authenticate_agent(pool: Pool) -> AgentDict:
             "MCP server authentication"
         )
 
+    return await authenticate_agent_with_key(pool, api_key, key_name="NEBULA_API_KEY")
+
+
+async def authenticate_agent_with_key(
+    pool: Pool, api_key: str, *, key_name: str = "API key"
+) -> AgentDict:
+    """Authenticate an agent using a raw API key value."""
+
+    from argon2 import PasswordHasher
+    from argon2.exceptions import VerifyMismatchError
+
+    ph = PasswordHasher()
+
     if len(api_key) < 8:
-        raise ValueError("NEBULA_API_KEY is too short")
+        raise ValueError(f"{key_name} is too short")
 
     prefix = api_key[:8]
-
     row = await pool.fetchrow(QUERIES["api_keys/get_by_prefix"], prefix)
     if not row:
-        raise ValueError("NEBULA_API_KEY is invalid or revoked")
+        raise ValueError(f"{key_name} is invalid or revoked")
 
     try:
         ph.verify(row["key_hash"], api_key)
     except VerifyMismatchError:
-        raise ValueError("NEBULA_API_KEY hash mismatch")
+        raise ValueError(f"{key_name} hash mismatch")
 
     if not row["agent_id"]:
-        raise ValueError("NEBULA_API_KEY is not an agent key")
+        raise ValueError(f"{key_name} is not an agent key")
 
     agent = await pool.fetchrow(QUERIES["agents/get_by_id"], row["agent_id"])
     if not agent:
-        raise ValueError("Agent not found or inactive for NEBULA_API_KEY")
+        raise ValueError(f"Agent not found or inactive for {key_name}")
 
     return dict(agent)
 
 
-async def authenticate_agent_optional(pool: Pool) -> tuple[AgentDict | None, bool]:
+def _env_truthy(name: str) -> bool:
+    value = os.environ.get(name, "")
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _local_insecure_agent_name() -> str:
+    value = os.environ.get(LOCAL_INSECURE_AGENT_ENV, "")
+    cleaned = value.strip()
+    if cleaned:
+        return cleaned
+    return LOCAL_INSECURE_DEFAULT_AGENT
+
+
+async def _get_or_create_local_insecure_agent(
+    pool: Pool, enums: EnumRegistry
+) -> AgentDict:
+    name = _local_insecure_agent_name()
+    existing = await pool.fetchrow(QUERIES["agents/get"], name)
+    if existing:
+        return dict(existing)
+
+    scope_ids: list[Any] = []
+    for scope_name in LOCAL_INSECURE_SCOPE_ORDER:
+        scope_id = enums.scopes.name_to_id.get(scope_name)
+        if scope_id:
+            scope_ids.append(scope_id)
+    if not scope_ids:
+        raise ValueError("Local insecure mode requires at least one valid scope")
+
+    status_id = enums.statuses.name_to_id.get("active")
+    if not status_id:
+        raise ValueError("Local insecure mode requires active status enum")
+
+    created = await pool.fetchrow(
+        QUERIES["agents/create"],
+        name,
+        "Local insecure MCP session agent",
+        scope_ids,
+        ["local-insecure"],
+        status_id,
+        False,
+    )
+    if not created:
+        raise ValueError("Failed to create local insecure agent")
+    return dict(created)
+
+
+async def authenticate_agent_optional(
+    pool: Pool, enums: EnumRegistry
+) -> tuple[AgentDict | None, bool]:
     """Authenticate MCP server agent when key exists, or enter bootstrap mode.
 
     Returns:
@@ -224,6 +281,9 @@ async def authenticate_agent_optional(pool: Pool) -> tuple[AgentDict | None, boo
 
     api_key = os.environ.get("NEBULA_API_KEY")
     if not api_key:
+        if _env_truthy(LOCAL_INSECURE_MODE_ENV):
+            agent = await _get_or_create_local_insecure_agent(pool, enums)
+            return agent, False
         return None, True
 
     agent = await authenticate_agent(pool)

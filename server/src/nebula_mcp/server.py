@@ -21,6 +21,7 @@ if __package__ in (None, ""):
 # Local
 from nebula_mcp.context import (
     authenticate_agent_optional,
+    authenticate_agent_with_key,
     maybe_require_approval,
     require_context,
 )
@@ -83,6 +84,7 @@ from nebula_mcp.imports import (
 from nebula_mcp.models import (
     MAX_GRAPH_HOPS,
     MAX_PAGE_LIMIT,
+    AgentAuthAttachInput,
     AgentEnrollRedeemInput,
     AgentEnrollStartInput,
     AgentEnrollWaitInput,
@@ -501,7 +503,7 @@ async def lifespan(app: FastMCP) -> AsyncIterator[dict[str, Any]]:
     pool = await get_pool()
     try:
         enums = await load_enums(pool)
-        agent, bootstrap_mode = await authenticate_agent_optional(pool)
+        agent, bootstrap_mode = await authenticate_agent_optional(pool, enums)
         yield {
             "pool": pool,
             "enums": enums,
@@ -772,6 +774,31 @@ async def agent_enroll_redeem(payload: AgentEnrollRedeemInput, ctx: Context) -> 
         "agent_name": result["agent_name"],
         "scopes": scope_names_from_ids(result.get("scope_ids", []), enums),
         "requires_approval": bool(result.get("requires_approval", True)),
+    }
+
+
+@mcp.tool()
+async def agent_auth_attach(payload: AgentAuthAttachInput, ctx: Context) -> dict:
+    """Attach an API key and authenticate the current MCP session without restart."""
+
+    pool, enums, agent = await require_context(ctx, allow_bootstrap=True)
+    if agent is not None:
+        raise ValueError("Agent already authenticated")
+
+    authed_agent = await authenticate_agent_with_key(pool, payload.api_key)
+    lifespan_ctx = ctx.request_context.lifespan_context
+    if not lifespan_ctx:
+        raise ValueError("Lifespan context not initialized")
+
+    lifespan_ctx["agent"] = authed_agent
+    lifespan_ctx["bootstrap_mode"] = False
+
+    return {
+        "status": "authenticated",
+        "agent_id": str(authed_agent["id"]),
+        "agent_name": authed_agent["name"],
+        "scopes": scope_names_from_ids(authed_agent.get("scopes", []), enums),
+        "requires_approval": bool(authed_agent.get("requires_approval", True)),
     }
 
 

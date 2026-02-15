@@ -10,6 +10,7 @@ import pytest
 
 from nebula_mcp.context import (
     authenticate_agent_optional,
+    authenticate_agent_with_key,
     maybe_require_approval,
     require_agent,
     require_context,
@@ -201,23 +202,48 @@ class TestAuthenticateAgentOptional:
     """Tests for optional bootstrap authentication helper."""
 
     @patch.dict("os.environ", {}, clear=True)
-    async def test_missing_key_enables_bootstrap(self, mock_pool):
+    async def test_missing_key_enables_bootstrap(self, mock_pool, mock_enums):
         """No key should enter bootstrap mode without an authenticated agent."""
 
-        agent, bootstrap = await authenticate_agent_optional(mock_pool)
+        agent, bootstrap = await authenticate_agent_optional(mock_pool, mock_enums)
         assert agent is None
         assert bootstrap is True
 
     @patch.dict("os.environ", {"NEBULA_API_KEY": "nbl_test"})
     @patch("nebula_mcp.context.authenticate_agent")
-    async def test_key_uses_strict_auth(self, mock_authenticate_agent, mock_pool):
+    async def test_key_uses_strict_auth(
+        self, mock_authenticate_agent, mock_pool, mock_enums
+    ):
         """Present key should authenticate and disable bootstrap mode."""
 
         mock_authenticate_agent.return_value = {"id": uuid4(), "name": "agent"}
-        agent, bootstrap = await authenticate_agent_optional(mock_pool)
+        agent, bootstrap = await authenticate_agent_optional(mock_pool, mock_enums)
         assert agent["name"] == "agent"
         assert bootstrap is False
         mock_authenticate_agent.assert_awaited_once_with(mock_pool)
+
+    @patch.dict("os.environ", {"NEBULA_MCP_LOCAL_INSECURE": "1"}, clear=True)
+    @patch("nebula_mcp.context._get_or_create_local_insecure_agent")
+    async def test_local_insecure_mode_authenticates_without_key(
+        self, mock_local_agent, mock_pool, mock_enums
+    ):
+        """Local insecure mode should auto-authenticate a local agent."""
+
+        mock_local_agent.return_value = {"id": uuid4(), "name": "local-dev-agent"}
+        agent, bootstrap = await authenticate_agent_optional(mock_pool, mock_enums)
+        assert bootstrap is False
+        assert agent["name"] == "local-dev-agent"
+        mock_local_agent.assert_awaited_once_with(mock_pool, mock_enums)
+
+
+class TestAuthenticateAgentWithKey:
+    """Tests for direct API key authentication helper."""
+
+    async def test_rejects_short_key(self, mock_pool):
+        """Short key should fail before DB lookup."""
+
+        with pytest.raises(ValueError, match="too short"):
+            await authenticate_agent_with_key(mock_pool, "short")
 
 
 # --- maybe_require_approval ---

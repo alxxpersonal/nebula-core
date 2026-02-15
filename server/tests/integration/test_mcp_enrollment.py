@@ -12,12 +12,14 @@ import pytest
 from nebula_mcp.helpers import approve_request as do_approve
 from nebula_mcp.helpers import reject_request as do_reject
 from nebula_mcp.models import (
+    AgentAuthAttachInput,
     AgentEnrollRedeemInput,
     AgentEnrollStartInput,
     AgentEnrollWaitInput,
     QueryEntitiesInput,
 )
 from nebula_mcp.server import (
+    agent_auth_attach,
     agent_enroll_redeem,
     agent_enroll_start,
     agent_enroll_wait,
@@ -47,6 +49,7 @@ async def test_bootstrap_blocks_non_enroll_tools(bootstrap_mcp_context):
         "agent_enroll_start",
         "agent_enroll_wait",
         "agent_enroll_redeem",
+        "agent_auth_attach",
     ]
 
 
@@ -234,6 +237,59 @@ async def test_enroll_wait_rejects_cross_session_token(bootstrap_mcp_context):
             ),
             bootstrap_mcp_context,
         )
+
+
+async def test_agent_auth_attach_rejects_invalid_key(bootstrap_mcp_context):
+    """Auth attach should reject invalid API keys."""
+
+    with pytest.raises(ValueError, match="invalid or revoked"):
+        await agent_auth_attach(
+            AgentAuthAttachInput(api_key="nbl_invalid_key"),
+            bootstrap_mcp_context,
+        )
+
+
+async def test_enroll_redeem_attach_unblocks_non_enroll_tools(
+    bootstrap_mcp_context, db_pool, enums, test_entity
+):
+    """Redeemed key should authenticate same MCP session via attach tool."""
+
+    name = f"mcp-enroll-{uuid4().hex[:8]}"
+    started = await agent_enroll_start(
+        AgentEnrollStartInput(
+            name=name,
+            requested_scopes=["public"],
+            requested_requires_approval=True,
+        ),
+        bootstrap_mcp_context,
+    )
+    session = await _get_enrollment_row(db_pool, started["registration_id"])
+
+    await do_approve(
+        db_pool,
+        enums,
+        str(session["approval_request_id"]),
+        str(test_entity["id"]),
+        review_details={"grant_requires_approval": False},
+    )
+
+    redeemed = await agent_enroll_redeem(
+        AgentEnrollRedeemInput(
+            registration_id=started["registration_id"],
+            enrollment_token=started["enrollment_token"],
+        ),
+        bootstrap_mcp_context,
+    )
+    attached = await agent_auth_attach(
+        AgentAuthAttachInput(api_key=redeemed["api_key"]),
+        bootstrap_mcp_context,
+    )
+
+    assert attached["status"] == "authenticated"
+    assert attached["agent_name"] == name
+
+    result = await query_entities(QueryEntitiesInput(limit=1), bootstrap_mcp_context)
+    assert isinstance(result, list)
 
 
 async def test_enroll_approve_with_grants_applies_final_scope_and_trust(
