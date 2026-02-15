@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/gravitrone/nebula-core/cli/internal/api"
 	"github.com/gravitrone/nebula-core/cli/internal/ui/components"
@@ -146,39 +147,49 @@ func (m ImportExportModel) View() string {
 }
 
 func (m ImportExportModel) renderOptions(options []importExportResource, index int) string {
-	var b strings.Builder
-	for i, opt := range options {
-		line := opt.label
-		if i == index {
-			b.WriteString(SelectedStyle.Render("  > " + line))
-		} else {
-			b.WriteString(NormalStyle.Render("    " + line))
-		}
-		if i < len(options)-1 {
-			b.WriteString("\n")
-		}
+	contentWidth := components.BoxContentWidth(m.width)
+	if contentWidth < 10 {
+		contentWidth = 10
 	}
-	b.WriteString("\n\n")
-	b.WriteString(MutedStyle.Render("enter: select | esc: cancel"))
-	return b.String()
+
+	cols := []components.TableColumn{
+		{Header: "Option", Width: contentWidth, Align: lipgloss.Left},
+	}
+
+	rows := make([][]string, 0, len(options))
+	for _, opt := range options {
+		label := strings.TrimSpace(components.SanitizeOneLine(opt.label))
+		if label == "" {
+			label = "-"
+		}
+		rows = append(rows, []string{components.ClampTextWidthEllipsis(label, contentWidth)})
+	}
+
+	table := components.TableGridWithActiveRow(cols, rows, contentWidth, index)
+	return table + "\n\n" + MutedStyle.Render("enter: select | esc: cancel")
 }
 
 func (m ImportExportModel) renderFormatOptions() string {
-	var b strings.Builder
-	for i, format := range m.formats {
-		line := strings.ToUpper(format)
-		if i == m.formatIndex {
-			b.WriteString(SelectedStyle.Render("  > " + line))
-		} else {
-			b.WriteString(NormalStyle.Render("    " + line))
-		}
-		if i < len(m.formats)-1 {
-			b.WriteString("\n")
-		}
+	contentWidth := components.BoxContentWidth(m.width)
+	if contentWidth < 10 {
+		contentWidth = 10
 	}
-	b.WriteString("\n\n")
-	b.WriteString(MutedStyle.Render("enter: select | esc: back"))
-	return b.String()
+
+	cols := []components.TableColumn{
+		{Header: "Format", Width: contentWidth, Align: lipgloss.Left},
+	}
+
+	rows := make([][]string, 0, len(m.formats))
+	for _, format := range m.formats {
+		label := strings.TrimSpace(components.SanitizeOneLine(strings.ToUpper(format)))
+		if label == "" {
+			label = "-"
+		}
+		rows = append(rows, []string{components.ClampTextWidthEllipsis(label, contentWidth)})
+	}
+
+	table := components.TableGridWithActiveRow(cols, rows, contentWidth, m.formatIndex)
+	return table + "\n\n" + MutedStyle.Render("enter: select | esc: back")
 }
 
 func (m ImportExportModel) handleResourceKeys(msg tea.KeyMsg) (ImportExportModel, tea.Cmd) {
