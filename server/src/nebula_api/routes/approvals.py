@@ -12,6 +12,7 @@ from pydantic import BaseModel
 # Local
 from nebula_api.auth import require_auth
 from nebula_api.response import api_error, success
+from nebula_mcp.enums import require_scopes
 from nebula_mcp.helpers import (
     approve_request as do_approve,
 )
@@ -58,6 +59,20 @@ class RejectBody(BaseModel):
     """
 
     review_notes: str = ""
+
+
+class ApproveBody(BaseModel):
+    """Optional reviewer input for approval grants.
+
+    Attributes:
+        review_notes: Optional reviewer notes to persist.
+        grant_scopes: Optional final scope names (register_agent only).
+        grant_requires_approval: Optional final trust mode (register_agent only).
+    """
+
+    review_notes: str | None = None
+    grant_scopes: list[str] | None = None
+    grant_requires_approval: bool | None = None
 
 
 @router.get("/pending")
@@ -112,6 +127,7 @@ async def get_approval(
 async def approve(
     approval_id: str,
     request: Request,
+    payload: ApproveBody | None = None,
     auth: dict = Depends(require_auth),
 ) -> dict[str, Any]:
     """Approve an approval request.
@@ -129,7 +145,43 @@ async def approve(
     _require_admin_scope(auth, enums)
     _require_uuid(approval_id, "approval")
 
-    result = await do_approve(pool, enums, approval_id, str(auth["entity_id"]))
+    approval_row = await pool.fetchrow(QUERIES["approvals/get_request"], approval_id)
+    if not approval_row:
+        api_error("NOT_FOUND", "Approval request not found", 404)
+    approval = dict(approval_row)
+    is_register = approval.get("request_type") == "register_agent"
+
+    review_notes = payload.review_notes if payload else None
+    review_details: dict[str, Any] = {}
+    has_grants = False
+    if payload and payload.grant_scopes is not None:
+        has_grants = True
+        review_details["grant_scopes"] = payload.grant_scopes
+        review_details["grant_scope_ids"] = [
+            str(scope_id) for scope_id in require_scopes(payload.grant_scopes, enums)
+        ]
+    if payload and payload.grant_requires_approval is not None:
+        has_grants = True
+        review_details["grant_requires_approval"] = payload.grant_requires_approval
+
+    if has_grants and not is_register:
+        api_error(
+            "INVALID_INPUT",
+            (
+                "grant_scopes and grant_requires_approval are only valid "
+                "for register_agent approvals"
+            ),
+            400,
+        )
+
+    result = await do_approve(
+        pool,
+        enums,
+        approval_id,
+        str(auth["entity_id"]),
+        review_details=review_details if review_details else None,
+        review_notes=review_notes,
+    )
     return success(result)
 
 

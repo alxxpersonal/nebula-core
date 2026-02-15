@@ -1,6 +1,7 @@
 """Context extraction and validation helpers for MCP tools."""
 
 # Standard Library
+import json
 import os
 from pathlib import Path
 from typing import Any
@@ -21,7 +22,26 @@ QUERIES = QueryLoader(Path(__file__).resolve().parents[1] / "queries")
 AgentDict = dict[str, Any]
 
 
-async def require_context(ctx: Context) -> tuple[Pool, EnumRegistry, AgentDict]:
+def enrollment_required_error() -> ValueError:
+    """Build a structured error for unauthenticated bootstrap callers."""
+
+    payload = {
+        "error": {
+            "code": "ENROLLMENT_REQUIRED",
+            "message": "Agent not enrolled",
+            "next_steps": [
+                "agent_enroll_start",
+                "agent_enroll_wait",
+                "agent_enroll_redeem",
+            ],
+        }
+    }
+    return ValueError(json.dumps(payload))
+
+
+async def require_context(
+    ctx: Context, *, allow_bootstrap: bool = False
+) -> tuple[Pool, EnumRegistry, AgentDict | None]:
     """Extract pool, enums, and agent from context or raise.
 
     Args:
@@ -45,7 +65,11 @@ async def require_context(ctx: Context) -> tuple[Pool, EnumRegistry, AgentDict]:
     if "agent" not in lifespan_ctx:
         raise ValueError("Agent not initialized")
 
-    return lifespan_ctx["pool"], lifespan_ctx["enums"], lifespan_ctx["agent"]
+    agent = lifespan_ctx.get("agent")
+    if agent is None and not allow_bootstrap:
+        raise enrollment_required_error()
+
+    return lifespan_ctx["pool"], lifespan_ctx["enums"], agent
 
 
 async def require_pool(ctx: Context) -> Pool:
@@ -189,3 +213,18 @@ async def authenticate_agent(pool: Pool) -> AgentDict:
         raise ValueError("Agent not found or inactive for NEBULA_API_KEY")
 
     return dict(agent)
+
+
+async def authenticate_agent_optional(pool: Pool) -> tuple[AgentDict | None, bool]:
+    """Authenticate MCP server agent when key exists, or enter bootstrap mode.
+
+    Returns:
+        Tuple of (agent, bootstrap_mode).
+    """
+
+    api_key = os.environ.get("NEBULA_API_KEY")
+    if not api_key:
+        return None, True
+
+    agent = await authenticate_agent(pool)
+    return agent, False

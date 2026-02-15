@@ -1,6 +1,7 @@
 """Unit tests for context extraction and validation helpers."""
 
 # Standard Library
+import json
 # Third-Party
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
@@ -8,6 +9,7 @@ from uuid import uuid4
 import pytest
 
 from nebula_mcp.context import (
+    authenticate_agent_optional,
     maybe_require_approval,
     require_agent,
     require_context,
@@ -72,6 +74,40 @@ class TestRequireContext:
         with pytest.raises(ValueError, match="Pool not initialized"):
             await require_context(ctx)
 
+    async def test_bootstrap_returns_none_agent(self, mock_pool, mock_enums):
+        """Allow bootstrap callers when explicitly requested."""
+
+        ctx = MagicMock()
+        ctx.request_context.lifespan_context = {
+            "pool": mock_pool,
+            "enums": mock_enums,
+            "agent": None,
+            "bootstrap_mode": True,
+        }
+
+        pool, enums, agent = await require_context(ctx, allow_bootstrap=True)
+        assert pool is mock_pool
+        assert enums is mock_enums
+        assert agent is None
+
+    async def test_bootstrap_missing_agent_raises_enrollment_required(
+        self, mock_pool, mock_enums
+    ):
+        """Return ENROLLMENT_REQUIRED when bootstrap agent is not authenticated."""
+
+        ctx = MagicMock()
+        ctx.request_context.lifespan_context = {
+            "pool": mock_pool,
+            "enums": mock_enums,
+            "agent": None,
+            "bootstrap_mode": True,
+        }
+
+        with pytest.raises(ValueError) as exc:
+            await require_context(ctx)
+        payload = json.loads(str(exc.value))
+        assert payload["error"]["code"] == "ENROLLMENT_REQUIRED"
+
 
 # --- require_pool ---
 
@@ -125,6 +161,29 @@ class TestRequireAgent:
 
         with pytest.raises(ValueError, match="Agent not found or inactive"):
             await require_agent(mock_pool, "ghost")
+
+
+class TestAuthenticateAgentOptional:
+    """Tests for optional bootstrap authentication helper."""
+
+    @patch.dict("os.environ", {}, clear=True)
+    async def test_missing_key_enables_bootstrap(self, mock_pool):
+        """No key should enter bootstrap mode without an authenticated agent."""
+
+        agent, bootstrap = await authenticate_agent_optional(mock_pool)
+        assert agent is None
+        assert bootstrap is True
+
+    @patch.dict("os.environ", {"NEBULA_API_KEY": "nbl_test"})
+    @patch("nebula_mcp.context.authenticate_agent")
+    async def test_key_uses_strict_auth(self, mock_authenticate_agent, mock_pool):
+        """Present key should authenticate and disable bootstrap mode."""
+
+        mock_authenticate_agent.return_value = {"id": uuid4(), "name": "agent"}
+        agent, bootstrap = await authenticate_agent_optional(mock_pool)
+        assert agent["name"] == "agent"
+        assert bootstrap is False
+        mock_authenticate_agent.assert_awaited_once_with(mock_pool)
 
 
 # --- maybe_require_approval ---

@@ -14,7 +14,7 @@ from starlette.responses import JSONResponse
 from nebula_api.auth import require_auth
 from nebula_api.response import api_error, success
 from nebula_mcp.enums import EnumRegistry, load_enums, require_scopes
-from nebula_mcp.helpers import create_approval_request
+from nebula_mcp.helpers import create_approval_request, create_enrollment_session
 from nebula_mcp.query_loader import QueryLoader
 
 QUERIES = QueryLoader(Path(__file__).resolve().parents[2] / "queries")
@@ -65,6 +65,7 @@ class RegisterAgentBody(BaseModel):
     name: str
     description: str | None = None
     requested_scopes: list[str] = ["public"]
+    requested_requires_approval: bool = True
     capabilities: list[str] = []
 
 
@@ -97,43 +98,51 @@ async def register_agent(payload: RegisterAgentBody, request: Request) -> JSONRe
     pool = request.app.state.pool
     enums = request.app.state.enums
 
-    # Check name uniqueness
-    existing = await pool.fetchrow(QUERIES["agents/check_name"], payload.name)
-    if existing:
-        api_error("CONFLICT", f"Agent '{payload.name}' already exists", 409)
-
     # Resolve scope names to UUIDs
     scope_ids = require_scopes(payload.requested_scopes, enums)
 
-    # Get pending status
     pending_status_id = enums.statuses.name_to_id.get("inactive")
     if not pending_status_id:
         api_error("INTERNAL", "Status 'inactive' not found", 500)
 
-    # Create agent row with inactive status
-    agent = await pool.fetchrow(
-        QUERIES["agents/create"],
-        payload.name,
-        payload.description,
-        scope_ids,
-        payload.capabilities,
-        pending_status_id,
-        True,  # requires_approval
-    )
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            existing = await conn.fetchrow(QUERIES["agents/check_name"], payload.name)
+            if existing:
+                api_error("CONFLICT", f"Agent '{payload.name}' already exists", 409)
 
-    # Create approval request for registration
-    approval = await create_approval_request(
-        pool,
-        agent["id"],
-        "register_agent",
-        {
-            "agent_id": str(agent["id"]),
-            "name": payload.name,
-            "description": payload.description,
-            "requested_scopes": payload.requested_scopes,
-            "capabilities": payload.capabilities,
-        },
-    )
+            agent = await conn.fetchrow(
+                QUERIES["agents/create"],
+                payload.name,
+                payload.description,
+                scope_ids,
+                payload.capabilities,
+                pending_status_id,
+                payload.requested_requires_approval,
+            )
+
+            approval = await create_approval_request(
+                pool,
+                str(agent["id"]),
+                "register_agent",
+                {
+                    "agent_id": str(agent["id"]),
+                    "name": payload.name,
+                    "description": payload.description,
+                    "requested_scopes": payload.requested_scopes,
+                    "requested_requires_approval": payload.requested_requires_approval,
+                    "capabilities": payload.capabilities,
+                },
+                conn=conn,
+            )
+            enrollment = await create_enrollment_session(
+                pool,
+                agent_id=str(agent["id"]),
+                approval_request_id=str(approval["id"]),
+                requested_scope_ids=scope_ids,
+                requested_requires_approval=payload.requested_requires_approval,
+                conn=conn,
+            )
 
     return JSONResponse(
         status_code=201,
@@ -141,6 +150,8 @@ async def register_agent(payload: RegisterAgentBody, request: Request) -> JSONRe
             "data": {
                 "agent_id": str(agent["id"]),
                 "approval_request_id": str(approval["id"]),
+                "registration_id": str(enrollment["id"]),
+                "enrollment_token": enrollment["enrollment_token"],
                 "status": "pending_approval",
             }
         },

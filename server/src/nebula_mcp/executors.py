@@ -5,6 +5,7 @@ import hashlib
 import json
 from datetime import datetime, timezone
 from pathlib import Path
+from uuid import UUID
 
 # Third-Party
 from asyncpg import Pool
@@ -31,6 +32,14 @@ CYCLE_SENSITIVE_REL_TYPES = {
     "applies-to",
     "manages-agent",
 }
+
+
+def _scope_name_from_id(enums: EnumRegistry, scope_id: object) -> str:
+    try:
+        resolved = UUID(str(scope_id))
+    except (TypeError, ValueError):
+        return str(scope_id)
+    return enums.scopes.id_to_name.get(resolved, str(scope_id))
 
 
 def _advisory_lock_key(*parts: str) -> int:
@@ -656,11 +665,14 @@ async def execute_bulk_update_entity_scopes(
 
 
 async def execute_register_agent(
-    pool: Pool, enums: EnumRegistry, change_details: dict
+    pool: Pool,
+    enums: EnumRegistry,
+    change_details: dict,
+    review_details: dict | None = None,
 ) -> dict:
     """Execute agent registration on approval.
 
-    Activates the agent and generates an API key.
+    Activates the agent using reviewer grants. API key is issued at redeem time.
 
     Args:
         pool: Database connection pool.
@@ -668,7 +680,7 @@ async def execute_register_agent(
         change_details: Payload dict from approval request.
 
     Returns:
-        Dict with agent id, name, and raw API key.
+        Dict with agent id, name, scopes, and trust mode.
 
     Raises:
         ValueError: If agent not found.
@@ -677,36 +689,60 @@ async def execute_register_agent(
     if isinstance(change_details, str):
         change_details = json.loads(change_details)
 
+    if isinstance(review_details, str):
+        review_details = json.loads(review_details)
+    review_details = review_details or {}
+
     agent_id = change_details["agent_id"]
+    requested_scopes = change_details.get("requested_scopes") or ["public"]
+    requested_requires_approval = change_details.get(
+        "requested_requires_approval", True
+    )
+
+    granted_scopes = review_details.get("grant_scopes") or requested_scopes
+    granted_scope_ids = review_details.get("grant_scope_ids")
+    if not granted_scope_ids:
+        granted_scope_ids = require_scopes(granted_scopes, enums)
+
+    if review_details.get("grant_requires_approval") is None:
+        granted_requires_approval = requested_requires_approval
+    else:
+        granted_requires_approval = bool(review_details["grant_requires_approval"])
 
     # Activate agent
     active_status_id = require_status("active", enums)
     agent = await pool.fetchrow(
         QUERIES["agents/activate"],
         active_status_id,
+        granted_scope_ids,
+        granted_requires_approval,
         agent_id,
     )
     if not agent:
         raise ValueError(f"Agent '{agent_id}' not found")
 
-    # Generate API key
-    from nebula_api.auth import generate_api_key
+    approval_id = review_details.get("_approval_id")
+    reviewed_by = review_details.get("_reviewed_by")
+    if approval_id and reviewed_by:
+        await pool.execute(
+            QUERIES["enrollments/mark_approved"],
+            approval_id,
+            granted_scope_ids,
+            granted_requires_approval,
+            reviewed_by,
+        )
 
-    raw_key, prefix, key_hash = generate_api_key()
-    await pool.execute(
-        QUERIES["api_keys/create"],
-        agent_id,
-        key_hash,
-        prefix,
-        f"agent-{agent['name']}",
-    )
-
+    granted_scope_names = [
+        _scope_name_from_id(enums, scope_id) for scope_id in granted_scope_ids
+    ]
     return {
         "id": str(agent["id"]),
         "name": agent["name"],
-        "api_key": raw_key,
+        "scopes": granted_scope_names,
+        "requires_approval": granted_requires_approval,
+        "status": "approved",
+        "approval_id": approval_id,
     }
-
 
 # --- Executor Registry ---
 EXECUTORS = {

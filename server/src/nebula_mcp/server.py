@@ -20,7 +20,7 @@ if __package__ in (None, ""):
 
 # Local
 from nebula_mcp.context import (
-    authenticate_agent,
+    authenticate_agent_optional,
     maybe_require_approval,
     require_context,
 )
@@ -52,11 +52,14 @@ from nebula_mcp.helpers import (
 )
 from nebula_mcp.helpers import (
     create_approval_request,
+    create_enrollment_session,
     enforce_scope_subset,
     ensure_approval_capacity,
     filter_context_segments,
     normalize_bulk_operation,
+    redeem_enrollment_key,
     scope_names_from_ids,
+    wait_for_enrollment_status,
 )
 from nebula_mcp.helpers import (
     get_approval_diff as compute_approval_diff,
@@ -80,6 +83,9 @@ from nebula_mcp.imports import (
 from nebula_mcp.models import (
     MAX_GRAPH_HOPS,
     MAX_PAGE_LIMIT,
+    AgentEnrollRedeemInput,
+    AgentEnrollStartInput,
+    AgentEnrollWaitInput,
     AttachFileInput,
     BulkImportInput,
     BulkUpdateEntityScopesInput,
@@ -489,14 +495,19 @@ async def lifespan(app: FastMCP) -> AsyncIterator[dict[str, Any]]:
         app: FastMCP application instance.
 
     Yields:
-        Dict with pool, enums, and agent context.
+        Dict with pool, enums, and agent/bootstrap context.
     """
 
     pool = await get_pool()
     try:
         enums = await load_enums(pool)
-        agent = await authenticate_agent(pool)
-        yield {"pool": pool, "enums": enums, "agent": agent}
+        agent, bootstrap_mode = await authenticate_agent_optional(pool)
+        yield {
+            "pool": pool,
+            "enums": enums,
+            "agent": agent,
+            "bootstrap_mode": bootstrap_mode,
+        }
     finally:
         await pool.close()
 
@@ -641,12 +652,127 @@ async def reload_enums(ctx: Context) -> str:
         Confirmation message.
     """
 
-    lifespan_ctx = ctx.request_context.lifespan_context
-    if not lifespan_ctx or "pool" not in lifespan_ctx:
-        raise ValueError("Pool not initialized")
-
-    lifespan_ctx["enums"] = await load_enums(lifespan_ctx["pool"])
+    pool, enums, agent = await require_context(ctx)
+    _require_admin(agent, enums)
+    await _refresh_enums_in_context(ctx, pool)
     return "Enums reloaded."
+
+
+# --- Enrollment Tools ---
+
+
+@mcp.tool()
+async def agent_enroll_start(payload: AgentEnrollStartInput, ctx: Context) -> dict:
+    """Start MCP-native agent enrollment in bootstrap mode."""
+
+    pool, enums, agent = await require_context(ctx, allow_bootstrap=True)
+    if agent is not None:
+        raise ValueError("Agent already authenticated")
+
+    requested_scopes = payload.requested_scopes or ["public"]
+    requested_scope_ids = require_scopes(requested_scopes, enums)
+    inactive_status_id = require_status("inactive", enums)
+
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            existing = await conn.fetchrow(QUERIES["agents/check_name"], payload.name)
+            if existing:
+                raise ValueError(f"Agent '{payload.name}' already exists")
+
+            created_agent = await conn.fetchrow(
+                QUERIES["agents/create"],
+                payload.name,
+                payload.description,
+                requested_scope_ids,
+                payload.capabilities,
+                inactive_status_id,
+                payload.requested_requires_approval,
+            )
+            if not created_agent:
+                raise ValueError("Failed to create enrollment agent")
+
+            approval = await create_approval_request(
+                pool,
+                str(created_agent["id"]),
+                "register_agent",
+                {
+                    "agent_id": str(created_agent["id"]),
+                    "name": payload.name,
+                    "description": payload.description,
+                    "requested_scopes": requested_scopes,
+                    "requested_requires_approval": payload.requested_requires_approval,
+                    "capabilities": payload.capabilities,
+                },
+                conn=conn,
+            )
+            session = await create_enrollment_session(
+                pool,
+                agent_id=str(created_agent["id"]),
+                approval_request_id=str(approval["id"]),
+                requested_scope_ids=requested_scope_ids,
+                requested_requires_approval=payload.requested_requires_approval,
+                conn=conn,
+            )
+
+    return {
+        "registration_id": str(session["id"]),
+        "enrollment_token": session["enrollment_token"],
+        "status": "pending_approval",
+    }
+
+
+@mcp.tool()
+async def agent_enroll_wait(payload: AgentEnrollWaitInput, ctx: Context) -> dict:
+    """Wait for enrollment approval status in bootstrap mode."""
+
+    pool, _, agent = await require_context(ctx, allow_bootstrap=True)
+    if agent is not None:
+        raise ValueError("Agent already authenticated")
+
+    _require_uuid(payload.registration_id, "registration")
+    session = await wait_for_enrollment_status(
+        pool,
+        registration_id=payload.registration_id,
+        enrollment_token=payload.enrollment_token,
+        timeout_seconds=payload.timeout_seconds,
+    )
+    status = str(session.get("status") or "pending_approval")
+    response: dict[str, Any] = {
+        "status": status,
+        "can_redeem": status == "approved",
+    }
+    if status == "pending_approval":
+        response["retry_after_ms"] = int(session.get("retry_after_ms") or 1000)
+    elif status == "rejected":
+        reason = session.get("rejected_reason") or session.get("review_notes")
+        if reason:
+            response["reason"] = str(reason)
+    elif status == "expired":
+        response["reason"] = "Enrollment expired"
+    return response
+
+
+@mcp.tool()
+async def agent_enroll_redeem(payload: AgentEnrollRedeemInput, ctx: Context) -> dict:
+    """Redeem an approved enrollment session for an API key once."""
+
+    pool, enums, agent = await require_context(ctx, allow_bootstrap=True)
+    if agent is not None:
+        raise ValueError("Agent already authenticated")
+
+    _require_uuid(payload.registration_id, "registration")
+    result = await redeem_enrollment_key(
+        pool,
+        registration_id=payload.registration_id,
+        enrollment_token=payload.enrollment_token,
+    )
+    return {
+        "api_key": result["api_key"],
+        "agent_id": result["agent_id"],
+        "agent_name": result["agent_name"],
+        "scopes": scope_names_from_ids(result.get("scope_ids", []), enums),
+        "requires_approval": bool(result.get("requires_approval", True)),
+    }
 
 
 @mcp.tool()

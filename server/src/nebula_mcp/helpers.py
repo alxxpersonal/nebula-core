@@ -3,17 +3,22 @@
 # Standard Library
 import inspect
 import json
+import secrets
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 # Third-Party
-from asyncpg import Pool
+from argon2 import PasswordHasher
+from argon2.exceptions import VerifyMismatchError
+from asyncpg import Connection, Pool
 
 # Local
 from .enums import EnumRegistry, require_scopes
 from .query_loader import QueryLoader
 
 QUERIES = QueryLoader(Path(__file__).resolve().parents[1] / "queries")
+ph = PasswordHasher()
 
 
 def scope_names_from_ids(scope_ids: list, enums: EnumRegistry) -> list[str]:
@@ -78,6 +83,24 @@ def filter_context_segments(metadata: dict | str, agent_scopes: list[str]) -> di
 # --- Approval Workflow ---
 
 MAX_PENDING_APPROVALS = 10
+ENROLLMENT_TTL_HOURS = 24
+ENROLLMENT_WAIT_POLL_SECONDS = 1
+
+
+def generate_enrollment_token() -> tuple[str, str]:
+    """Generate raw bootstrap enrollment token and hashed storage value."""
+
+    raw = "nbe_" + secrets.token_urlsafe(36)
+    return raw, ph.hash(raw)
+
+
+def verify_enrollment_token(token_hash: str, raw_token: str) -> bool:
+    """Return True when enrollment token matches the stored hash."""
+
+    try:
+        return ph.verify(token_hash, raw_token)
+    except VerifyMismatchError:
+        return False
 
 
 async def ensure_approval_capacity(
@@ -148,6 +171,7 @@ async def create_approval_request(
     request_type: str,
     change_details: dict,
     job_id: str | None = None,
+    conn: Connection | None = None,
 ) -> dict:
     """Create an approval request for untrusted agent actions.
 
@@ -162,21 +186,193 @@ async def create_approval_request(
         Created approval request row as dict.
     """
 
+    async def _create(active_conn: Any) -> dict:
+        await ensure_approval_capacity(pool, agent_id, conn=active_conn)
+        row = await active_conn.fetchrow(
+            QUERIES["approvals/create_request"],
+            request_type,
+            agent_id,
+            (
+                json.dumps(change_details)
+                if isinstance(change_details, dict)
+                else change_details
+            ),
+            job_id,
+        )
+        return dict(row) if row else {}
+
+    if conn is not None:
+        return await _create(conn)
+
+    async with pool.acquire() as acquired:
+        async with acquired.transaction():
+            return await _create(acquired)
+
+
+async def create_enrollment_session(
+    pool: Pool,
+    *,
+    agent_id: str,
+    approval_request_id: str,
+    requested_scope_ids: list[str],
+    requested_requires_approval: bool,
+    conn: Connection | None = None,
+) -> dict:
+    """Create and persist a new enrollment session linked to an approval request."""
+
+    raw_token, token_hash = generate_enrollment_token()
+    expires_at = datetime.now(UTC) + timedelta(hours=ENROLLMENT_TTL_HOURS)
+    fetcher = conn.fetchrow if conn is not None else pool.fetchrow
+    row = await fetcher(
+        QUERIES["enrollments/create"],
+        agent_id,
+        approval_request_id,
+        token_hash,
+        requested_scope_ids,
+        requested_requires_approval,
+        expires_at,
+    )
+    if not row:
+        raise ValueError("Failed to create enrollment session")
+    payload = dict(row)
+    payload["enrollment_token"] = raw_token
+    return payload
+
+
+async def get_enrollment_for_wait(
+    pool: Pool,
+    *,
+    registration_id: str,
+    enrollment_token: str,
+) -> dict:
+    """Load enrollment session and validate enrollment token."""
+
+    row = await pool.fetchrow(QUERIES["enrollments/get_by_id"], registration_id)
+    if not row:
+        raise ValueError("Enrollment not found")
+    data = dict(row)
+    if not verify_enrollment_token(data["enrollment_token_hash"], enrollment_token):
+        raise ValueError("Invalid enrollment token")
+    return data
+
+
+async def maybe_expire_enrollment(pool: Pool, registration_id: str) -> dict | None:
+    """Expire pending/approved enrollment when TTL elapsed."""
+
+    row = await pool.fetchrow(QUERIES["enrollments/get_by_id"], registration_id)
+    if not row:
+        return None
+    data = dict(row)
+    expires_at = data.get("expires_at")
+    if expires_at and datetime.now(UTC) >= expires_at and data.get("status") in {
+        "pending_approval",
+        "approved",
+    }:
+        updated = await pool.fetchrow(
+            QUERIES["enrollments/mark_expired"], registration_id
+        )
+        if updated:
+            return dict(updated)
+    return data
+
+
+async def wait_for_enrollment_status(
+    pool: Pool,
+    *,
+    registration_id: str,
+    enrollment_token: str,
+    timeout_seconds: int,
+) -> dict:
+    """Long-poll enrollment status for bounded wait windows."""
+
+    started = datetime.now(UTC)
+    timeout_seconds = max(1, min(timeout_seconds, 60))
+
+    while True:
+        session = await get_enrollment_for_wait(
+            pool,
+            registration_id=registration_id,
+            enrollment_token=enrollment_token,
+        )
+        maybe_expired = await maybe_expire_enrollment(pool, registration_id)
+        if maybe_expired:
+            session = maybe_expired
+
+        status = session.get("status")
+        if status in {"approved", "rejected", "redeemed", "expired"}:
+            return session
+
+        elapsed = (datetime.now(UTC) - started).total_seconds()
+        if elapsed >= timeout_seconds:
+            session["retry_after_ms"] = ENROLLMENT_WAIT_POLL_SECONDS * 1000
+            return session
+
+        await pool.execute("SELECT pg_sleep($1)", ENROLLMENT_WAIT_POLL_SECONDS)
+
+
+async def redeem_enrollment_key(
+    pool: Pool,
+    *,
+    registration_id: str,
+    enrollment_token: str,
+) -> dict:
+    """Redeem approved enrollment exactly once and mint an agent API key."""
+
+    from nebula_api.auth import generate_api_key
+
     async with pool.acquire() as conn:
         async with conn.transaction():
-            await ensure_approval_capacity(pool, agent_id, conn=conn)
             row = await conn.fetchrow(
-                QUERIES["approvals/create_request"],
-                request_type,
-                agent_id,
-                (
-                    json.dumps(change_details)
-                    if isinstance(change_details, dict)
-                    else change_details
-                ),
-                job_id,
+                QUERIES["enrollments/get_for_update"], registration_id
             )
-            return dict(row) if row else {}
+            if not row:
+                raise ValueError("Enrollment not found")
+
+            session = dict(row)
+            if not verify_enrollment_token(
+                session["enrollment_token_hash"],
+                enrollment_token,
+            ):
+                raise ValueError("Invalid enrollment token")
+
+            if session.get("expires_at") and datetime.now(UTC) >= session["expires_at"]:
+                await conn.execute(QUERIES["enrollments/mark_expired"], registration_id)
+                raise ValueError("Enrollment expired")
+
+            status = session.get("status")
+            if status == "redeemed":
+                raise ValueError("Enrollment already redeemed")
+            if status != "approved":
+                raise ValueError("Enrollment is not approved")
+
+            raw_key, prefix, key_hash = generate_api_key()
+            await conn.execute(
+                QUERIES["api_keys/create"],
+                session["agent_id"],
+                key_hash,
+                prefix,
+                f"agent-{session['agent_name']}",
+            )
+
+            marked = await conn.fetchrow(
+                QUERIES["enrollments/mark_redeemed"], registration_id
+            )
+            if not marked:
+                raise ValueError("Enrollment redemption failed")
+
+            return {
+                "api_key": raw_key,
+                "agent_id": str(session["agent_id"]),
+                "agent_name": session["agent_name"],
+                "scope_ids": session.get("granted_scope_ids")
+                or session.get("requested_scope_ids")
+                or [],
+                "requires_approval": (
+                    session.get("granted_requires_approval")
+                    if session.get("granted_requires_approval") is not None
+                    else session.get("requested_requires_approval", True)
+                ),
+            }
 
 
 async def get_pending_approvals_all(pool: Pool) -> list[dict]:
@@ -194,7 +390,12 @@ async def get_pending_approvals_all(pool: Pool) -> list[dict]:
 
 
 async def approve_request(
-    pool: Pool, enums: EnumRegistry, approval_id: str, reviewed_by: str
+    pool: Pool,
+    enums: EnumRegistry,
+    approval_id: str,
+    reviewed_by: str,
+    review_details: dict | None = None,
+    review_notes: str | None = None,
 ) -> dict:
     """Approve request and execute the action.
 
@@ -217,6 +418,12 @@ async def approve_request(
         QUERIES["approvals/approve"],
         approval_id,
         reviewed_by,
+        (
+            json.dumps(review_details, default=str)
+            if isinstance(review_details, dict)
+            else json.dumps({})
+        ),
+        review_notes,
     )
 
     if not approval:
@@ -230,7 +437,26 @@ async def approve_request(
         await pool.execute("SET app.changed_by_type = 'entity'")
         await pool.execute(f"SET app.changed_by_id = '{reviewed_by}'")
 
-        result = await executor(pool, enums, approval["change_details"])
+        if approval["request_type"] == "register_agent":
+            raw_review_details = approval.get("review_details") or {}
+            if isinstance(raw_review_details, str):
+                try:
+                    raw_review_details = json.loads(raw_review_details)
+                except json.JSONDecodeError:
+                    raw_review_details = {}
+            if not isinstance(raw_review_details, dict):
+                raw_review_details = {}
+            exec_review_details = dict(raw_review_details)
+            exec_review_details["_approval_id"] = str(approval["id"])
+            exec_review_details["_reviewed_by"] = str(reviewed_by)
+            result = await executor(
+                pool,
+                enums,
+                approval["change_details"],
+                exec_review_details,
+            )
+        else:
+            result = await executor(pool, enums, approval["change_details"])
 
         await pool.execute(
             QUERIES["approvals/link_audit"], str(approval_id), str(result["id"])
@@ -275,7 +501,16 @@ async def reject_request(
     if not row:
         raise ValueError("Approval request not found or already processed")
 
-    return dict(row)
+    approval = dict(row)
+    if approval.get("request_type") == "register_agent":
+        await pool.execute(
+            QUERIES["enrollments/mark_rejected"],
+            approval_id,
+            review_notes,
+            reviewed_by,
+        )
+
+    return approval
 
 
 # --- Audit + History ---

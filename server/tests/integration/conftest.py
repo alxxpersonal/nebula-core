@@ -120,3 +120,17 @@ def untrusted_mcp_context(db_pool, enums, untrusted_agent):
         "agent": untrusted_agent,
     }
     return ctx
+
+
+@pytest.fixture
+def bootstrap_mcp_context(db_pool, enums):
+    """Mock MCP Context for bootstrap mode with no authenticated agent."""
+
+    ctx = MagicMock()
+    ctx.request_context.lifespan_context = {
+        "pool": db_pool,
+        "enums": enums,
+        "agent": None,
+        "bootstrap_mode": True,
+    }
+    return ctx

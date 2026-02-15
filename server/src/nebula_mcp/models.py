@@ -1076,6 +1076,62 @@ class ListAgentsInput(BaseModel):
     status_category: str = Field(default="active", description="active or archived")
 
 
+class AgentEnrollStartInput(BaseModel):
+    """Input payload for MCP bootstrap enrollment start."""
+
+    name: str = Field(..., description="Unique agent name")
+    description: str | None = Field(default=None, description="Optional description")
+    requested_scopes: list[str] = Field(
+        default_factory=lambda: ["public"], description="Requested scope names"
+    )
+    requested_requires_approval: bool = Field(
+        default=True, description="Requested trust mode"
+    )
+    capabilities: list[str] = Field(
+        default_factory=list, description="Optional capability tags"
+    )
+
+    @field_validator("name", "description", mode="before")
+    @classmethod
+    def _clean_enroll_text(cls, v: str | None) -> str | None:
+        return _sanitize_text(v)
+
+    @field_validator("requested_scopes", mode="before")
+    @classmethod
+    def _clean_enroll_scopes(cls, v: list[str] | None) -> list[str] | None:
+        return _sanitize_tags(v)
+
+    @field_validator("capabilities", mode="before")
+    @classmethod
+    def _clean_enroll_capabilities(cls, v: list[str] | None) -> list[str] | None:
+        return _sanitize_tags(v)
+
+
+class AgentEnrollWaitInput(BaseModel):
+    """Input payload for MCP enrollment long-poll wait."""
+
+    registration_id: str = Field(..., description="Enrollment registration UUID")
+    enrollment_token: str = Field(..., description="Enrollment token")
+    timeout_seconds: int = Field(default=20, ge=1, le=60, description="Wait timeout")
+
+    @field_validator("registration_id", "enrollment_token", mode="before")
+    @classmethod
+    def _clean_wait_text(cls, v: str | None) -> str | None:
+        return _sanitize_text(v)
+
+
+class AgentEnrollRedeemInput(BaseModel):
+    """Input payload for one-time enrollment redemption."""
+
+    registration_id: str = Field(..., description="Enrollment registration UUID")
+    enrollment_token: str = Field(..., description="Enrollment token")
+
+    @field_validator("registration_id", "enrollment_token", mode="before")
+    @classmethod
+    def _clean_redeem_text(cls, v: str | None) -> str | None:
+        return _sanitize_text(v)
+
+
 # --- Taxonomy Input Models ---
 
 
