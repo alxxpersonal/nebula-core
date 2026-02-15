@@ -744,6 +744,39 @@ async def execute_register_agent(
         "approval_id": approval_id,
     }
 
+
+async def execute_bulk_import_entities(
+    pool: Pool, enums: EnumRegistry, change_details: dict
+) -> dict:
+    """Execute a single entity import row created via bulk import approvals."""
+
+    return await execute_create_entity(pool, enums, change_details)
+
+
+async def execute_bulk_import_knowledge(
+    pool: Pool, enums: EnumRegistry, change_details: dict
+) -> dict:
+    """Execute a single knowledge import row created via bulk import approvals."""
+
+    return await execute_create_knowledge(pool, enums, change_details)
+
+
+async def execute_bulk_import_relationships(
+    pool: Pool, enums: EnumRegistry, change_details: dict
+) -> dict:
+    """Execute a single relationship import row created via bulk import approvals."""
+
+    return await execute_create_relationship(pool, enums, change_details)
+
+
+async def execute_bulk_import_jobs(
+    pool: Pool, enums: EnumRegistry, change_details: dict
+) -> dict:
+    """Execute a single job import row created via bulk import approvals."""
+
+    return await execute_create_job(pool, enums, change_details)
+
+
 # --- Executor Registry ---
 EXECUTORS = {
     "create_entity": execute_create_entity,
@@ -761,5 +794,9 @@ EXECUTORS = {
     "update_entity": execute_update_entity,
     "bulk_update_entity_tags": execute_bulk_update_entity_tags,
     "bulk_update_entity_scopes": execute_bulk_update_entity_scopes,
+    "bulk_import_entities": execute_bulk_import_entities,
+    "bulk_import_knowledge": execute_bulk_import_knowledge,
+    "bulk_import_relationships": execute_bulk_import_relationships,
+    "bulk_import_jobs": execute_bulk_import_jobs,
     "register_agent": execute_register_agent,
 }
