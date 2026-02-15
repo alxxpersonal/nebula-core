@@ -205,38 +205,57 @@ func (m InboxModel) View() string {
 
 	contentWidth := components.BoxContentWidth(m.width)
 	visible := m.list.Visible()
-	// BoxContentWidth is based on border+padding, but our box rendering style
-	// sets lipgloss.Width in a way that reduces the usable content area further.
-	// Keep the table inside the actual rendered content width to prevent wrap.
-	tableWidth := contentWidth
-	if tableWidth > 4 {
-		tableWidth -= 4
+	previewWidth := contentWidth * 35 / 100
+	if previewWidth < 38 {
+		previewWidth = 38
 	}
+	if previewWidth > 56 {
+		previewWidth = 56
+	}
+
+	gap := 3
+	tableWidth := contentWidth
+	sideBySide := contentWidth >= 110
+	if sideBySide {
+		tableWidth = contentWidth - previewWidth - gap
+		if tableWidth < 60 {
+			sideBySide = false
+			tableWidth = contentWidth
+		}
+	}
+
 	sepWidth := 1
 	if b := lipgloss.RoundedBorder().Left; b != "" {
 		sepWidth = lipgloss.Width(b)
 	}
 
-	// 6 columns -> 5 separators.
-	availableCols := tableWidth - (5 * sepWidth)
+	// TableGrid draws separators only between columns.
+	// 4 columns -> 3 separators.
+	availableCols := tableWidth - (3 * sepWidth)
 	if availableCols < 30 {
 		availableCols = 30
 	}
 
-	titleWidth := availableCols - (2 + 14 + 9 + 14 + 11)
-	if titleWidth < 10 {
-		titleWidth = 10
+	actionWidth := 19
+	whoWidth := 14
+	atWidth := 11
+
+	titleWidth := availableCols - (actionWidth + whoWidth + atWidth)
+	if titleWidth < 12 {
+		titleWidth = 12
 	}
 	cols := []components.TableColumn{
-		{Header: "", Width: 2, Align: lipgloss.Left},
 		{Header: "Title", Width: titleWidth, Align: lipgloss.Left},
-		{Header: "Action", Width: 14, Align: lipgloss.Left},
-		{Header: "Status", Width: 9, Align: lipgloss.Left},
-		{Header: "Who", Width: 14, Align: lipgloss.Left},
-		{Header: "At", Width: 11, Align: lipgloss.Left},
+		{Header: "Action", Width: actionWidth, Align: lipgloss.Left},
+		{Header: "Who", Width: whoWidth, Align: lipgloss.Left},
+		{Header: "At", Width: atWidth, Align: lipgloss.Left},
 	}
 
 	tableRows := make([][]string, 0, len(visible))
+	var previewItem *api.Approval
+	if item, ok := m.selectedItem(); ok {
+		previewItem = &item
+	}
 
 	for i := range visible {
 		absIdx := m.list.RelToAbs(i)
@@ -247,20 +266,20 @@ func (m InboxModel) View() string {
 
 		marker := "  "
 		if m.selected[item.ID] && m.list.IsSelected(absIdx) {
-			marker = "*>"
+			marker = ">*"
 		} else if m.selected[item.ID] {
-			marker = " *"
+			marker = "* "
 		} else if m.list.IsSelected(absIdx) {
-			marker = " >"
+			marker = "> "
 		}
 
-		title := approvalTitle(item)
-		action := humanizeApprovalType(item.RequestType)
-		status := components.SanitizeOneLine(item.Status)
-		who := components.SanitizeOneLine(item.AgentName)
+		fullTitle := marker + " " + approvalTitle(item)
+		title := components.ClampTextWidthEllipsis(fullTitle, titleWidth)
+		action := components.ClampTextWidthEllipsis(humanizeApprovalType(item.RequestType), actionWidth)
+		who := components.ClampTextWidthEllipsis(components.SanitizeOneLine(item.AgentName), whoWidth)
 		when := item.CreatedAt.Format("01-02 15:04")
 
-		tableRows = append(tableRows, []string{marker, title, action, status, who, when})
+		tableRows = append(tableRows, []string{title, action, who, when})
 	}
 
 	title := "Inbox"
@@ -273,7 +292,19 @@ func (m InboxModel) View() string {
 	}
 	countLine = MutedStyle.Render(countLine)
 	table := components.TableGrid(cols, tableRows, tableWidth)
-	content := countLine + "\n\n" + table + "\n"
+	preview := ""
+	if previewItem != nil {
+		preview = renderApprovalPreview(*previewItem, m.selected[previewItem.ID], previewWidth)
+	}
+
+	body := table
+	if sideBySide && preview != "" {
+		body = lipgloss.JoinHorizontal(lipgloss.Top, table, strings.Repeat(" ", gap), preview)
+	} else if preview != "" {
+		body = table + "\n\n" + preview
+	}
+
+	content := countLine + "\n\n" + body + "\n"
 	return components.Indent(components.TitledBox(title, content, m.width), 1)
 }
 
@@ -522,7 +553,39 @@ func approvalTitle(a api.Approval) string {
 			return components.SanitizeOneLine(s)
 		}
 	}
-	return components.SanitizeOneLine(a.RequestType)
+
+	reqType := strings.TrimSpace(components.SanitizeText(a.RequestType))
+
+	// More descriptive fallbacks for request types that don't carry names/titles.
+	switch reqType {
+	case "create_relationship", "update_relationship":
+		relType := strings.TrimSpace(fmt.Sprintf("%v", a.ChangeDetails["relationship_type"]))
+		srcType := strings.TrimSpace(fmt.Sprintf("%v", a.ChangeDetails["source_type"]))
+		tgtType := strings.TrimSpace(fmt.Sprintf("%v", a.ChangeDetails["target_type"]))
+
+		relType = components.SanitizeOneLine(relType)
+		srcType = components.SanitizeOneLine(srcType)
+		tgtType = components.SanitizeOneLine(tgtType)
+
+		if relType != "" && relType != "<nil>" {
+			if srcType != "" && srcType != "<nil>" && tgtType != "" && tgtType != "<nil>" {
+				return components.SanitizeOneLine(fmt.Sprintf("%s (%s -> %s)", relType, srcType, tgtType))
+			}
+			return relType
+		}
+	case "create_log", "update_log":
+		logType := strings.TrimSpace(fmt.Sprintf("%v", a.ChangeDetails["log_type"]))
+		logType = components.SanitizeOneLine(logType)
+		if logType != "" && logType != "<nil>" {
+			return components.SanitizeOneLine("log: " + logType)
+		}
+	}
+
+	// Default: make it human readable.
+	if reqType != "" {
+		return components.SanitizeOneLine(humanizeApprovalType(reqType))
+	}
+	return ""
 }
 
 func humanizeApprovalType(t string) string {
@@ -538,6 +601,161 @@ func humanizeApprovalType(t string) string {
 		parts[i] = strings.ToUpper(parts[i][:1]) + parts[i][1:]
 	}
 	return strings.Join(parts, " ")
+}
+
+func renderApprovalPreview(a api.Approval, picked bool, width int) string {
+	if width <= 0 {
+		return ""
+	}
+
+	title := components.SanitizeOneLine(approvalTitle(a))
+	action := components.SanitizeOneLine(humanizeApprovalType(a.RequestType))
+	who := components.SanitizeOneLine(a.AgentName)
+	status := components.SanitizeOneLine(a.Status)
+	when := a.CreatedAt.Format("01-02 15:04")
+
+	var lines []string
+	lines = append(lines, MetaKeyStyle.Render("Selected"))
+	for i, part := range wrapPreviewText(title, width) {
+		if i == 0 {
+			lines = append(lines, SelectedStyle.Render(part))
+			continue
+		}
+		lines = append(lines, SelectedStyle.Render(part))
+	}
+	lines = append(lines, "")
+
+	lines = append(lines, renderPreviewRow("Action", action, width))
+	lines = append(lines, renderPreviewRow("Who", who, width))
+	lines = append(lines, renderPreviewRow("At", when, width))
+	lines = append(lines, renderPreviewRow("Status", status, width))
+	if picked {
+		lines = append(lines, renderPreviewRow("In batch", "yes", width))
+	}
+
+	if scopes := previewListValue(a.ChangeDetails, "scopes"); scopes != "" {
+		lines = append(lines, renderPreviewRow("Scopes", scopes, width))
+	}
+	if tags := previewListValue(a.ChangeDetails, "tags"); tags != "" {
+		lines = append(lines, renderPreviewRow("Tags", tags, width))
+	}
+	if typ := previewStringValue(a.ChangeDetails, "type"); typ != "" {
+		lines = append(lines, renderPreviewRow("Type", typ, width))
+	}
+	if rel := previewStringValue(a.ChangeDetails, "relationship_type"); rel != "" {
+		lines = append(lines, renderPreviewRow("Rel", rel, width))
+	}
+	if src := previewStringValue(a.ChangeDetails, "source_type"); src != "" {
+		lines = append(lines, renderPreviewRow("From", src, width))
+	}
+	if tgt := previewStringValue(a.ChangeDetails, "target_type"); tgt != "" {
+		lines = append(lines, renderPreviewRow("To", tgt, width))
+	}
+	if logType := previewStringValue(a.ChangeDetails, "log_type"); logType != "" {
+		lines = append(lines, renderPreviewRow("Log", logType, width))
+	}
+
+	return padPreviewLines(lines, width)
+}
+
+func wrapPreviewText(text string, width int) []string {
+	text = components.SanitizeOneLine(text)
+	if width <= 0 || text == "" {
+		return nil
+	}
+	if lipgloss.Width(text) <= width {
+		return []string{text}
+	}
+
+	var out []string
+	var line strings.Builder
+	lineW := 0
+	for _, r := range text {
+		rw := lipgloss.Width(string(r))
+		if rw < 1 {
+			rw = 1
+		}
+		if lineW+rw > width && lineW > 0 {
+			out = append(out, strings.TrimRight(line.String(), " "))
+			line.Reset()
+			lineW = 0
+			if r == ' ' {
+				continue
+			}
+		}
+		line.WriteRune(r)
+		lineW += rw
+	}
+	if line.Len() > 0 {
+		out = append(out, strings.TrimRight(line.String(), " "))
+	}
+	return out
+}
+
+func renderPreviewRow(label, value string, width int) string {
+	label = components.SanitizeOneLine(label)
+	value = components.SanitizeOneLine(value)
+
+	prefixWidth := lipgloss.Width(label) + 2 // ": "
+	maxValue := width - prefixWidth
+	if maxValue < 4 {
+		maxValue = 4
+	}
+	value = components.ClampTextWidthEllipsis(value, maxValue)
+	return MetaKeyStyle.Render(label) + MetaPunctStyle.Render(": ") + MetaValueStyle.Render(value)
+}
+
+func previewStringValue(m api.JSONMap, key string) string {
+	if m == nil {
+		return ""
+	}
+	v, ok := m[key]
+	if !ok || v == nil {
+		return ""
+	}
+	s := strings.TrimSpace(fmt.Sprintf("%v", v))
+	if s == "" || s == "<nil>" {
+		return ""
+	}
+	return components.SanitizeOneLine(s)
+}
+
+func previewListValue(m api.JSONMap, key string) string {
+	if m == nil {
+		return ""
+	}
+	v, ok := m[key]
+	if !ok || v == nil {
+		return ""
+	}
+	items, ok := v.([]any)
+	if !ok || len(items) == 0 {
+		return ""
+	}
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		s := strings.TrimSpace(fmt.Sprintf("%v", item))
+		if s == "" || s == "<nil>" {
+			continue
+		}
+		out = append(out, components.SanitizeOneLine(s))
+	}
+	return strings.Join(out, ", ")
+}
+
+func padPreviewLines(lines []string, width int) string {
+	if width <= 0 || len(lines) == 0 {
+		return ""
+	}
+	padded := make([]string, 0, len(lines))
+	for _, line := range lines {
+		line = components.ClampTextWidth(line, width)
+		if w := lipgloss.Width(line); w < width {
+			line += strings.Repeat(" ", width-w)
+		}
+		padded = append(padded, line)
+	}
+	return strings.Join(padded, "\n")
 }
 
 func (m *InboxModel) applyFilter(resetSelection bool) {

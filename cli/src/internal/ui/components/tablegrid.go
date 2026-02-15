@@ -16,6 +16,9 @@ type TableColumn struct {
 	Align  lipgloss.Position
 }
 
+var gridLineStyle = lipgloss.NewStyle().
+	Foreground(lipgloss.Color("#273540"))
+
 // TableGrid renders a table-like layout using the same rounded border glyphs
 // used by Nebula's box components.
 //
@@ -31,21 +34,28 @@ func TableGrid(columns []TableColumn, rows [][]string, tableWidth int) string {
 	}
 
 	border := lipgloss.RoundedBorder()
-	sep := border.Left
-	if sep == "" {
-		sep = "|"
+	v := border.Left
+	if v == "" {
+		v = "|"
 	}
+	h := border.Top
+	if h == "" {
+		h = "-"
+	}
+	cross := border.Middle
+	if cross == "" {
+		cross = "+"
+	}
+
+	cols := fitGridColumns(columns, v, tableWidth)
 
 	// Build header and row lines.
 	var out []string
-	out = append(out, renderGridRow(columns, headerCells(columns), sep, tableWidth, true))
-	out = append(out, renderGridRule(columns, border.Top, border.Middle, sep, tableWidth))
+	out = append(out, renderGridRow(cols, headerCells(cols), v, tableWidth, true))
+	out = append(out, renderGridRule(cols, cross, h, tableWidth))
 
-	for i, row := range rows {
-		out = append(out, renderGridRow(columns, row, sep, tableWidth, false))
-		if i < len(rows)-1 {
-			out = append(out, renderGridRule(columns, border.Top, border.Middle, sep, tableWidth))
-		}
+	for _, row := range rows {
+		out = append(out, renderGridRow(cols, row, v, tableWidth, false))
 	}
 
 	return strings.Join(out, "\n")
@@ -59,22 +69,51 @@ func headerCells(columns []TableColumn) []string {
 	return hdr
 }
 
+func fitGridColumns(columns []TableColumn, sep string, tableWidth int) []TableColumn {
+	fitted := make([]TableColumn, len(columns))
+	copy(fitted, columns)
+
+	sepW := lipgloss.Width(sep)
+	if sepW < 1 {
+		sepW = 1
+	}
+
+	sum := 0
+	for i := range fitted {
+		if fitted[i].Width < 1 {
+			fitted[i].Width = 1
+		}
+		sum += fitted[i].Width
+	}
+	// n columns => n-1 separators (only between columns, no outer table border).
+	expected := sum
+	if len(fitted) > 1 {
+		expected += (len(fitted) - 1) * sepW
+	}
+	delta := tableWidth - expected
+	if len(fitted) > 0 && delta != 0 {
+		fitted[len(fitted)-1].Width += delta
+		if fitted[len(fitted)-1].Width < 1 {
+			fitted[len(fitted)-1].Width = 1
+		}
+	}
+	return fitted
+}
+
 func renderGridRow(columns []TableColumn, cells []string, sep string, tableWidth int, header bool) string {
 	headerStyle := boxLabelStyle
 	if header {
 		headerStyle = boxLabelStyle.Bold(true)
 	}
 
+	sepStyled := gridLineStyle.Inline(true).Render(sep)
+
 	var b strings.Builder
 	for i, col := range columns {
 		if i > 0 {
-			b.WriteString(sep)
+			b.WriteString(sepStyled)
 		}
 		w := col.Width
-		if w < 1 {
-			w = 1
-		}
-
 		text := ""
 		if i < len(cells) {
 			text = cells[i]
@@ -91,10 +130,30 @@ func renderGridRow(columns []TableColumn, cells []string, sep string, tableWidth
 	line := b.String()
 	if lipgloss.Width(line) < tableWidth {
 		line = padRight(line, tableWidth)
-	} else if lipgloss.Width(line) > tableWidth {
-		line = truncateRunes(line, tableWidth)
 	}
 	return line
+}
+
+func renderGridRule(columns []TableColumn, cross, horiz string, tableWidth int) string {
+	if horiz == "" {
+		horiz = "-"
+	}
+	var b strings.Builder
+	for i, col := range columns {
+		w := col.Width
+		if w < 1 {
+			w = 1
+		}
+		b.WriteString(strings.Repeat(horiz, w))
+		if i < len(columns)-1 {
+			b.WriteString(cross)
+		}
+	}
+	line := b.String()
+	if lipgloss.Width(line) < tableWidth {
+		line = padRight(line, tableWidth)
+	}
+	return gridLineStyle.Inline(true).Render(line)
 }
 
 func renderGridCell(text string, width int, align lipgloss.Position) string {
@@ -119,50 +178,4 @@ func renderGridCell(text string, width int, align lipgloss.Position) string {
 	default:
 		return clamped + strings.Repeat(" ", pad)
 	}
-}
-
-func renderGridRule(columns []TableColumn, horiz, cross, sep string, tableWidth int) string {
-	if tableWidth <= 0 {
-		return ""
-	}
-	if horiz == "" {
-		horiz = "-"
-	}
-	if cross == "" {
-		cross = "+"
-	}
-	if sep == "" {
-		sep = "|"
-	}
-
-	// Build a full-width rule line. Put a cross at each column boundary.
-	// Boundaries are at cumulative column widths plus separator widths.
-	boundaries := map[int]struct{}{}
-	pos := 0
-	for i, col := range columns {
-		w := col.Width
-		if w < 1 {
-			w = 1
-		}
-		pos += w
-		if i < len(columns)-1 {
-			boundaries[pos] = struct{}{}
-			pos += lipgloss.Width(sep)
-		}
-	}
-
-	var b strings.Builder
-	// Ensure we always render exactly tableWidth cells.
-	for i := 0; i < tableWidth; i++ {
-		if _, ok := boundaries[i]; ok {
-			b.WriteString(cross)
-			continue
-		}
-		b.WriteString(horiz)
-	}
-	line := b.String()
-	if lipgloss.Width(line) < tableWidth {
-		return padRight(line, tableWidth)
-	}
-	return truncateRunes(line, tableWidth)
 }
