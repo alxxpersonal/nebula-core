@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/gravitrone/nebula-core/cli/internal/api"
 	"github.com/gravitrone/nebula-core/cli/internal/ui/components"
@@ -273,24 +274,8 @@ func (m ProfileModel) renderTaxonomy() string {
 		)
 	}
 
-	var rows strings.Builder
-	visible := m.taxList.Visible()
 	contentWidth := components.BoxContentWidth(m.width)
-	maxLabelWidth := contentWidth - 4
-	for i, label := range visible {
-		if maxLabelWidth > 0 {
-			label = components.ClampTextWidth(label, maxLabelWidth)
-		}
-		absIdx := m.taxList.RelToAbs(i)
-		if m.taxList.IsSelected(absIdx) {
-			rows.WriteString(SelectedStyle.Render("  > " + label))
-		} else {
-			rows.WriteString(NormalStyle.Render("    " + label))
-		}
-		if i < len(visible)-1 {
-			rows.WriteString("\n")
-		}
-	}
+	visible := m.taxList.Visible()
 
 	filterText := m.taxSearch
 	if filterText == "" {
@@ -302,7 +287,154 @@ func (m ProfileModel) renderTaxonomy() string {
 		m.taxIncludeInactive,
 		filterText,
 	)
-	content := MutedStyle.Render(info) + "\n\n" + rows.String()
+
+	previewWidth := contentWidth * 35 / 100
+	if previewWidth < 40 {
+		previewWidth = 40
+	}
+	if previewWidth > 60 {
+		previewWidth = 60
+	}
+
+	gap := 3
+	tableWidth := contentWidth
+	sideBySide := contentWidth >= 110
+	if sideBySide {
+		tableWidth = contentWidth - previewWidth - gap
+		if tableWidth < 60 {
+			sideBySide = false
+			tableWidth = contentWidth
+		}
+	}
+
+	sepWidth := 1
+	if br := lipgloss.RoundedBorder().Left; br != "" {
+		sepWidth = lipgloss.Width(br)
+	}
+
+	// 3 columns -> 2 separators.
+	availableCols := tableWidth - (2 * sepWidth)
+	if availableCols < 30 {
+		availableCols = 30
+	}
+
+	flagsWidth := 14
+	descWidth := 30
+	nameWidth := availableCols - (flagsWidth + descWidth)
+	if nameWidth < 14 {
+		nameWidth = 14
+		descWidth = availableCols - (nameWidth + flagsWidth)
+		if descWidth < 14 {
+			descWidth = 14
+		}
+	}
+
+	cols := []components.TableColumn{
+		{Header: "Name", Width: nameWidth, Align: lipgloss.Left},
+		{Header: "Flags", Width: flagsWidth, Align: lipgloss.Left},
+		{Header: "Description", Width: descWidth, Align: lipgloss.Left},
+	}
+
+	tableRows := make([][]string, 0, len(visible))
+	activeRowRel := -1
+	var previewItem *api.TaxonomyEntry
+	if idx := m.taxList.Selected(); idx >= 0 && idx < len(m.taxItems) {
+		previewItem = &m.taxItems[idx]
+	}
+
+	for i := range visible {
+		absIdx := m.taxList.RelToAbs(i)
+		if absIdx < 0 || absIdx >= len(m.taxItems) {
+			continue
+		}
+		item := m.taxItems[absIdx]
+
+		name := strings.TrimSpace(components.SanitizeOneLine(item.Name))
+		if name == "" {
+			name = "-"
+		}
+		flags := []string{}
+		if item.IsBuiltin {
+			flags = append(flags, "builtin")
+		}
+		if !item.IsActive {
+			flags = append(flags, "inactive")
+		}
+		flagText := "-"
+		if len(flags) > 0 {
+			flagText = strings.Join(flags, ", ")
+		}
+
+		desc := "-"
+		if item.Description != nil && strings.TrimSpace(*item.Description) != "" {
+			desc = strings.TrimSpace(*item.Description)
+		}
+
+		if m.taxList.IsSelected(absIdx) {
+			activeRowRel = len(tableRows)
+		}
+		tableRows = append(tableRows, []string{
+			components.ClampTextWidthEllipsis(name, nameWidth),
+			components.ClampTextWidthEllipsis(flagText, flagsWidth),
+			components.ClampTextWidthEllipsis(components.SanitizeOneLine(desc), descWidth),
+		})
+	}
+
+	table := components.TableGridWithActiveRow(cols, tableRows, tableWidth, activeRowRel)
+	preview := ""
+	if previewItem != nil {
+		content := m.renderTaxonomyPreview(*previewItem, previewBoxContentWidth(previewWidth))
+		preview = renderPreviewBox(content, previewWidth)
+	}
+
+	body := table
+	if sideBySide && preview != "" {
+		body = lipgloss.JoinHorizontal(lipgloss.Top, table, strings.Repeat(" ", gap), preview)
+	} else if preview != "" {
+		body = table + "\n\n" + preview
+	}
+
+	content := MutedStyle.Render(info) + "\n\n" + body + "\n"
 	title := fmt.Sprintf("%s Taxonomy", taxonomyKinds[m.taxKind].Label)
 	return b.String() + components.Indent(components.TitledBox(title, content, m.width), 1)
+}
+
+func (m ProfileModel) renderTaxonomyPreview(item api.TaxonomyEntry, width int) string {
+	if width <= 0 {
+		return ""
+	}
+
+	title := strings.TrimSpace(components.SanitizeOneLine(item.Name))
+	if title == "" {
+		title = "taxonomy"
+	}
+
+	status := "active"
+	if !item.IsActive {
+		status = "inactive"
+	}
+
+	var lines []string
+	lines = append(lines, MetaKeyStyle.Render("Selected"))
+	for _, part := range wrapPreviewText(title, width) {
+		lines = append(lines, SelectedStyle.Render(part))
+	}
+	lines = append(lines, "")
+
+	lines = append(lines, renderPreviewRow("Status", status, width))
+	if item.IsBuiltin {
+		lines = append(lines, renderPreviewRow("Builtin", "true", width))
+	}
+	lines = append(lines, renderPreviewRow("ID", shortID(item.ID), width))
+	if item.Description != nil && strings.TrimSpace(*item.Description) != "" {
+		lines = append(lines, renderPreviewRow("Desc", strings.TrimSpace(*item.Description), width))
+	}
+	if item.IsSymmetric != nil {
+		lines = append(lines, renderPreviewRow("Symmetric", fmt.Sprintf("%t", *item.IsSymmetric), width))
+	}
+	if metaPreview := metadataPreview(map[string]any(item.Metadata), 80); metaPreview != "" {
+		lines = append(lines, renderPreviewRow("Meta", metaPreview, width))
+	}
+
+	return padPreviewLines(lines, width)
 }
