@@ -41,12 +41,12 @@ func TestUpdateJobEncodesBodyAndDecodesResponse(t *testing.T) {
 	assert.Equal(t, title, out.Title)
 }
 
-func TestGetKnowledgeDecodesResponse(t *testing.T) {
+func TestGetContextDecodesResponse(t *testing.T) {
 	now := time.Now()
 
 	_, client := testServer(t, func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodGet, r.Method)
-		assert.Equal(t, "/api/knowledge/kn-1", r.URL.Path)
+		assert.Equal(t, "/api/context/kn-1", r.URL.Path)
 
 		w.Write(jsonResponse(map[string]any{
 			"id":          "kn-1",
@@ -60,20 +60,20 @@ func TestGetKnowledgeDecodesResponse(t *testing.T) {
 		}))
 	})
 
-	out, err := client.GetKnowledge("kn-1")
+	out, err := client.GetContext("kn-1")
 	require.NoError(t, err)
 	require.NotNil(t, out)
 	assert.Equal(t, "kn-1", out.ID)
 	assert.Equal(t, "Doc", out.Name)
 }
 
-func TestUpdateKnowledgeEncodesBodyAndDecodesResponse(t *testing.T) {
+func TestUpdateContextEncodesBodyAndDecodesResponse(t *testing.T) {
 	now := time.Now()
 	title := "New Title"
 
 	_, client := testServer(t, func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPatch, r.Method)
-		assert.Equal(t, "/api/knowledge/kn-1", r.URL.Path)
+		assert.Equal(t, "/api/context/kn-1", r.URL.Path)
 
 		var body map[string]any
 		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
@@ -91,7 +91,7 @@ func TestUpdateKnowledgeEncodesBodyAndDecodesResponse(t *testing.T) {
 		}))
 	})
 
-	out, err := client.UpdateKnowledge("kn-1", UpdateKnowledgeInput{
+	out, err := client.UpdateContext("kn-1", UpdateContextInput{
 		Title:    &title,
 		Metadata: map[string]any{"k": "v"},
 	})

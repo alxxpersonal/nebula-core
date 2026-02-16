@@ -264,10 +264,15 @@ async def maybe_expire_enrollment(pool: Pool, registration_id: str) -> dict | No
         return None
     data = dict(row)
     expires_at = data.get("expires_at")
-    if expires_at and datetime.now(UTC) >= expires_at and data.get("status") in {
-        "pending_approval",
-        "approved",
-    }:
+    if (
+        expires_at
+        and datetime.now(UTC) >= expires_at
+        and data.get("status")
+        in {
+            "pending_approval",
+            "approved",
+        }
+    ):
         updated = await pool.fetchrow(
             QUERIES["enrollments/mark_expired"], registration_id
         )
@@ -375,17 +380,21 @@ async def redeem_enrollment_key(
             }
 
 
-async def get_pending_approvals_all(pool: Pool) -> list[dict]:
+async def get_pending_approvals_all(
+    pool: Pool, limit: int = 200, offset: int = 0
+) -> list[dict]:
     """Get all pending approval requests for admin review.
 
     Args:
         pool: Database connection pool.
+        limit: Max rows to return.
+        offset: Pagination offset.
 
     Returns:
         List of pending approval request dicts.
     """
 
-    rows = await pool.fetch(QUERIES["approvals/get_pending"])
+    rows = await pool.fetch(QUERIES["approvals/get_pending"], limit, offset)
     return [dict(r) for r in rows]
 
 
@@ -393,7 +402,7 @@ async def approve_request(
     pool: Pool,
     enums: EnumRegistry,
     approval_id: str,
-    reviewed_by: str,
+    reviewed_by: str | None,
     review_details: dict | None = None,
     review_notes: str | None = None,
 ) -> dict:
@@ -403,7 +412,7 @@ async def approve_request(
         pool: Database connection pool.
         enums: Enum registry for validation.
         approval_id: UUID of approval request.
-        reviewed_by: UUID of approving entity.
+        reviewed_by: UUID of approving entity, or None for MCP admin calls.
 
     Returns:
         Dict containing approval record and created entity.
@@ -439,8 +448,14 @@ async def approve_request(
         raise ValueError(f"No executor for: {approval['request_type']}")
 
     try:
-        await pool.execute("SET app.changed_by_type = 'entity'")
-        await pool.execute(f"SET app.changed_by_id = '{reviewed_by}'")
+        if reviewed_by:
+            await pool.execute("SET app.changed_by_type = 'entity'")
+            await pool.fetchval(
+                "SELECT set_config('app.changed_by_id', $1, false)", reviewed_by
+            )
+        else:
+            await pool.execute("SET app.changed_by_type = 'system'")
+            await pool.execute("RESET app.changed_by_id")
 
         if approval["request_type"] == "register_agent":
             raw_review_details = approval.get("review_details") or {}
@@ -453,7 +468,8 @@ async def approve_request(
                 raw_review_details = {}
             exec_review_details = dict(raw_review_details)
             exec_review_details["_approval_id"] = str(approval["id"])
-            exec_review_details["_reviewed_by"] = str(reviewed_by)
+            if reviewed_by:
+                exec_review_details["_reviewed_by"] = str(reviewed_by)
             result = await executor(
                 pool,
                 enums,
@@ -479,14 +495,14 @@ async def approve_request(
 
 
 async def reject_request(
-    pool: Pool, approval_id: str, reviewed_by: str, review_notes: str
+    pool: Pool, approval_id: str, reviewed_by: str | None, review_notes: str
 ) -> dict:
     """Reject an approval request.
 
     Args:
         pool: Database connection pool.
         approval_id: UUID of approval request.
-        reviewed_by: UUID of rejecting entity.
+        reviewed_by: UUID of rejecting entity, or None for MCP admin calls.
         review_notes: Reason for rejection.
 
     Returns:
@@ -590,7 +606,7 @@ async def revert_entity(pool: Pool, entity_id: str, audit_id: str) -> dict:
         snapshot.get("status_reason"),
         snapshot.get("tags") or [],
         metadata_json,
-        snapshot.get("vault_file_path"),
+        snapshot.get("source_path"),
     )
     return dict(row) if row else {}
 
@@ -762,7 +778,7 @@ async def get_approval_diff(pool: Pool, approval_id: str) -> dict:
     elif request_type == "create_entity":
         for key, new_val in change_details.items():
             changes[key] = {"from": None, "to": new_val}
-    elif request_type in {"create_knowledge", "create_relationship", "create_job"}:
+    elif request_type in {"create_context", "create_relationship", "create_job"}:
         for key, new_val in change_details.items():
             changes[key] = {"from": None, "to": new_val}
     elif request_type == "update_relationship":

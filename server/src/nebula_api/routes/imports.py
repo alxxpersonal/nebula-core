@@ -19,9 +19,9 @@ from nebula_mcp.enums import (
     require_status,
 )
 from nebula_mcp.executors import (
+    execute_create_context,
     execute_create_entity,
     execute_create_job,
-    execute_create_knowledge,
     execute_create_relationship,
 )
 from nebula_mcp.helpers import (
@@ -32,9 +32,9 @@ from nebula_mcp.helpers import (
 )
 from nebula_mcp.imports import (
     extract_items,
+    normalize_context,
     normalize_entity,
     normalize_job,
-    normalize_knowledge,
     normalize_relationship,
 )
 from nebula_mcp.query_loader import QueryLoader
@@ -58,7 +58,7 @@ def _validate_taxonomy_before_approval(
         require_status(str(normalized.get("status") or ""), enums)
         require_scopes(list(normalized.get("scopes") or []), enums)
         return
-    if approval_action == "bulk_import_knowledge":
+    if approval_action == "bulk_import_context":
         require_scopes(list(normalized.get("scopes") or []), enums)
         return
     if approval_action == "bulk_import_relationships":
@@ -105,16 +105,16 @@ async def _require_entity_write_access(
         raise ValueError("Access denied")
 
 
-async def _require_knowledge_write_access(
-    pool: Any, enums: Any, auth: dict, knowledge_id: str
+async def _require_context_write_access(
+    pool: Any, enums: Any, auth: dict, context_id: str
 ) -> None:
     if auth["caller_type"] != "agent":
         return
     if _is_admin(auth, enums):
         return
-    row = await pool.fetchrow(QUERIES["knowledge/get"], knowledge_id, None)
+    row = await pool.fetchrow(QUERIES["context/get"], context_id, None)
     if not row:
-        raise ValueError("Knowledge not found")
+        raise ValueError("Context not found")
     if not _has_write_scopes(
         auth.get("scopes", []), row.get("privacy_scope_ids") or []
     ):
@@ -137,8 +137,8 @@ async def _validate_relationship_node(
     if node_type == "entity":
         await _require_entity_write_access(pool, enums, auth, node_id)
         return
-    if node_type == "knowledge":
-        await _require_knowledge_write_access(pool, enums, auth, node_id)
+    if node_type == "context":
+        await _require_context_write_access(pool, enums, auth, node_id)
         return
     if node_type == "job":
         await _require_job_owner(pool, auth, node_id)
@@ -340,13 +340,13 @@ async def import_entities(
     )
 
 
-@router.post("/knowledge")
-async def import_knowledge(
+@router.post("/context")
+async def import_context(
     payload: BulkImportBody,
     request: Request,
     auth: dict = Depends(require_auth),
 ) -> dict[str, Any]:
-    """Bulk import knowledge items.
+    """Bulk import context items.
 
     Args:
         payload: Bulk import payload.
@@ -354,15 +354,15 @@ async def import_knowledge(
         auth: Auth context.
 
     Returns:
-        API response with created knowledge or approval requirement.
+        API response with created context or approval requirement.
     """
     return await _run_import(
         request,
         auth,
         payload,
-        normalize_knowledge,
-        execute_create_knowledge,
-        "bulk_import_knowledge",
+        normalize_context,
+        execute_create_context,
+        "bulk_import_context",
     )
 
 

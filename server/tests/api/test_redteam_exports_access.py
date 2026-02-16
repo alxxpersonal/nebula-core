@@ -77,15 +77,15 @@ async def _make_job(db_pool, enums, agent_id, scopes):
     return dict(row)
 
 
-async def _make_knowledge(db_pool, enums, title, scopes, metadata):
-    """Insert knowledge for export access tests."""
+async def _make_context(db_pool, enums, title, scopes, metadata):
+    """Insert context for export access tests."""
 
     status_id = enums.statuses.name_to_id["active"]
     scope_ids = [enums.scopes.name_to_id[s] for s in scopes]
 
     row = await db_pool.fetchrow(
         """
-        INSERT INTO knowledge_items (title, source_type, content, privacy_scope_ids, status_id, tags, metadata)
+        INSERT INTO context_items (title, source_type, content, privacy_scope_ids, status_id, tags, metadata)
         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
         RETURNING *
         """,
@@ -196,8 +196,8 @@ async def test_export_entities_denies_scope_override(db_pool, enums):
 
 
 @pytest.mark.asyncio
-async def test_export_context_filters_jobs_by_agent(db_pool, enums):
-    """Context export should filter jobs by scopes."""
+async def test_export_snapshot_filters_jobs_by_agent(db_pool, enums):
+    """Snapshot export should filter jobs by scopes."""
 
     owner = await _make_agent(db_pool, enums, "job-owner-export")
     viewer = await _make_agent(db_pool, enums, "job-viewer-export")
@@ -209,7 +209,7 @@ async def test_export_context_filters_jobs_by_agent(db_pool, enums):
     app.state.enums = enums
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        resp = await client.get("/api/export/context")
+        resp = await client.get("/api/export/snapshot")
     app.dependency_overrides.pop(require_auth, None)
 
     assert resp.status_code == 200
@@ -220,8 +220,8 @@ async def test_export_context_filters_jobs_by_agent(db_pool, enums):
 
 
 @pytest.mark.asyncio
-async def test_export_context_filters_job_relationships(db_pool, enums):
-    """Context export should filter relationships tied to jobs by job scopes."""
+async def test_export_snapshot_filters_job_relationships(db_pool, enums):
+    """Snapshot export should filter relationships tied to jobs by job scopes."""
 
     owner = await _make_agent(db_pool, enums, "job-owner-export-rel")
     viewer = await _make_agent(db_pool, enums, "job-viewer-export-rel")
@@ -242,7 +242,7 @@ async def test_export_context_filters_job_relationships(db_pool, enums):
     app.state.enums = enums
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        resp = await client.get("/api/export/context")
+        resp = await client.get("/api/export/snapshot")
     app.dependency_overrides.pop(require_auth, None)
 
     assert resp.status_code == 200
@@ -277,8 +277,8 @@ async def test_export_jobs_filters_by_agent(db_pool, enums):
 
 
 @pytest.mark.asyncio
-async def test_export_knowledge_filters_context_segments(db_pool, enums):
-    """Knowledge exports should filter metadata context segments."""
+async def test_export_context_filters_context_segments(db_pool, enums):
+    """Context exports should filter metadata context segments."""
 
     metadata = {
         "context_segments": [
@@ -286,17 +286,17 @@ async def test_export_knowledge_filters_context_segments(db_pool, enums):
             {"text": "private info", "scopes": ["private"]},
         ]
     }
-    await _make_knowledge(
-        db_pool, enums, "Knowledge Mixed", ["public", "private"], metadata
+    await _make_context(
+        db_pool, enums, "Context Mixed", ["public", "private"], metadata
     )
 
-    viewer = await _make_agent(db_pool, enums, "knowledge-export-viewer")
+    viewer = await _make_agent(db_pool, enums, "context-export-viewer")
     app.dependency_overrides[require_auth] = _auth_override(viewer["id"], enums)
     app.state.pool = db_pool
     app.state.enums = enums
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        resp = await client.get("/api/export/knowledge")
+        resp = await client.get("/api/export/context")
     app.dependency_overrides.pop(require_auth, None)
 
     assert resp.status_code == 200
@@ -306,19 +306,19 @@ async def test_export_knowledge_filters_context_segments(db_pool, enums):
 
 
 @pytest.mark.asyncio
-async def test_export_knowledge_denies_scope_override(db_pool, enums):
-    """Export knowledge should not allow requesting scopes outside caller access."""
+async def test_export_context_denies_scope_override(db_pool, enums):
+    """Export context should not allow requesting scopes outside caller access."""
 
     metadata = {"context_segments": [{"text": "secret", "scopes": ["private"]}]}
-    await _make_knowledge(db_pool, enums, "Sensitive Knowledge", ["private"], metadata)
+    await _make_context(db_pool, enums, "Sensitive Context", ["private"], metadata)
 
-    viewer = await _make_agent(db_pool, enums, "knowledge-scope-viewer")
+    viewer = await _make_agent(db_pool, enums, "context-scope-viewer")
     app.dependency_overrides[require_auth] = _auth_override(viewer["id"], enums)
     app.state.pool = db_pool
     app.state.enums = enums
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        resp = await client.get("/api/export/knowledge?scopes=private")
+        resp = await client.get("/api/export/context?scopes=private")
     app.dependency_overrides.pop(require_auth, None)
 
     assert resp.status_code == 400

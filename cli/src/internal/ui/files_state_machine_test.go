@@ -44,12 +44,12 @@ func TestFilesInitLoadsFilesAndScopes(t *testing.T) {
 			json.NewEncoder(w).Encode(map[string]any{
 				"data": []map[string]any{
 					{
-						"id":              "scope-1",
-						"name":            "public",
-						"description":     nil,
-						"agent_count":     0,
-						"entity_count":    0,
-						"knowledge_count": 0,
+						"id":            "scope-1",
+						"name":          "public",
+						"description":   nil,
+						"agent_count":   0,
+						"entity_count":  0,
+						"context_count": 0,
 					},
 				},
 			})

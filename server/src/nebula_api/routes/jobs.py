@@ -117,6 +117,8 @@ class UpdateJobBody(BaseModel):
     description: str | None = None
     status: str | None = None
     priority: str | None = None
+    assigned_to: str | None = None
+    due_at: str | None = None
     metadata: dict | None = None
 
 
@@ -363,6 +365,13 @@ async def update_job(
             api_error("INVALID_INPUT", str(exc), 400)
     if data.get("priority") and data["priority"] not in JOB_PRIORITY_VALUES:
         api_error("INVALID_INPUT", f"Invalid priority: {data['priority']}", 400)
+    if data.get("assigned_to"):
+        _require_uuid(data["assigned_to"], "assignee")
+    if "due_at" in data:
+        try:
+            parse_optional_datetime(data.get("due_at"), "due_at")
+        except ValueError as exc:
+            api_error("INVALID_INPUT", str(exc), 400)
     if data.get("metadata") is None:
         data.pop("metadata", None)
     change = {"job_id": job_id, **data}

@@ -15,10 +15,10 @@ async def test_export_entities_rejects_invalid_scope(api):
 
 
 @pytest.mark.asyncio
-async def test_export_knowledge_rejects_invalid_scope(api):
-    """Invalid scope names should not crash knowledge export."""
+async def test_export_context_rejects_invalid_scope(api):
+    """Invalid scope names should not crash context export."""
 
-    resp = await api.get("/api/export/knowledge", params={"scopes": "not-a-scope"})
+    resp = await api.get("/api/export/context", params={"scopes": "not-a-scope"})
     assert resp.status_code == 400
     body = resp.json()
     assert body["detail"]["error"]["code"] == "VALIDATION_ERROR"

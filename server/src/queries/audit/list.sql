@@ -23,9 +23,9 @@ LEFT JOIN agents
 LEFT JOIN entities AS scoped_entities
   ON audit_log.table_name = 'entities'
   AND audit_log.record_id = scoped_entities.id::text
-LEFT JOIN knowledge_items AS scoped_knowledge
-  ON audit_log.table_name = 'knowledge_items'
-  AND audit_log.record_id = scoped_knowledge.id::text
+LEFT JOIN context_items AS scoped_context
+  ON audit_log.table_name = 'context_items'
+  AND audit_log.record_id = scoped_context.id::text
 WHERE ($1::text IS NULL OR audit_log.table_name = $1)
   AND ($2::text IS NULL OR audit_log.action = $2)
   AND ($3::text IS NULL OR audit_log.changed_by_type = $3)
@@ -35,7 +35,7 @@ WHERE ($1::text IS NULL OR audit_log.table_name = $1)
     $6::uuid IS NULL
     OR (
       scoped_entities.privacy_scope_ids && ARRAY[$6]
-      OR scoped_knowledge.privacy_scope_ids && ARRAY[$6]
+      OR scoped_context.privacy_scope_ids && ARRAY[$6]
     )
   )
 ORDER BY audit_log.changed_at DESC

@@ -13,16 +13,16 @@ import (
 
 // --- Messages ---
 
-type knowledgeSavedMsg struct{}
-type knowledgeLinkResultsMsg struct{ items []api.Entity }
-type knowledgeListLoadedMsg struct{ items []api.Knowledge }
-type knowledgeScopesLoadedMsg struct{ names map[string]string }
-type knowledgeDetailLoadedMsg struct{ item api.Knowledge }
-type knowledgeUpdatedMsg struct{ item api.Knowledge }
+type contextSavedMsg struct{}
+type contextLinkResultsMsg struct{ items []api.Entity }
+type contextListLoadedMsg struct{ items []api.Context }
+type contextScopesLoadedMsg struct{ names map[string]string }
+type contextDetailLoadedMsg struct{ item api.Context }
+type contextUpdatedMsg struct{ item api.Context }
 
 // --- Constants ---
 
-var knowledgeTypes = []string{
+var contextTypes = []string{
 	"note",
 	"video",
 	"article",
@@ -32,15 +32,15 @@ var knowledgeTypes = []string{
 	"thread",
 }
 
-var knowledgeStatusOptions = []string{"active", "archived"}
+var contextStatusOptions = []string{"active", "archived"}
 
-type knowledgeView int
+type contextView int
 
 const (
-	knowledgeViewAdd knowledgeView = iota
-	knowledgeViewList
-	knowledgeViewDetail
-	knowledgeViewEdit
+	contextViewAdd contextView = iota
+	contextViewList
+	contextViewDetail
+	contextViewEdit
 )
 
 // Field indices
@@ -57,67 +57,67 @@ const (
 )
 
 const (
-	knowledgeEditFieldTitle = iota
-	knowledgeEditFieldURL
-	knowledgeEditFieldType
-	knowledgeEditFieldStatus
-	knowledgeEditFieldTags
-	knowledgeEditFieldScopes
-	knowledgeEditFieldNotes
-	knowledgeEditFieldMeta
-	knowledgeEditFieldCount
+	contextEditFieldTitle = iota
+	contextEditFieldURL
+	contextEditFieldType
+	contextEditFieldStatus
+	contextEditFieldTags
+	contextEditFieldScopes
+	contextEditFieldNotes
+	contextEditFieldMeta
+	contextEditFieldCount
 )
 
-// --- Knowledge Model ---
+// --- Context Model ---
 
-// KnowledgeModel handles adding knowledge items manually.
-type KnowledgeModel struct {
-	client              *api.Client
-	fields              []formField
-	typeIdx             int
-	typeSelecting       bool
-	scopeOptions        []string
-	scopeIdx            int
-	scopeSelecting      bool
-	focus               int
-	modeFocus           bool
-	saved               bool
-	saving              bool
-	view                knowledgeView
-	errText             string
-	tags                []string
-	tagBuf              string
-	scopes              []string
-	scopeBuf            string
-	linkSearching       bool
-	linkLoading         bool
-	linkQuery           string
-	linkResults         []api.Entity
-	linkList            *components.List
-	linkEntities        []api.Entity
-	list                *components.List
-	items               []api.Knowledge
-	loadingList         bool
-	detail              *api.Knowledge
-	knowledgeEditFields []formField
-	editFocus           int
-	editTypeIdx         int
-	editTypeSelecting   bool
-	editScopeSelecting  bool
-	editStatusIdx       int
-	editTags            []string
-	editTagBuf          string
-	editScopes          []string
-	editScopeBuf        string
-	editMeta            MetadataEditor
-	editSaving          bool
-	metaEditor          MetadataEditor
-	metaExpanded        bool
-	contentExpanded     bool
-	vaultExpanded       bool
-	scopeNames          map[string]string
-	width               int
-	height              int
+// ContextModel handles adding context items manually.
+type ContextModel struct {
+	client             *api.Client
+	fields             []formField
+	typeIdx            int
+	typeSelecting      bool
+	scopeOptions       []string
+	scopeIdx           int
+	scopeSelecting     bool
+	focus              int
+	modeFocus          bool
+	saved              bool
+	saving             bool
+	view               contextView
+	errText            string
+	tags               []string
+	tagBuf             string
+	scopes             []string
+	scopeBuf           string
+	linkSearching      bool
+	linkLoading        bool
+	linkQuery          string
+	linkResults        []api.Entity
+	linkList           *components.List
+	linkEntities       []api.Entity
+	list               *components.List
+	items              []api.Context
+	loadingList        bool
+	detail             *api.Context
+	contextEditFields  []formField
+	editFocus          int
+	editTypeIdx        int
+	editTypeSelecting  bool
+	editScopeSelecting bool
+	editStatusIdx      int
+	editTags           []string
+	editTagBuf         string
+	editScopes         []string
+	editScopeBuf       string
+	editMeta           MetadataEditor
+	editSaving         bool
+	metaEditor         MetadataEditor
+	metaExpanded       bool
+	contentExpanded    bool
+	sourcePathExpanded bool
+	scopeNames         map[string]string
+	width              int
+	height             int
 }
 
 type formField struct {
@@ -125,9 +125,9 @@ type formField struct {
 	value string
 }
 
-// NewKnowledgeModel builds the knowledge UI model.
-func NewKnowledgeModel(client *api.Client) KnowledgeModel {
-	return KnowledgeModel{
+// NewContextModel builds the context UI model.
+func NewContextModel(client *api.Client) ContextModel {
+	return ContextModel{
 		client: client,
 		fields: []formField{
 			{label: "Title"},
@@ -139,7 +139,7 @@ func NewKnowledgeModel(client *api.Client) KnowledgeModel {
 			{label: "Notes"},
 			{label: "Metadata"},
 		},
-		knowledgeEditFields: []formField{
+		contextEditFields: []formField{
 			{label: "Title"},
 			{label: "URL"},
 			{label: "Type"},
@@ -154,7 +154,7 @@ func NewKnowledgeModel(client *api.Client) KnowledgeModel {
 	}
 }
 
-func (m KnowledgeModel) Init() tea.Cmd {
+func (m ContextModel) Init() tea.Cmd {
 	m.saved = false
 	m.errText = ""
 	m.focus = 0
@@ -163,7 +163,7 @@ func (m KnowledgeModel) Init() tea.Cmd {
 	m.typeSelecting = false
 	m.scopeIdx = 0
 	m.scopeSelecting = false
-	m.view = knowledgeViewAdd
+	m.view = contextViewAdd
 	m.tags = nil
 	m.tagBuf = ""
 	m.scopes = nil
@@ -179,7 +179,7 @@ func (m KnowledgeModel) Init() tea.Cmd {
 	m.editTypeIdx = 0
 	m.editTypeSelecting = false
 	m.editScopeSelecting = false
-	m.editStatusIdx = statusIndex(knowledgeStatusOptions, "active")
+	m.editStatusIdx = statusIndex(contextStatusOptions, "active")
 	m.editTags = nil
 	m.editTagBuf = ""
 	m.editScopes = nil
@@ -189,7 +189,7 @@ func (m KnowledgeModel) Init() tea.Cmd {
 	m.metaEditor.Reset()
 	m.metaExpanded = false
 	m.contentExpanded = false
-	m.vaultExpanded = false
+	m.sourcePathExpanded = false
 	if m.scopeNames == nil {
 		m.scopeNames = map[string]string{}
 	}
@@ -205,9 +205,9 @@ func (m KnowledgeModel) Init() tea.Cmd {
 	return m.loadScopeNames()
 }
 
-func (m KnowledgeModel) Update(msg tea.Msg) (KnowledgeModel, tea.Cmd) {
+func (m ContextModel) Update(msg tea.Msg) (ContextModel, tea.Cmd) {
 	switch msg := msg.(type) {
-	case knowledgeSavedMsg:
+	case contextSavedMsg:
 		m.saving = false
 		m.saved = true
 		return m, nil
@@ -217,7 +217,7 @@ func (m KnowledgeModel) Update(msg tea.Msg) (KnowledgeModel, tea.Cmd) {
 		m.editSaving = false
 		m.errText = msg.err.Error()
 		return m, nil
-	case knowledgeLinkResultsMsg:
+	case contextLinkResultsMsg:
 		m.linkLoading = false
 		m.linkResults = msg.items
 		labels := make([]string, len(msg.items))
@@ -229,18 +229,18 @@ func (m KnowledgeModel) Update(msg tea.Msg) (KnowledgeModel, tea.Cmd) {
 		}
 		return m, nil
 
-	case knowledgeListLoadedMsg:
+	case contextListLoadedMsg:
 		m.loadingList = false
 		m.items = msg.items
 		labels := make([]string, len(msg.items))
 		for i, k := range msg.items {
-			labels[i] = formatKnowledgeLine(k)
+			labels[i] = formatContextLine(k)
 		}
 		if m.list != nil {
 			m.list.SetItems(labels)
 		}
 		return m, nil
-	case knowledgeScopesLoadedMsg:
+	case contextScopesLoadedMsg:
 		if m.scopeNames == nil {
 			m.scopeNames = map[string]string{}
 		}
@@ -251,13 +251,13 @@ func (m KnowledgeModel) Update(msg tea.Msg) (KnowledgeModel, tea.Cmd) {
 		m.metaEditor.SetScopeOptions(m.scopeOptions)
 		m.editMeta.SetScopeOptions(m.scopeOptions)
 		return m, nil
-	case knowledgeDetailLoadedMsg:
+	case contextDetailLoadedMsg:
 		m.detail = &msg.item
 		return m, nil
-	case knowledgeUpdatedMsg:
+	case contextUpdatedMsg:
 		m.editSaving = false
 		m.detail = &msg.item
-		m.view = knowledgeViewDetail
+		m.view = contextViewDetail
 		return m, nil
 
 	case tea.KeyMsg:
@@ -269,13 +269,13 @@ func (m KnowledgeModel) Update(msg tea.Msg) (KnowledgeModel, tea.Cmd) {
 			m.editMeta.HandleKey(msg)
 			return m, nil
 		}
-		if m.view == knowledgeViewList {
+		if m.view == contextViewList {
 			return m.handleListKeys(msg)
 		}
-		if m.view == knowledgeViewEdit {
+		if m.view == contextViewEdit {
 			return m.handleEditKeys(msg)
 		}
-		if m.view == knowledgeViewDetail {
+		if m.view == contextViewDetail {
 			return m.handleDetailKeys(msg)
 		}
 		if m.linkSearching {
@@ -289,10 +289,10 @@ func (m KnowledgeModel) Update(msg tea.Msg) (KnowledgeModel, tea.Cmd) {
 			if m.typeSelecting {
 				switch {
 				case isKey(msg, "left"):
-					m.typeIdx = (m.typeIdx - 1 + len(knowledgeTypes)) % len(knowledgeTypes)
+					m.typeIdx = (m.typeIdx - 1 + len(contextTypes)) % len(contextTypes)
 					return m, nil
 				case isKey(msg, "right"):
-					m.typeIdx = (m.typeIdx + 1) % len(knowledgeTypes)
+					m.typeIdx = (m.typeIdx + 1) % len(contextTypes)
 					return m, nil
 				case isSpace(msg):
 					m.typeSelecting = false
@@ -412,13 +412,13 @@ func (m KnowledgeModel) Update(msg tea.Msg) (KnowledgeModel, tea.Cmd) {
 	return m, nil
 }
 
-func (m KnowledgeModel) View() string {
+func (m ContextModel) View() string {
 	if m.saving {
 		return "  " + MutedStyle.Render("Saving...")
 	}
 
 	if m.saved {
-		return components.Indent(components.Box(SuccessStyle.Render("Knowledge saved! Press Esc to add another."), m.width), 1)
+		return components.Indent(components.Box(SuccessStyle.Render("Context saved! Press Esc to add another."), m.width), 1)
 	}
 
 	if m.editMeta.Active {
@@ -436,11 +436,11 @@ func (m KnowledgeModel) View() string {
 	modeLine := m.renderModeLine()
 	var body string
 	switch m.view {
-	case knowledgeViewList:
+	case contextViewList:
 		body = m.renderList()
-	case knowledgeViewDetail:
+	case contextViewDetail:
 		body = m.renderDetail()
-	case knowledgeViewEdit:
+	case contextViewEdit:
 		body = m.renderEdit()
 	default:
 		body = m.renderAdd()
@@ -451,7 +451,7 @@ func (m KnowledgeModel) View() string {
 	return components.Indent(body, 1)
 }
 
-func (m KnowledgeModel) renderAdd() string {
+func (m ContextModel) renderAdd() string {
 	var b strings.Builder
 	for i, f := range m.fields {
 		label := f.label
@@ -461,24 +461,24 @@ func (m KnowledgeModel) renderAdd() string {
 			if i == m.focus && m.typeSelecting {
 				b.WriteString(SelectedStyle.Render("> " + label + ":"))
 				b.WriteString("\n  ")
-				for j, t := range knowledgeTypes {
+				for j, t := range contextTypes {
 					if j == m.typeIdx {
 						b.WriteString(AccentStyle.Render("[" + t + "]"))
 					} else {
 						b.WriteString(MutedStyle.Render(" " + t + " "))
 					}
-					if j < len(knowledgeTypes)-1 {
+					if j < len(contextTypes)-1 {
 						b.WriteString(" ")
 					}
 				}
 			} else if i == m.focus {
 				b.WriteString(SelectedStyle.Render("> " + label + ":"))
 				b.WriteString("\n")
-				b.WriteString(NormalStyle.Render("  " + knowledgeTypes[m.typeIdx]))
+				b.WriteString(NormalStyle.Render("  " + contextTypes[m.typeIdx]))
 			} else {
 				b.WriteString(MutedStyle.Render("  " + label + ":"))
 				b.WriteString("\n")
-				b.WriteString(NormalStyle.Render("  " + knowledgeTypes[m.typeIdx]))
+				b.WriteString(NormalStyle.Render("  " + contextTypes[m.typeIdx]))
 			}
 		} else if i == fieldTags {
 			if i == m.focus {
@@ -548,47 +548,47 @@ func (m KnowledgeModel) renderAdd() string {
 		b.WriteString(components.ErrorBox("Error", m.errText, m.width))
 	}
 
-	return components.TitledBox("Add Knowledge", b.String(), m.width)
+	return components.TitledBox("Add Context", b.String(), m.width)
 }
 
-func (m KnowledgeModel) renderEdit() string {
+func (m ContextModel) renderEdit() string {
 	var b strings.Builder
-	for i, f := range m.knowledgeEditFields {
+	for i, f := range m.contextEditFields {
 		label := f.label
 		switch i {
-		case knowledgeEditFieldType:
+		case contextEditFieldType:
 			if i == m.editFocus && m.editTypeSelecting {
 				b.WriteString(SelectedStyle.Render("> " + label + ":"))
 				b.WriteString("\n  ")
-				for j, t := range knowledgeTypes {
+				for j, t := range contextTypes {
 					if j == m.editTypeIdx {
 						b.WriteString(AccentStyle.Render("[" + t + "]"))
 					} else {
 						b.WriteString(MutedStyle.Render(" " + t + " "))
 					}
-					if j < len(knowledgeTypes)-1 {
+					if j < len(contextTypes)-1 {
 						b.WriteString(" ")
 					}
 				}
 			} else if i == m.editFocus {
 				b.WriteString(SelectedStyle.Render("> " + label + ":"))
 				b.WriteString("\n")
-				b.WriteString(NormalStyle.Render("  " + knowledgeTypes[m.editTypeIdx]))
+				b.WriteString(NormalStyle.Render("  " + contextTypes[m.editTypeIdx]))
 			} else {
 				b.WriteString(MutedStyle.Render("  " + label + ":"))
 				b.WriteString("\n")
-				b.WriteString(NormalStyle.Render("  " + knowledgeTypes[m.editTypeIdx]))
+				b.WriteString(NormalStyle.Render("  " + contextTypes[m.editTypeIdx]))
 			}
-		case knowledgeEditFieldStatus:
+		case contextEditFieldStatus:
 			if i == m.editFocus {
 				b.WriteString(SelectedStyle.Render("> " + label + ":"))
 			} else {
 				b.WriteString(MutedStyle.Render("  " + label + ":"))
 			}
 			b.WriteString("\n")
-			status := knowledgeStatusOptions[m.editStatusIdx]
+			status := contextStatusOptions[m.editStatusIdx]
 			b.WriteString(NormalStyle.Render("  " + status))
-		case knowledgeEditFieldTags:
+		case contextEditFieldTags:
 			if i == m.editFocus {
 				b.WriteString(SelectedStyle.Render("> " + label + ":"))
 				b.WriteString("\n")
@@ -598,7 +598,7 @@ func (m KnowledgeModel) renderEdit() string {
 				b.WriteString("\n")
 				b.WriteString(NormalStyle.Render("  " + m.renderEditTags(false)))
 			}
-		case knowledgeEditFieldScopes:
+		case contextEditFieldScopes:
 			if i == m.editFocus && m.editScopeSelecting {
 				b.WriteString(SelectedStyle.Render("> " + label + ":"))
 				b.WriteString("\n")
@@ -612,7 +612,7 @@ func (m KnowledgeModel) renderEdit() string {
 				b.WriteString("\n")
 				b.WriteString(NormalStyle.Render("  " + m.renderEditScopes(false)))
 			}
-		case knowledgeEditFieldMeta:
+		case contextEditFieldMeta:
 			if i == m.editFocus {
 				b.WriteString(SelectedStyle.Render("> " + label + ":"))
 			} else {
@@ -638,7 +638,7 @@ func (m KnowledgeModel) renderEdit() string {
 			}
 		}
 
-		if i < knowledgeEditFieldCount-1 {
+		if i < contextEditFieldCount-1 {
 			b.WriteString("\n\n")
 		}
 	}
@@ -652,13 +652,13 @@ func (m KnowledgeModel) renderEdit() string {
 		b.WriteString("\n\n" + MutedStyle.Render("Saving..."))
 	}
 
-	return components.TitledBox("Edit Knowledge", b.String(), m.width)
+	return components.TitledBox("Edit Context", b.String(), m.width)
 }
 
-func (m KnowledgeModel) renderModeLine() string {
+func (m ContextModel) renderModeLine() string {
 	add := TabInactiveStyle.Render("Add")
 	list := TabInactiveStyle.Render("Library")
-	if m.view == knowledgeViewAdd {
+	if m.view == contextViewAdd {
 		add = TabActiveStyle.Render("Add")
 	} else {
 		list = TabActiveStyle.Render("Library")
@@ -670,11 +670,11 @@ func (m KnowledgeModel) renderModeLine() string {
 	return line
 }
 
-func (m KnowledgeModel) handleModeKeys(msg tea.KeyMsg) (KnowledgeModel, tea.Cmd) {
+func (m ContextModel) handleModeKeys(msg tea.KeyMsg) (ContextModel, tea.Cmd) {
 	switch {
 	case isDown(msg):
 		m.modeFocus = false
-		if m.view == knowledgeViewEdit {
+		if m.view == contextViewEdit {
 			m.editFocus = 0
 		} else {
 			m.focus = 0
@@ -685,7 +685,7 @@ func (m KnowledgeModel) handleModeKeys(msg tea.KeyMsg) (KnowledgeModel, tea.Cmd)
 		return m.toggleMode()
 	case isBack(msg):
 		m.modeFocus = false
-		if m.view == knowledgeViewEdit {
+		if m.view == contextViewEdit {
 			m.editFocus = 0
 		} else {
 			m.focus = 0
@@ -694,26 +694,26 @@ func (m KnowledgeModel) handleModeKeys(msg tea.KeyMsg) (KnowledgeModel, tea.Cmd)
 	return m, nil
 }
 
-func (m KnowledgeModel) toggleMode() (KnowledgeModel, tea.Cmd) {
+func (m ContextModel) toggleMode() (ContextModel, tea.Cmd) {
 	m.modeFocus = false
 	m.detail = nil
 	m.metaExpanded = false
 	m.contentExpanded = false
-	m.vaultExpanded = false
-	if m.view == knowledgeViewAdd {
-		m.view = knowledgeViewList
+	m.sourcePathExpanded = false
+	if m.view == contextViewAdd {
+		m.view = contextViewList
 		m.loadingList = true
-		return m, m.loadKnowledgeList()
+		return m, m.loadContextList()
 	}
-	if m.view == knowledgeViewDetail || m.view == knowledgeViewEdit {
-		m.view = knowledgeViewList
+	if m.view == contextViewDetail || m.view == contextViewEdit {
+		m.view = contextViewList
 		return m, nil
 	}
-	m.view = knowledgeViewAdd
+	m.view = contextViewAdd
 	return m, nil
 }
 
-func (m KnowledgeModel) handleListKeys(msg tea.KeyMsg) (KnowledgeModel, tea.Cmd) {
+func (m ContextModel) handleListKeys(msg tea.KeyMsg) (ContextModel, tea.Cmd) {
 	switch {
 	case isDown(msg):
 		m.list.Down()
@@ -727,16 +727,16 @@ func (m KnowledgeModel) handleListKeys(msg tea.KeyMsg) (KnowledgeModel, tea.Cmd)
 		if idx := m.list.Selected(); idx < len(m.items) {
 			item := m.items[idx]
 			m.detail = &item
-			m.view = knowledgeViewDetail
-			return m, m.loadKnowledgeDetail(item.ID)
+			m.view = contextViewDetail
+			return m, m.loadContextDetail(item.ID)
 		}
 	case isBack(msg):
-		m.view = knowledgeViewAdd
+		m.view = contextViewAdd
 	}
 	return m, nil
 }
 
-func (m KnowledgeModel) handleDetailKeys(msg tea.KeyMsg) (KnowledgeModel, tea.Cmd) {
+func (m ContextModel) handleDetailKeys(msg tea.KeyMsg) (ContextModel, tea.Cmd) {
 	switch {
 	case isUp(msg):
 		m.modeFocus = true
@@ -744,36 +744,36 @@ func (m KnowledgeModel) handleDetailKeys(msg tea.KeyMsg) (KnowledgeModel, tea.Cm
 		m.detail = nil
 		m.metaExpanded = false
 		m.contentExpanded = false
-		m.vaultExpanded = false
-		m.view = knowledgeViewList
+		m.sourcePathExpanded = false
+		m.view = contextViewList
 	case isKey(msg, "e"):
 		m.startEdit()
-		m.view = knowledgeViewEdit
+		m.view = contextViewEdit
 	case isKey(msg, "m"):
 		m.metaExpanded = !m.metaExpanded
 	case isKey(msg, "c"):
 		m.contentExpanded = !m.contentExpanded
 	case isKey(msg, "v"):
-		m.vaultExpanded = !m.vaultExpanded
+		m.sourcePathExpanded = !m.sourcePathExpanded
 	}
 	return m, nil
 }
 
-func (m KnowledgeModel) handleEditKeys(msg tea.KeyMsg) (KnowledgeModel, tea.Cmd) {
+func (m ContextModel) handleEditKeys(msg tea.KeyMsg) (ContextModel, tea.Cmd) {
 	if m.editSaving {
 		return m, nil
 	}
 	if m.modeFocus {
 		return m.handleModeKeys(msg)
 	}
-	if m.editFocus == knowledgeEditFieldType {
+	if m.editFocus == contextEditFieldType {
 		if m.editTypeSelecting {
 			switch {
 			case isKey(msg, "left"):
-				m.editTypeIdx = (m.editTypeIdx - 1 + len(knowledgeTypes)) % len(knowledgeTypes)
+				m.editTypeIdx = (m.editTypeIdx - 1 + len(contextTypes)) % len(contextTypes)
 				return m, nil
 			case isKey(msg, "right"):
-				m.editTypeIdx = (m.editTypeIdx + 1) % len(knowledgeTypes)
+				m.editTypeIdx = (m.editTypeIdx + 1) % len(contextTypes)
 				return m, nil
 			case isSpace(msg), isEnter(msg):
 				m.editTypeSelecting = false
@@ -784,7 +784,7 @@ func (m KnowledgeModel) handleEditKeys(msg tea.KeyMsg) (KnowledgeModel, tea.Cmd)
 			return m, nil
 		}
 	}
-	if m.editFocus == knowledgeEditFieldScopes && m.editScopeSelecting {
+	if m.editFocus == contextEditFieldScopes && m.editScopeSelecting {
 		switch {
 		case isKey(msg, "left"):
 			if len(m.scopeOptions) > 0 {
@@ -807,13 +807,13 @@ func (m KnowledgeModel) handleEditKeys(msg tea.KeyMsg) (KnowledgeModel, tea.Cmd)
 			return m, nil
 		}
 	}
-	if m.editFocus == knowledgeEditFieldStatus {
+	if m.editFocus == contextEditFieldStatus {
 		switch {
 		case isKey(msg, "left"):
-			m.editStatusIdx = (m.editStatusIdx - 1 + len(knowledgeStatusOptions)) % len(knowledgeStatusOptions)
+			m.editStatusIdx = (m.editStatusIdx - 1 + len(contextStatusOptions)) % len(contextStatusOptions)
 			return m, nil
 		case isKey(msg, "right"), isSpace(msg):
-			m.editStatusIdx = (m.editStatusIdx + 1) % len(knowledgeStatusOptions)
+			m.editStatusIdx = (m.editStatusIdx + 1) % len(contextStatusOptions)
 			return m, nil
 		}
 	}
@@ -822,7 +822,7 @@ func (m KnowledgeModel) handleEditKeys(msg tea.KeyMsg) (KnowledgeModel, tea.Cmd)
 	case isDown(msg):
 		m.editTypeSelecting = false
 		m.editScopeSelecting = false
-		m.editFocus = (m.editFocus + 1) % knowledgeEditFieldCount
+		m.editFocus = (m.editFocus + 1) % contextEditFieldCount
 	case isUp(msg):
 		m.editTypeSelecting = false
 		m.editScopeSelecting = false
@@ -830,27 +830,27 @@ func (m KnowledgeModel) handleEditKeys(msg tea.KeyMsg) (KnowledgeModel, tea.Cmd)
 			m.modeFocus = true
 			return m, nil
 		}
-		m.editFocus = (m.editFocus - 1 + knowledgeEditFieldCount) % knowledgeEditFieldCount
+		m.editFocus = (m.editFocus - 1 + contextEditFieldCount) % contextEditFieldCount
 	case isKey(msg, "ctrl+s"):
 		return m.saveEdit()
 	case isBack(msg):
 		m.editScopeSelecting = false
-		m.view = knowledgeViewDetail
+		m.view = contextViewDetail
 	case isKey(msg, "backspace"):
 		switch m.editFocus {
-		case knowledgeEditFieldTags:
+		case contextEditFieldTags:
 			if len(m.editTagBuf) > 0 {
 				m.editTagBuf = m.editTagBuf[:len(m.editTagBuf)-1]
 			} else if len(m.editTags) > 0 {
 				m.editTags = m.editTags[:len(m.editTags)-1]
 			}
-		case knowledgeEditFieldScopes:
+		case contextEditFieldScopes:
 			if len(m.editScopes) > 0 {
 				m.editScopes = m.editScopes[:len(m.editScopes)-1]
 			}
 		default:
-			if m.editFocus != knowledgeEditFieldType && m.editFocus != knowledgeEditFieldStatus {
-				f := &m.knowledgeEditFields[m.editFocus]
+			if m.editFocus != contextEditFieldType && m.editFocus != contextEditFieldStatus {
+				f := &m.contextEditFields[m.editFocus]
 				if len(f.value) > 0 {
 					f.value = f.value[:len(f.value)-1]
 				}
@@ -858,7 +858,7 @@ func (m KnowledgeModel) handleEditKeys(msg tea.KeyMsg) (KnowledgeModel, tea.Cmd)
 		}
 	default:
 		switch m.editFocus {
-		case knowledgeEditFieldTags:
+		case contextEditFieldTags:
 			switch {
 			case isSpace(msg) || isKey(msg, ",") || isEnter(msg):
 				m.commitEditTag()
@@ -868,19 +868,19 @@ func (m KnowledgeModel) handleEditKeys(msg tea.KeyMsg) (KnowledgeModel, tea.Cmd)
 					m.editTagBuf += ch
 				}
 			}
-		case knowledgeEditFieldScopes:
+		case contextEditFieldScopes:
 			if isSpace(msg) {
 				m.editScopeSelecting = true
 			}
-		case knowledgeEditFieldMeta:
+		case contextEditFieldMeta:
 			if isEnter(msg) {
 				m.editMeta.Active = true
 			}
 		default:
-			if m.editFocus != knowledgeEditFieldType && m.editFocus != knowledgeEditFieldStatus {
+			if m.editFocus != contextEditFieldType && m.editFocus != contextEditFieldStatus {
 				ch := msg.String()
 				if len(ch) == 1 || ch == " " {
-					m.knowledgeEditFields[m.editFocus].value += ch
+					m.contextEditFields[m.editFocus].value += ch
 				}
 			}
 		}
@@ -888,15 +888,15 @@ func (m KnowledgeModel) handleEditKeys(msg tea.KeyMsg) (KnowledgeModel, tea.Cmd)
 	return m, nil
 }
 
-func (m KnowledgeModel) renderList() string {
+func (m ContextModel) renderList() string {
 	if m.loadingList {
-		return components.Box(MutedStyle.Render("Loading knowledge..."), m.width)
+		return components.Box(MutedStyle.Render("Loading context..."), m.width)
 	}
 
 	if len(m.items) == 0 {
 		return components.EmptyStateBox(
-			"Knowledge",
-			"No knowledge found.",
+			"Context",
+			"No context found.",
 			[]string{"Press tab to switch Add/Library", "Press / for command palette"},
 			m.width,
 		)
@@ -945,7 +945,7 @@ func (m KnowledgeModel) renderList() string {
 
 	tableRows := make([][]string, 0, len(visible))
 	activeRowRel := -1
-	var previewItem *api.Knowledge
+	var previewItem *api.Context
 	if idx := m.list.Selected(); idx >= 0 && idx < len(m.items) {
 		previewItem = &m.items[idx]
 	}
@@ -957,7 +957,7 @@ func (m KnowledgeModel) renderList() string {
 		}
 		k := m.items[absIdx]
 
-		title := components.ClampTextWidthEllipsis(components.SanitizeOneLine(k.Name), titleWidth)
+		title := components.ClampTextWidthEllipsis(components.SanitizeOneLine(contextTitle(k)), titleWidth)
 		typ := strings.TrimSpace(components.SanitizeOneLine(k.SourceType))
 		if typ == "" {
 			typ = "note"
@@ -970,7 +970,7 @@ func (m KnowledgeModel) renderList() string {
 		if at.IsZero() {
 			at = k.CreatedAt
 		}
-		when := at.Format("01-02 15:04")
+		when := formatLocalTimeCompact(at)
 
 		if m.list.IsSelected(absIdx) {
 			activeRowRel = len(tableRows)
@@ -989,7 +989,7 @@ func (m KnowledgeModel) renderList() string {
 	table := components.TableGridWithActiveRow(cols, tableRows, tableWidth, activeRowRel)
 	preview := ""
 	if previewItem != nil {
-		content := m.renderKnowledgePreview(*previewItem, previewBoxContentWidth(previewWidth))
+		content := m.renderContextPreview(*previewItem, previewBoxContentWidth(previewWidth))
 		preview = renderPreviewBox(content, previewWidth)
 	}
 
@@ -1001,10 +1001,10 @@ func (m KnowledgeModel) renderList() string {
 	}
 
 	content := countLine + "\n\n" + body + "\n"
-	return components.TitledBox("Knowledge", content, m.width)
+	return components.TitledBox("Context", content, m.width)
 }
 
-func (m KnowledgeModel) renderDetail() string {
+func (m ContextModel) renderDetail() string {
 	if m.detail == nil {
 		return m.renderList()
 	}
@@ -1012,7 +1012,7 @@ func (m KnowledgeModel) renderDetail() string {
 	k := m.detail
 	rows := []components.TableRow{
 		{Label: "ID", Value: k.ID},
-		{Label: "Title", Value: k.Name},
+		{Label: "Title", Value: contextTitle(*k)},
 	}
 	if k.SourceType != "" {
 		rows = append(rows, components.TableRow{Label: "Type", Value: k.SourceType})
@@ -1024,24 +1024,24 @@ func (m KnowledgeModel) renderDetail() string {
 		rows = append(rows, components.TableRow{Label: "URL", Value: *k.URL})
 	}
 	if len(k.PrivacyScopeIDs) > 0 {
-		rows = append(rows, components.TableRow{Label: "Scopes", Value: m.formatKnowledgeScopes(k.PrivacyScopeIDs)})
+		rows = append(rows, components.TableRow{Label: "Scopes", Value: m.formatContextScopes(k.PrivacyScopeIDs)})
 	}
 	if len(k.Tags) > 0 {
 		rows = append(rows, components.TableRow{Label: "Tags", Value: strings.Join(k.Tags, ", ")})
 	}
-	rows = append(rows, components.TableRow{Label: "Created", Value: k.CreatedAt.Format("2006-01-02 15:04")})
+	rows = append(rows, components.TableRow{Label: "Created", Value: formatLocalTimeFull(k.CreatedAt)})
 	if !k.UpdatedAt.IsZero() {
-		rows = append(rows, components.TableRow{Label: "Updated", Value: k.UpdatedAt.Format("2006-01-02 15:04")})
+		rows = append(rows, components.TableRow{Label: "Updated", Value: formatLocalTimeFull(k.UpdatedAt)})
 	}
-	if k.VaultFilePath != nil && strings.TrimSpace(*k.VaultFilePath) != "" {
-		path := *k.VaultFilePath
-		if !m.vaultExpanded {
+	if k.SourcePath != nil && strings.TrimSpace(*k.SourcePath) != "" {
+		path := *k.SourcePath
+		if !m.sourcePathExpanded {
 			path = truncateString(path, 60)
 		}
-		rows = append(rows, components.TableRow{Label: "Vault Path", Value: path})
+		rows = append(rows, components.TableRow{Label: "Source Path", Value: path})
 	}
 
-	sections := []string{components.Table("Knowledge", rows, m.width)}
+	sections := []string{components.Table("Context", rows, m.width)}
 	if k.Content != nil && strings.TrimSpace(*k.Content) != "" {
 		content := strings.TrimSpace(components.SanitizeText(*k.Content))
 		if !m.contentExpanded {
@@ -1057,12 +1057,12 @@ func (m KnowledgeModel) renderDetail() string {
 	return strings.Join(sections, "\n\n")
 }
 
-func (m KnowledgeModel) renderKnowledgePreview(k api.Knowledge, width int) string {
+func (m ContextModel) renderContextPreview(k api.Context, width int) string {
 	if width <= 0 {
 		return ""
 	}
 
-	title := components.SanitizeOneLine(k.Name)
+	title := components.SanitizeOneLine(contextTitle(k))
 	typ := strings.TrimSpace(components.SanitizeOneLine(k.SourceType))
 	if typ == "" {
 		typ = "note"
@@ -1085,13 +1085,13 @@ func (m KnowledgeModel) renderKnowledgePreview(k api.Knowledge, width int) strin
 
 	lines = append(lines, renderPreviewRow("Type", typ, width))
 	lines = append(lines, renderPreviewRow("Status", status, width))
-	lines = append(lines, renderPreviewRow("At", at.Format("01-02 15:04"), width))
+	lines = append(lines, renderPreviewRow("At", formatLocalTimeCompact(at), width))
 
 	if k.URL != nil && strings.TrimSpace(*k.URL) != "" {
 		lines = append(lines, renderPreviewRow("URL", strings.TrimSpace(*k.URL), width))
 	}
 	if len(k.PrivacyScopeIDs) > 0 {
-		lines = append(lines, renderPreviewRow("Scopes", m.formatKnowledgeScopes(k.PrivacyScopeIDs), width))
+		lines = append(lines, renderPreviewRow("Scopes", m.formatContextScopes(k.PrivacyScopeIDs), width))
 	}
 	if len(k.Tags) > 0 {
 		lines = append(lines, renderPreviewRow("Tags", strings.Join(k.Tags, ", "), width))
@@ -1112,23 +1112,23 @@ func (m KnowledgeModel) renderKnowledgePreview(k api.Knowledge, width int) strin
 	return padPreviewLines(lines, width)
 }
 
-func (m *KnowledgeModel) startEdit() {
+func (m *ContextModel) startEdit() {
 	if m.detail == nil {
 		return
 	}
 	k := m.detail
-	m.knowledgeEditFields[knowledgeEditFieldTitle].value = k.Name
+	m.contextEditFields[contextEditFieldTitle].value = contextTitle(*k)
 	if k.URL != nil {
-		m.knowledgeEditFields[knowledgeEditFieldURL].value = *k.URL
+		m.contextEditFields[contextEditFieldURL].value = *k.URL
 	} else {
-		m.knowledgeEditFields[knowledgeEditFieldURL].value = ""
+		m.contextEditFields[contextEditFieldURL].value = ""
 	}
-	m.knowledgeEditFields[knowledgeEditFieldNotes].value = ""
+	m.contextEditFields[contextEditFieldNotes].value = ""
 	if k.Content != nil {
-		m.knowledgeEditFields[knowledgeEditFieldNotes].value = *k.Content
+		m.contextEditFields[contextEditFieldNotes].value = *k.Content
 	}
-	m.editTypeIdx = statusIndex(knowledgeTypes, k.SourceType)
-	m.editStatusIdx = statusIndex(knowledgeStatusOptions, k.Status)
+	m.editTypeIdx = statusIndex(contextTypes, k.SourceType)
+	m.editStatusIdx = statusIndex(contextStatusOptions, k.Status)
 	m.editTags = append([]string{}, k.Tags...)
 	m.editTagBuf = ""
 	m.editScopes = m.scopeNamesFromIDs(k.PrivacyScopeIDs)
@@ -1141,16 +1141,16 @@ func (m *KnowledgeModel) startEdit() {
 	m.editFocus = 0
 }
 
-func (m KnowledgeModel) saveEdit() (KnowledgeModel, tea.Cmd) {
+func (m ContextModel) saveEdit() (ContextModel, tea.Cmd) {
 	if m.detail == nil {
 		return m, nil
 	}
 	m.commitEditTag()
-	title := strings.TrimSpace(m.knowledgeEditFields[knowledgeEditFieldTitle].value)
-	url := strings.TrimSpace(m.knowledgeEditFields[knowledgeEditFieldURL].value)
-	content := strings.TrimSpace(m.knowledgeEditFields[knowledgeEditFieldNotes].value)
-	sourceType := knowledgeTypes[m.editTypeIdx]
-	status := knowledgeStatusOptions[m.editStatusIdx]
+	title := strings.TrimSpace(m.contextEditFields[contextEditFieldTitle].value)
+	url := strings.TrimSpace(m.contextEditFields[contextEditFieldURL].value)
+	content := strings.TrimSpace(m.contextEditFields[contextEditFieldNotes].value)
+	sourceType := contextTypes[m.editTypeIdx]
+	status := contextStatusOptions[m.editStatusIdx]
 	tags := normalizeBulkTags(m.editTags)
 	scopes := normalizeBulkScopes(m.editScopes)
 	meta, err := parseMetadataInput(m.editMeta.Buffer)
@@ -1160,7 +1160,7 @@ func (m KnowledgeModel) saveEdit() (KnowledgeModel, tea.Cmd) {
 	}
 	meta = mergeMetadataScopes(meta, m.editMeta.Scopes)
 
-	input := api.UpdateKnowledgeInput{
+	input := api.UpdateContextInput{
 		Title:      &title,
 		URL:        &url,
 		SourceType: &sourceType,
@@ -1173,42 +1173,42 @@ func (m KnowledgeModel) saveEdit() (KnowledgeModel, tea.Cmd) {
 
 	m.editSaving = true
 	return m, func() tea.Msg {
-		updated, err := m.client.UpdateKnowledge(m.detail.ID, input)
+		updated, err := m.client.UpdateContext(m.detail.ID, input)
 		if err != nil {
 			return errMsg{err}
 		}
-		return knowledgeUpdatedMsg{item: *updated}
+		return contextUpdatedMsg{item: *updated}
 	}
 }
 
 // --- Helpers ---
 
-func (m KnowledgeModel) loadKnowledgeList() tea.Cmd {
+func (m ContextModel) loadContextList() tea.Cmd {
 	return func() tea.Msg {
-		items, err := m.client.QueryKnowledge(api.QueryParams{})
+		items, err := m.client.QueryContext(api.QueryParams{})
 		if err != nil {
 			return errMsg{err}
 		}
-		return knowledgeListLoadedMsg{items: items}
+		return contextListLoadedMsg{items: items}
 	}
 }
 
-func (m KnowledgeModel) loadKnowledgeDetail(id string) tea.Cmd {
+func (m ContextModel) loadContextDetail(id string) tea.Cmd {
 	return func() tea.Msg {
-		item, err := m.client.GetKnowledge(id)
+		item, err := m.client.GetContext(id)
 		if err != nil {
 			return errMsg{err}
 		}
-		return knowledgeDetailLoadedMsg{item: *item}
+		return contextDetailLoadedMsg{item: *item}
 	}
 }
 
-func formatKnowledgeLine(k api.Knowledge) string {
+func formatContextLine(k api.Context) string {
 	t := components.SanitizeText(k.SourceType)
 	if t == "" {
 		t = "note"
 	}
-	name := truncateKnowledgeName(components.SanitizeText(k.Name), maxKnowledgeNameLen)
+	name := truncateContextName(components.SanitizeText(contextTitle(k)), maxContextNameLen)
 	line := fmt.Sprintf("%s %s", name, TypeBadgeStyle.Render(components.SanitizeText(t)))
 	if status := strings.TrimSpace(components.SanitizeText(k.Status)); status != "" {
 		line = fmt.Sprintf("%s · %s", line, status)
@@ -1227,9 +1227,21 @@ func formatKnowledgeLine(k api.Knowledge) string {
 	return line
 }
 
-const maxKnowledgeNameLen = 80
+func contextTitle(k api.Context) string {
+	title := strings.TrimSpace(k.Title)
+	if title != "" {
+		return title
+	}
+	title = strings.TrimSpace(k.Name)
+	if title != "" {
+		return title
+	}
+	return "(untitled)"
+}
 
-func truncateKnowledgeName(s string, max int) string {
+const maxContextNameLen = 80
+
+func truncateContextName(s string, max int) string {
 	if max <= 0 {
 		return ""
 	}
@@ -1240,7 +1252,7 @@ func truncateKnowledgeName(s string, max int) string {
 	return string(runes[:max]) + "..."
 }
 
-func (m KnowledgeModel) loadScopeNames() tea.Cmd {
+func (m ContextModel) loadScopeNames() tea.Cmd {
 	if m.client == nil {
 		return nil
 	}
@@ -1253,11 +1265,11 @@ func (m KnowledgeModel) loadScopeNames() tea.Cmd {
 		for _, scope := range scopes {
 			names[scope.ID] = scope.Name
 		}
-		return knowledgeScopesLoadedMsg{names: names}
+		return contextScopesLoadedMsg{names: names}
 	}
 }
 
-func (m KnowledgeModel) formatKnowledgeScopes(ids []string) string {
+func (m ContextModel) formatContextScopes(ids []string) string {
 	if len(ids) == 0 {
 		return "-"
 	}
@@ -1272,7 +1284,7 @@ func (m KnowledgeModel) formatKnowledgeScopes(ids []string) string {
 	return strings.Join(names, ", ")
 }
 
-func (m KnowledgeModel) scopeNamesFromIDs(ids []string) []string {
+func (m ContextModel) scopeNamesFromIDs(ids []string) []string {
 	if len(ids) == 0 {
 		return nil
 	}
@@ -1287,7 +1299,7 @@ func (m KnowledgeModel) scopeNamesFromIDs(ids []string) []string {
 	return names
 }
 
-func (m *KnowledgeModel) resetForm() {
+func (m *ContextModel) resetForm() {
 	m.saved = false
 	m.errText = ""
 	m.typeSelecting = false
@@ -1314,7 +1326,7 @@ func (m *KnowledgeModel) resetForm() {
 	}
 }
 
-func (m KnowledgeModel) save() (KnowledgeModel, tea.Cmd) {
+func (m ContextModel) save() (ContextModel, tea.Cmd) {
 	title := strings.TrimSpace(m.fields[fieldTitle].value)
 	if title == "" {
 		m.errText = "Title is required"
@@ -1322,7 +1334,7 @@ func (m KnowledgeModel) save() (KnowledgeModel, tea.Cmd) {
 	}
 
 	url := strings.TrimSpace(m.fields[fieldURL].value)
-	sourceType := knowledgeTypes[m.typeIdx]
+	sourceType := contextTypes[m.typeIdx]
 	notes := strings.TrimSpace(m.fields[fieldNotes].value)
 
 	m.commitTag()
@@ -1339,7 +1351,7 @@ func (m KnowledgeModel) save() (KnowledgeModel, tea.Cmd) {
 		scopes = []string{"private"}
 	}
 
-	input := api.CreateKnowledgeInput{
+	input := api.CreateContextInput{
 		Title:      title,
 		URL:        url,
 		SourceType: sourceType,
@@ -1356,20 +1368,20 @@ func (m KnowledgeModel) save() (KnowledgeModel, tea.Cmd) {
 
 	m.saving = true
 	return m, func() tea.Msg {
-		created, err := m.client.CreateKnowledge(input)
+		created, err := m.client.CreateContext(input)
 		if err != nil {
 			return errMsg{err}
 		}
 		for _, id := range linkIDs {
-			if err := m.client.LinkKnowledge(created.ID, id); err != nil {
+			if err := m.client.LinkContext(created.ID, id); err != nil {
 				return errMsg{err}
 			}
 		}
-		return knowledgeSavedMsg{}
+		return contextSavedMsg{}
 	}
 }
 
-func (m *KnowledgeModel) renderTags(focused bool) string {
+func (m *ContextModel) renderTags(focused bool) string {
 	if len(m.tags) == 0 && m.tagBuf == "" && !focused {
 		return "-"
 	}
@@ -1398,7 +1410,7 @@ func (m *KnowledgeModel) renderTags(focused bool) string {
 	return b.String()
 }
 
-func (m *KnowledgeModel) renderEditTags(focused bool) string {
+func (m *ContextModel) renderEditTags(focused bool) string {
 	if len(m.editTags) == 0 && m.editTagBuf == "" && !focused {
 		return "-"
 	}
@@ -1427,15 +1439,15 @@ func (m *KnowledgeModel) renderEditTags(focused bool) string {
 	return b.String()
 }
 
-func (m *KnowledgeModel) renderScopes(focused bool) string {
+func (m *ContextModel) renderScopes(focused bool) string {
 	return renderScopePills(m.scopes, focused)
 }
 
-func (m *KnowledgeModel) renderEditScopes(focused bool) string {
+func (m *ContextModel) renderEditScopes(focused bool) string {
 	return renderScopePills(m.editScopes, focused)
 }
 
-func (m *KnowledgeModel) renderLinkedEntities(focused bool) string {
+func (m *ContextModel) renderLinkedEntities(focused bool) string {
 	if len(m.linkEntities) == 0 && !focused {
 		return "-"
 	}
@@ -1453,7 +1465,7 @@ func (m *KnowledgeModel) renderLinkedEntities(focused bool) string {
 	return b.String()
 }
 
-func (m *KnowledgeModel) startLinkSearch() {
+func (m *ContextModel) startLinkSearch() {
 	m.linkSearching = true
 	m.linkLoading = false
 	m.linkQuery = ""
@@ -1463,7 +1475,7 @@ func (m *KnowledgeModel) startLinkSearch() {
 	}
 }
 
-func (m KnowledgeModel) handleLinkSearch(msg tea.KeyMsg) (KnowledgeModel, tea.Cmd) {
+func (m ContextModel) handleLinkSearch(msg tea.KeyMsg) (ContextModel, tea.Cmd) {
 	switch {
 	case isBack(msg):
 		m.linkSearching = false
@@ -1523,7 +1535,7 @@ func (m KnowledgeModel) handleLinkSearch(msg tea.KeyMsg) (KnowledgeModel, tea.Cm
 	return m, nil
 }
 
-func (m KnowledgeModel) renderLinkSearch() string {
+func (m ContextModel) renderLinkSearch() string {
 	var b strings.Builder
 	b.WriteString(MetaKeyStyle.Render("Search") + MetaPunctStyle.Render(": ") + SelectedStyle.Render(components.SanitizeText(m.linkQuery)))
 	b.WriteString(AccentStyle.Render("█"))
@@ -1638,7 +1650,7 @@ func (m KnowledgeModel) renderLinkSearch() string {
 	return components.Indent(components.TitledBox("Link Entity", b.String(), m.width), 1)
 }
 
-func (m KnowledgeModel) renderLinkEntityPreview(e api.Entity, width int) string {
+func (m ContextModel) renderLinkEntityPreview(e api.Entity, width int) string {
 	if width <= 0 {
 		return ""
 	}
@@ -1675,17 +1687,17 @@ func (m KnowledgeModel) renderLinkEntityPreview(e api.Entity, width int) string 
 	return padPreviewLines(lines, width)
 }
 
-func (m KnowledgeModel) searchLinkEntities(query string) tea.Cmd {
+func (m ContextModel) searchLinkEntities(query string) tea.Cmd {
 	return func() tea.Msg {
 		items, err := m.client.QueryEntities(api.QueryParams{"search_text": query})
 		if err != nil {
 			return errMsg{err}
 		}
-		return knowledgeLinkResultsMsg{items: items}
+		return contextLinkResultsMsg{items: items}
 	}
 }
 
-func (m *KnowledgeModel) updateLinkSearch() tea.Cmd {
+func (m *ContextModel) updateLinkSearch() tea.Cmd {
 	query := strings.TrimSpace(m.linkQuery)
 	if query == "" {
 		m.linkLoading = false
@@ -1699,7 +1711,7 @@ func (m *KnowledgeModel) updateLinkSearch() tea.Cmd {
 	return m.searchLinkEntities(query)
 }
 
-func (m *KnowledgeModel) addLinkedEntity(entity api.Entity) {
+func (m *ContextModel) addLinkedEntity(entity api.Entity) {
 	for _, e := range m.linkEntities {
 		if e.ID == entity.ID {
 			return
@@ -1708,7 +1720,7 @@ func (m *KnowledgeModel) addLinkedEntity(entity api.Entity) {
 	m.linkEntities = append(m.linkEntities, entity)
 }
 
-func (m *KnowledgeModel) commitTag() {
+func (m *ContextModel) commitTag() {
 	raw := strings.TrimSpace(m.tagBuf)
 	if raw == "" {
 		m.tagBuf = ""
@@ -1731,7 +1743,7 @@ func (m *KnowledgeModel) commitTag() {
 	m.tagBuf = ""
 }
 
-func (m *KnowledgeModel) commitScope() {
+func (m *ContextModel) commitScope() {
 	raw := strings.TrimSpace(m.scopeBuf)
 	if raw == "" {
 		m.scopeBuf = ""
@@ -1754,7 +1766,7 @@ func (m *KnowledgeModel) commitScope() {
 	m.scopeBuf = ""
 }
 
-func (m *KnowledgeModel) commitEditTag() {
+func (m *ContextModel) commitEditTag() {
 	raw := strings.TrimSpace(m.editTagBuf)
 	if raw == "" {
 		m.editTagBuf = ""
@@ -1777,7 +1789,7 @@ func (m *KnowledgeModel) commitEditTag() {
 	m.editTagBuf = ""
 }
 
-func (m *KnowledgeModel) commitEditScope() {
+func (m *ContextModel) commitEditScope() {
 	raw := strings.TrimSpace(m.editScopeBuf)
 	if raw == "" {
 		m.editScopeBuf = ""

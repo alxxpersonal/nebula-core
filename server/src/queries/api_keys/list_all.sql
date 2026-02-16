@@ -18,4 +18,5 @@ FROM api_keys k
 LEFT JOIN entities e ON k.entity_id = e.id
 LEFT JOIN agents a ON k.agent_id = a.id
 WHERE k.revoked_at IS NULL
-ORDER BY k.created_at DESC;
+ORDER BY k.created_at DESC
+LIMIT $1 OFFSET $2;

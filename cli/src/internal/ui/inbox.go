@@ -46,6 +46,7 @@ type InboxModel struct {
 	grantScopes   string
 	grantTrusted  bool
 	bulkRejectIDs []string
+	pendingLimit  int
 	width         int
 	height        int
 }
@@ -53,9 +54,10 @@ type InboxModel struct {
 // NewInboxModel builds the inbox UI model.
 func NewInboxModel(client *api.Client) InboxModel {
 	return InboxModel{
-		client:   client,
-		list:     components.NewList(15),
-		selected: make(map[string]bool),
+		client:       client,
+		list:         components.NewList(15),
+		selected:     make(map[string]bool),
+		pendingLimit: 500,
 	}
 }
 
@@ -274,16 +276,16 @@ func (m InboxModel) View() string {
 
 		fullTitle := approvalTitle(item)
 		if showCheckboxes {
-			checkbox := "[ ]"
+			checkbox := MutedStyle.Render("[ ]")
 			if m.selected[item.ID] {
-				checkbox = "[X]"
+				checkbox = ErrorStyle.Render("[X]")
 			}
 			fullTitle = checkbox + " " + fullTitle
 		}
 		title := components.ClampTextWidthEllipsis(fullTitle, titleWidth)
 		action := components.ClampTextWidthEllipsis(humanizeApprovalType(item.RequestType), actionWidth)
 		who := components.ClampTextWidthEllipsis(components.SanitizeOneLine(item.AgentName), whoWidth)
-		when := item.CreatedAt.Format("01-02 15:04")
+		when := formatLocalTimeCompact(item.CreatedAt)
 
 		if m.list.IsSelected(absIdx) {
 			activeRowRel = len(tableRows)
@@ -322,11 +324,25 @@ func (m InboxModel) View() string {
 // --- Helpers ---
 
 func (m InboxModel) loadApprovals() tea.Msg {
-	items, err := m.client.GetPendingApprovals()
+	limit := m.pendingLimit
+	if limit <= 0 {
+		limit = 500
+	}
+	items, err := m.client.GetPendingApprovalsWithParams(limit, 0)
 	if err != nil {
 		return errMsg{err}
 	}
 	return approvalsLoadedMsg{items}
+}
+
+func (m *InboxModel) SetPendingLimit(limit int) {
+	if limit <= 0 {
+		limit = 500
+	}
+	if limit > 5000 {
+		limit = 5000
+	}
+	m.pendingLimit = limit
 }
 
 func (m InboxModel) loadApprovalDiff(id string) tea.Cmd {
@@ -516,7 +532,7 @@ func (m InboxModel) renderDetail() string {
 		{Label: "Status", Value: a.Status},
 		{Label: "Agent", Value: a.AgentName},
 		{Label: "Requested By", Value: a.RequestedBy},
-		{Label: "Created", Value: a.CreatedAt.Format("2006-01-02 15:04")},
+		{Label: "Created", Value: formatLocalTimeFull(a.CreatedAt)},
 	}
 	if a.JobID != nil {
 		rows = append(rows, components.TableRow{Label: "Job ID", Value: *a.JobID})
@@ -601,12 +617,12 @@ func (m InboxModel) renderDetail() string {
 			})
 		}
 
-		if len(summaryRows) > 0 {
-			sections = append(sections, components.Table("Change Details", summaryRows, m.width))
-		}
-
 		if hasMetadata {
 			sections = append(sections, components.MetadataTable(metadata, m.width))
+		}
+
+		if len(summaryRows) > 0 {
+			sections = append(sections, components.Table("Change Details", summaryRows, m.width))
 		}
 
 		nestedKeys := make([]string, 0, len(nested))
@@ -677,7 +693,7 @@ func formatAny(v any) string {
 		return "None"
 	default:
 		s := strings.TrimSpace(fmt.Sprintf("%v", v))
-		if s == "" || s == "<nil>" {
+		if s == "" || s == "<nil>" || s == "-" || s == "--" {
 			return "None"
 		}
 		return components.SanitizeOneLine(s)
@@ -702,7 +718,7 @@ func formatAnyInline(v any) string {
 		return components.SanitizeOneLine(string(encoded))
 	default:
 		s := strings.TrimSpace(fmt.Sprintf("%v", val))
-		if s == "" || s == "<nil>" {
+		if s == "" || s == "<nil>" || s == "-" || s == "--" {
 			return ""
 		}
 		return components.SanitizeOneLine(s)
@@ -833,7 +849,7 @@ func renderApprovalPreview(a api.Approval, picked bool, width int) string {
 	action := components.SanitizeOneLine(humanizeApprovalType(a.RequestType))
 	who := components.SanitizeOneLine(a.AgentName)
 	status := components.SanitizeOneLine(a.Status)
-	when := a.CreatedAt.Format("01-02 15:04")
+	when := formatLocalTimeCompact(a.CreatedAt)
 
 	var lines []string
 	lines = append(lines, MetaKeyStyle.Render("Selected"))

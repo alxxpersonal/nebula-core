@@ -62,21 +62,21 @@ async def test_graph_neighbors_hides_private_nodes(
 
 
 @pytest.mark.asyncio
-async def test_graph_neighbors_hides_private_knowledge(
+async def test_graph_neighbors_hides_private_context(
     db_pool, enums, test_entity, untrusted_mcp_context
 ):
-    """Graph traversal should not expose knowledge outside agent scopes."""
+    """Graph traversal should not expose context outside agent scopes."""
 
     status_id = enums.statuses.name_to_id["active"]
     private_scope_id = enums.scopes.name_to_id["sensitive"]
 
-    knowledge = await db_pool.fetchrow(
+    context = await db_pool.fetchrow(
         """
-        INSERT INTO knowledge_items (title, source_type, content, privacy_scope_ids, status_id, tags, metadata)
+        INSERT INTO context_items (title, source_type, content, privacy_scope_ids, status_id, tags, metadata)
         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
         RETURNING *
         """,
-        "Private Knowledge",
+        "Private Context",
         "note",
         "secret",
         [private_scope_id],
@@ -90,13 +90,13 @@ async def test_graph_neighbors_hides_private_knowledge(
     await db_pool.execute(
         """
         INSERT INTO relationships (source_type, source_id, target_type, target_id, type_id, status_id, properties)
-        VALUES ('entity', $1, 'knowledge', $2, $3, $4, $5::jsonb)
+        VALUES ('entity', $1, 'context', $2, $3, $4, $5::jsonb)
         """,
         str(test_entity["id"]),
-        str(knowledge["id"]),
+        str(context["id"]),
         relationship_type_id,
         status_id,
-        json.dumps({"note": "secret knowledge"}),
+        json.dumps({"note": "secret context"}),
     )
 
     payload = GraphNeighborsInput(
@@ -108,7 +108,7 @@ async def test_graph_neighbors_hides_private_knowledge(
     results = await graph_neighbors(payload, untrusted_mcp_context)
     leaked_ids = {row["node_id"] for row in results}
 
-    assert str(knowledge["id"]) not in leaked_ids
+    assert str(context["id"]) not in leaked_ids
 
 
 @pytest.mark.asyncio

@@ -12,7 +12,7 @@ import (
 func TestExportEntities(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodGet, r.Method)
-		assert.Equal(t, "/api/exports/entities", r.URL.Path)
+		assert.Equal(t, "/api/export/entities", r.URL.Path)
 		assert.Equal(t, "csv", r.URL.Query().Get("format"))
 		w.Write(jsonResponse(map[string]any{
 			"format":  "csv",

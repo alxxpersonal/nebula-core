@@ -197,7 +197,7 @@ async def list_all_keys(
     enums = request.app.state.enums
     _require_admin_scope(auth, enums)
 
-    rows = await pool.fetch(QUERIES["api_keys/list_all"])
+    rows = await pool.fetch(QUERIES["api_keys/list_all"], 5000, 0)
     return success([dict(r) for r in rows])
 
 

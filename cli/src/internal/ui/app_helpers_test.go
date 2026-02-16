@@ -29,4 +29,3 @@ func TestAppRenderTipsDoesNotPanic(t *testing.T) {
 	app := App{width: 80}
 	assert.NotPanics(t, func() { _ = app.renderTips() })
 }
-

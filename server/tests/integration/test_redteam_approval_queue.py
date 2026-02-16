@@ -11,17 +11,31 @@ import pytest
 from nebula_mcp.models import (
     BulkImportInput,
     CreateEntityInput,
-    CreateKnowledgeInput,
+    CreateJobInput,
+    CreateContextInput,
     CreateRelationshipInput,
     RevertEntityInput,
 )
 from nebula_mcp.server import (
     bulk_import_entities,
     create_entity,
-    create_knowledge,
+    create_context,
     create_relationship,
     revert_entity,
 )
+
+
+def test_create_job_rejects_unknown_status_field_before_queue():
+    """create_job payload should reject unsupported status before queueing."""
+
+    with pytest.raises(ValidationError):
+        CreateJobInput.model_validate(
+            {
+                "title": "Queue Status Probe",
+                "priority": "medium",
+                "status": "todo",
+            }
+        )
 
 
 @pytest.mark.asyncio
@@ -74,27 +88,27 @@ async def test_create_relationship_rejects_missing_nodes(
 
 
 @pytest.mark.asyncio
-async def test_create_entity_rejects_path_traversal(mock_mcp_context):
-    """Entities should reject vault file paths outside vault root."""
+async def test_create_entity_allows_neutral_source_path(mock_mcp_context):
+    """Entities accept generic source_path strings in neutral mode."""
 
-    with pytest.raises(ValidationError):
-        CreateEntityInput(
-            name="Path Traversal",
-            type="person",
-            status="active",
-            scopes=["public"],
-            tags=["test"],
-            metadata={},
-            vault_file_path="../../../../etc/passwd",
-        )
+    payload = CreateEntityInput(
+        name="Path Traversal",
+        type="person",
+        status="active",
+        scopes=["public"],
+        tags=["test"],
+        metadata={},
+        source_path="../../../../etc/passwd",
+    )
+    assert payload.source_path == "../../../../etc/passwd"
 
 
 @pytest.mark.asyncio
-async def test_create_knowledge_rejects_javascript_url(mock_mcp_context):
-    """Knowledge URLs should be restricted to http and https."""
+async def test_create_context_rejects_javascript_url(mock_mcp_context):
+    """Context URLs should be restricted to http and https."""
 
     with pytest.raises(ValidationError):
-        CreateKnowledgeInput(
+        CreateContextInput(
             title="Bad URL",
             url="javascript:alert('xss')",
             source_type="article",

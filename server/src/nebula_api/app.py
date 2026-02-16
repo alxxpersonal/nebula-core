@@ -12,13 +12,13 @@ from nebula_api.routes import (
     agents,
     approvals,
     audit,
+    context,
     entities,
     exports,
     files,
     imports,
     jobs,
     keys,
-    knowledge,
     logs,
     protocols,
     relationships,
@@ -62,7 +62,7 @@ app = FastAPI(
 
 app.include_router(entities.router, prefix="/api/entities", tags=["Entities"])
 app.include_router(audit.router, prefix="/api/audit", tags=["Audit"])
-app.include_router(knowledge.router, prefix="/api/knowledge", tags=["Knowledge"])
+app.include_router(context.router, prefix="/api/context", tags=["Context"])
 app.include_router(
     relationships.router, prefix="/api/relationships", tags=["Relationships"]
 )

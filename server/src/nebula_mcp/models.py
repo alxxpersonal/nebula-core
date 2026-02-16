@@ -400,15 +400,43 @@ class ApproveRequestInput(BaseModel):
     """Input payload for approving a request."""
 
     approval_id: str = Field(..., description="UUID of approval request")
-    reviewed_by: str = Field(..., description="UUID of approving entity")
+    reviewed_by: str | None = Field(
+        default=None, description="Optional reviewer entity UUID"
+    )
+    review_notes: str | None = Field(
+        default=None, description="Optional reviewer notes"
+    )
+    grant_scopes: list[str] | None = Field(
+        default=None, description="Optional scope grants for register_agent"
+    )
+    grant_requires_approval: bool | None = Field(
+        default=None, description="Optional trust grant for register_agent"
+    )
 
 
 class RejectRequestInput(BaseModel):
     """Input payload for rejecting a request."""
 
     approval_id: str = Field(..., description="UUID of approval request")
-    reviewed_by: str = Field(..., description="UUID of rejecting entity")
-    review_notes: str = Field(..., description="Reason for rejection")
+    reviewed_by: str | None = Field(
+        default=None, description="Optional reviewer entity UUID"
+    )
+    review_notes: str = Field(
+        ..., min_length=1, description="Reason for rejection"
+    )
+
+
+class GetApprovalInput(BaseModel):
+    """Input payload for fetching an approval request."""
+
+    approval_id: str = Field(..., description="UUID of approval request")
+
+
+class PendingApprovalsInput(BaseModel):
+    """Input payload for listing pending approvals."""
+
+    limit: int = Field(default=200, ge=1, le=5000, description="Max rows")
+    offset: int = Field(default=0, ge=0, description="Pagination offset")
 
 
 class GetApprovalDiffInput(BaseModel):
@@ -567,6 +595,12 @@ class QueryAuditLogInput(BaseModel):
     offset: int = Field(default=0, description="Pagination offset")
 
 
+class ListAuditActorsInput(BaseModel):
+    """Input payload for listing audit actors."""
+
+    actor_type: str | None = Field(default=None, description="agent, entity, system")
+
+
 class SearchEntitiesByMetadataInput(BaseModel):
     """Input payload for searching entities by metadata fields."""
 
@@ -679,6 +713,12 @@ class LinkContextInput(BaseModel):
     context_id: str = Field(..., description="Context item UUID")
     entity_id: str = Field(..., description="Entity UUID")
     relationship_type: str = Field(..., description="about, mentions, created-by")
+
+
+class GetContextInput(BaseModel):
+    """Input payload for fetching a context item."""
+
+    context_id: str = Field(..., description="Context item UUID")
 
 
 # --- Log Input Models ---
@@ -956,6 +996,8 @@ class UpdateJobInput(BaseModel):
     description: str | None = Field(default=None, description="Updated description")
     status: str | None = Field(default=None, description="Updated status name")
     priority: str | None = Field(default=None, description="Updated priority")
+    assigned_to: str | None = Field(default=None, description="Updated assignee UUID")
+    due_at: str | None = Field(default=None, description="ISO8601 due date")
     metadata: dict | None = Field(default=None, description="Updated metadata")
 
     @field_validator("metadata", mode="before")
@@ -982,9 +1024,7 @@ class CreateFileInput(BaseModel):
 
     filename: str = Field(..., description="File name")
     uri: str | None = Field(default=None, description="Canonical file URI")
-    file_path: str | None = Field(
-        default=None, description="Legacy file path fallback"
-    )
+    file_path: str | None = Field(default=None, description="Legacy file path fallback")
     mime_type: str | None = Field(default=None, description="MIME type")
     size_bytes: int | None = Field(default=None, description="File size in bytes")
     checksum: str | None = Field(default=None, description="Checksum hash")
@@ -1109,6 +1149,17 @@ class GetProtocolInput(BaseModel):
     protocol_name: str = Field(..., description="Protocol name (unique identifier)")
 
 
+class QueryProtocolsInput(BaseModel):
+    """Input payload for querying protocols."""
+
+    status_category: str | None = Field(default=None, description="active or archived")
+    protocol_type: str | None = Field(default=None, description="Protocol type filter")
+    search: str | None = Field(default=None, description="Name/title search")
+    limit: int = Field(
+        default=50, ge=1, le=MAX_PAGE_LIMIT, description="Max results to return"
+    )
+
+
 class CreateProtocolInput(BaseModel):
     """Input payload for creating a protocol."""
 
@@ -1192,10 +1243,32 @@ class GetAgentInfoInput(BaseModel):
     name: str = Field(..., description="Agent name to retrieve")
 
 
+class GetAgentInput(BaseModel):
+    """Input payload for retrieving a single agent."""
+
+    name: str = Field(..., description="Agent name to retrieve")
+
+
 class ListAgentsInput(BaseModel):
     """Input payload for listing agents."""
 
     status_category: str = Field(default="active", description="active or archived")
+
+
+class UpdateAgentInput(BaseModel):
+    """Input payload for updating an agent."""
+
+    agent_id: str = Field(..., description="Agent UUID")
+    description: str | None = Field(default=None, description="Updated description")
+    requires_approval: bool | None = Field(
+        default=None, description="Updated trust mode"
+    )
+    scopes: list[str] | None = Field(default=None, description="Updated scope names")
+
+    @field_validator("description", mode="before")
+    @classmethod
+    def _clean_update_agent_description(cls, v: str | None) -> str | None:
+        return _sanitize_text(v)
 
 
 class AgentEnrollStartInput(BaseModel):
@@ -1265,6 +1338,88 @@ class AgentAuthAttachInput(BaseModel):
         return _sanitize_text(v)
 
 
+class LoginInput(BaseModel):
+    """Input payload for user login key bootstrap."""
+
+    username: str = Field(..., description="Username for entity login")
+
+    @field_validator("username", mode="before")
+    @classmethod
+    def _clean_login_username(cls, v: str | None) -> str | None:
+        return _sanitize_text(v)
+
+
+class CreateAPIKeyInput(BaseModel):
+    """Input payload for creating an API key."""
+
+    entity_id: str | None = Field(
+        default=None, description="Entity UUID owner (admin path)"
+    )
+    name: str = Field(default="default", description="Friendly key name")
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def _clean_key_name(cls, v: str | None) -> str | None:
+        return _sanitize_text(v)
+
+
+class ListAPIKeysInput(BaseModel):
+    """Input payload for listing keys for one entity."""
+
+    entity_id: str | None = Field(
+        default=None, description="Entity UUID owner (admin path)"
+    )
+
+
+class ListAllKeysInput(BaseModel):
+    """Input payload for listing all active API keys."""
+
+    limit: int = Field(default=500, ge=1, le=5000, description="Max rows")
+    offset: int = Field(default=0, ge=0, description="Pagination offset")
+
+
+class RevokeKeyInput(BaseModel):
+    """Input payload for revoking an API key."""
+
+    key_id: str = Field(..., description="API key UUID")
+    entity_id: str | None = Field(
+        default=None, description="Entity UUID owner for scoped revoke"
+    )
+
+
+class ExportDataInput(BaseModel):
+    """Input payload for exporting workspace data."""
+
+    resource: str = Field(
+        ...,
+        description="entities, context, relationships, jobs, or snapshot",
+    )
+    format: str = Field(default="json", description="json or csv")
+    params: dict = Field(default_factory=dict, description="Resource filter params")
+
+    @field_validator("resource", mode="before")
+    @classmethod
+    def _clean_export_resource(cls, v: str | None) -> str:
+        value = _sanitize_text(v)
+        if value not in {"entities", "context", "relationships", "jobs", "snapshot"}:
+            raise ValueError("Invalid export resource")
+        return value
+
+    @field_validator("format", mode="before")
+    @classmethod
+    def _clean_export_format(cls, v: str | None) -> str:
+        value = _sanitize_text(v) or "json"
+        lowered = value.lower()
+        if lowered not in {"json", "csv"}:
+            raise ValueError("Format must be json or csv")
+        return lowered
+
+    @field_validator("params", mode="before")
+    @classmethod
+    def _clean_export_params(cls, v: dict | None) -> dict:
+        return _sanitize_metadata(v) or {}
+
+
 # --- Taxonomy Input Models ---
 
 
@@ -1300,9 +1455,7 @@ class CreateTaxonomyInput(BaseModel):
     is_symmetric: bool | None = Field(
         default=None, description="Relationship symmetry flag"
     )
-    value_schema: dict | None = Field(
-        default=None, description="Log type value schema"
-    )
+    value_schema: dict | None = Field(default=None, description="Log type value schema")
 
     @field_validator("kind", mode="before")
     @classmethod
@@ -1339,9 +1492,7 @@ class UpdateTaxonomyInput(BaseModel):
     is_symmetric: bool | None = Field(
         default=None, description="Relationship symmetry flag"
     )
-    value_schema: dict | None = Field(
-        default=None, description="Log type value schema"
-    )
+    value_schema: dict | None = Field(default=None, description="Log type value schema")
 
     @field_validator("kind", mode="before")
     @classmethod

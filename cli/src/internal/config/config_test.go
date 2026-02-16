@@ -46,11 +46,11 @@ func TestSaveLoadRoundtripWithAllFields(t *testing.T) {
 	defer os.Setenv("HOME", oldHome)
 
 	original := Config{
-		APIKey:       "nbl_verylongkeystring12345",
-		UserEntityID: "ent-123",
-		Username:     "testuser",
-		Theme:        "dark",
-		VimKeys:      true,
+		APIKey:            "nbl_verylongkeystring12345",
+		UserEntityID:      "ent-123",
+		Username:          "testuser",
+		Theme:             "dark",
+		VimKeys:           true,
 		QuickstartPending: true,
 	}
 

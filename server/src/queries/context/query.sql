@@ -1,4 +1,4 @@
--- Search knowledge items with filters
+-- Search context items with filters
 SELECT 
     k.id,
     k.title,
@@ -9,10 +9,10 @@ SELECT
     s.name AS status,
     k.tags,
     k.metadata,
-    k.vault_file_path,
+    k.source_path,
     k.created_at,
     k.updated_at
-FROM knowledge_items k
+FROM context_items k
 JOIN statuses s ON k.status_id = s.id
 WHERE 
     ($1::text IS NULL OR k.source_type = $1)

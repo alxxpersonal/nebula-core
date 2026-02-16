@@ -7,7 +7,7 @@ SELECT
     e.privacy_scope_ids,
     e.tags,
     e.metadata,
-    e.vault_file_path,
+    e.source_path,
     e.created_at,
     e.updated_at
 FROM entities e

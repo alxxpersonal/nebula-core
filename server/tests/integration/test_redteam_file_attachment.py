@@ -12,7 +12,7 @@ from nebula_mcp.models import AttachFileInput
 from nebula_mcp.server import (
     attach_file_to_entity,
     attach_file_to_job,
-    attach_file_to_knowledge,
+    attach_file_to_context,
 )
 
 
@@ -110,15 +110,15 @@ async def _make_job(db_pool, enums, agent_id):
     return dict(row)
 
 
-async def _make_knowledge(db_pool, enums, title, scopes):
-    """Insert a test knowledge item for attachment scenarios."""
+async def _make_context_item(db_pool, enums, title, scopes):
+    """Insert a test context item for attachment scenarios."""
 
     status_id = enums.statuses.name_to_id["active"]
     scope_ids = [enums.scopes.name_to_id[s] for s in scopes]
 
     row = await db_pool.fetchrow(
         """
-        INSERT INTO knowledge_items (title, source_type, content, privacy_scope_ids, status_id, tags, metadata)
+        INSERT INTO context_items (title, source_type, content, privacy_scope_ids, status_id, tags, metadata)
         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
         RETURNING *
         """,
@@ -168,19 +168,35 @@ async def test_attach_file_to_foreign_job_denied(db_pool, enums):
 
 
 @pytest.mark.asyncio
-async def test_attach_file_to_private_knowledge_denied(db_pool, enums):
-    """Public agents should not attach files to private knowledge."""
+async def test_attach_file_to_owned_job_accepts_job_id_format(db_pool, enums):
+    """File attachment should accept canonical job IDs for job targets."""
 
-    knowledge = await _make_knowledge(
-        db_pool, enums, "Private Knowledge", ["sensitive"]
+    owner = await _make_agent(db_pool, enums, "job-owner-attach", ["public"], False)
+    job = await _make_job(db_pool, enums, owner["id"])
+    file_row = await _make_file(db_pool, enums)
+
+    ctx = _make_context(db_pool, enums, owner)
+    payload = AttachFileInput(file_id=str(file_row["id"]), target_id=str(job["id"]))
+
+    result = await attach_file_to_job(payload, ctx)
+    assert result["target_type"] == "job"
+    assert result["target_id"] == str(job["id"])
+
+
+@pytest.mark.asyncio
+async def test_attach_file_to_private_context_denied(db_pool, enums):
+    """Public agents should not attach files to private context."""
+
+    context = await _make_context_item(
+        db_pool, enums, "Private Context", ["sensitive"]
     )
     file_row = await _make_file(db_pool, enums)
-    viewer = await _make_agent(db_pool, enums, "knowledge-attacher", ["public"], False)
+    viewer = await _make_agent(db_pool, enums, "context-attacher", ["public"], False)
     ctx = _make_context(db_pool, enums, viewer)
 
     payload = AttachFileInput(
-        file_id=str(file_row["id"]), target_id=str(knowledge["id"])
+        file_id=str(file_row["id"]), target_id=str(context["id"])
     )
 
     with pytest.raises(ValueError):
-        await attach_file_to_knowledge(payload, ctx)
+        await attach_file_to_context(payload, ctx)

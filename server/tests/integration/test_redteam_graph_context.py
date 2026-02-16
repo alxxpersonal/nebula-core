@@ -1,4 +1,4 @@
-"""Red team tests for graph traversal privacy with knowledge nodes."""
+"""Red team tests for graph traversal privacy with context nodes."""
 
 # Standard Library
 import json
@@ -68,15 +68,15 @@ async def _make_entity(db_pool, enums, name, scopes):
     return dict(row)
 
 
-async def _make_knowledge(db_pool, enums, title, scopes):
-    """Insert a knowledge node for graph privacy tests."""
+async def _make_context_item(db_pool, enums, title, scopes):
+    """Insert a context node for graph privacy tests."""
 
     status_id = enums.statuses.name_to_id["active"]
     scope_ids = [enums.scopes.name_to_id[s] for s in scopes]
 
     row = await db_pool.fetchrow(
         """
-        INSERT INTO knowledge_items (title, source_type, content, privacy_scope_ids, status_id, tags, metadata)
+        INSERT INTO context_items (title, source_type, content, privacy_scope_ids, status_id, tags, metadata)
         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
         RETURNING *
         """,
@@ -115,18 +115,18 @@ async def _attach_relationship(
 
 
 @pytest.mark.asyncio
-async def test_graph_neighbors_hides_private_knowledge(db_pool, enums):
-    """Graph neighbors should not expose private knowledge nodes."""
+async def test_graph_neighbors_hides_private_context(db_pool, enums):
+    """Graph neighbors should not expose private context nodes."""
 
     public_entity = await _make_entity(db_pool, enums, "Public Node", ["public"])
     private_entity = await _make_entity(db_pool, enums, "Private Node", ["sensitive"])
-    knowledge = await _make_knowledge(db_pool, enums, "Secret Knowledge", ["sensitive"])
+    context = await _make_context_item(db_pool, enums, "Secret Context", ["sensitive"])
 
     await _attach_relationship(
         db_pool,
         enums,
-        "knowledge",
-        str(knowledge["id"]),
+        "context",
+        str(context["id"]),
         "entity",
         str(public_entity["id"]),
         "related-to",
@@ -134,14 +134,14 @@ async def test_graph_neighbors_hides_private_knowledge(db_pool, enums):
     await _attach_relationship(
         db_pool,
         enums,
-        "knowledge",
-        str(knowledge["id"]),
+        "context",
+        str(context["id"]),
         "entity",
         str(private_entity["id"]),
         "related-to",
     )
 
-    viewer = await _make_agent(db_pool, enums, "graph-knowledge-viewer", ["public"])
+    viewer = await _make_agent(db_pool, enums, "graph-context-viewer", ["public"])
     ctx = _make_context(db_pool, enums, viewer)
 
     payload = GraphNeighborsInput(
@@ -153,22 +153,22 @@ async def test_graph_neighbors_hides_private_knowledge(db_pool, enums):
     results = await graph_neighbors(payload, ctx)
     ids = {row["node_id"] for row in results}
 
-    assert str(knowledge["id"]) not in ids
+    assert str(context["id"]) not in ids
 
 
 @pytest.mark.asyncio
-async def test_graph_shortest_path_hides_private_knowledge(db_pool, enums):
-    """Shortest path should not expose private knowledge nodes."""
+async def test_graph_shortest_path_hides_private_context(db_pool, enums):
+    """Shortest path should not expose private context nodes."""
 
     public_entity = await _make_entity(db_pool, enums, "Public Node", ["public"])
     private_entity = await _make_entity(db_pool, enums, "Private Node", ["sensitive"])
-    knowledge = await _make_knowledge(db_pool, enums, "Secret Knowledge", ["sensitive"])
+    context = await _make_context_item(db_pool, enums, "Secret Context", ["sensitive"])
 
     await _attach_relationship(
         db_pool,
         enums,
-        "knowledge",
-        str(knowledge["id"]),
+        "context",
+        str(context["id"]),
         "entity",
         str(public_entity["id"]),
         "related-to",
@@ -176,21 +176,21 @@ async def test_graph_shortest_path_hides_private_knowledge(db_pool, enums):
     await _attach_relationship(
         db_pool,
         enums,
-        "knowledge",
-        str(knowledge["id"]),
+        "context",
+        str(context["id"]),
         "entity",
         str(private_entity["id"]),
         "related-to",
     )
 
-    viewer = await _make_agent(db_pool, enums, "path-knowledge-viewer", ["public"])
+    viewer = await _make_agent(db_pool, enums, "path-context-viewer", ["public"])
     ctx = _make_context(db_pool, enums, viewer)
 
     payload = GraphShortestPathInput(
         source_type="entity",
         source_id=str(public_entity["id"]),
-        target_type="knowledge",
-        target_id=str(knowledge["id"]),
+        target_type="context",
+        target_id=str(context["id"]),
         max_hops=3,
     )
 

@@ -5,7 +5,14 @@ import "fmt"
 // --- Approval Methods ---
 
 func (c *Client) GetPendingApprovals() ([]Approval, error) {
-	data, err := c.get("/api/approvals/pending")
+	return c.GetPendingApprovalsWithParams(200, 0)
+}
+
+func (c *Client) GetPendingApprovalsWithParams(limit, offset int) ([]Approval, error) {
+	data, err := c.get(buildQuery("/api/approvals/pending", QueryParams{
+		"limit":  fmt.Sprintf("%d", limit),
+		"offset": fmt.Sprintf("%d", offset),
+	}))
 	if err != nil {
 		return nil, err
 	}

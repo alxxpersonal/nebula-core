@@ -1,15 +1,15 @@
-"""Knowledge route tests."""
+"""Context route tests."""
 
 # Third-Party
 import pytest
 
 
 @pytest.mark.asyncio
-async def test_create_knowledge(api):
-    """Test create knowledge."""
+async def test_create_context(api):
+    """Test create context."""
 
     r = await api.post(
-        "/api/knowledge",
+        "/api/context",
         json={
             "title": "Test Article",
             "url": "https://example.com/article",
@@ -25,29 +25,29 @@ async def test_create_knowledge(api):
 
 
 @pytest.mark.asyncio
-async def test_query_knowledge(api):
-    """Test query knowledge."""
+async def test_query_context(api):
+    """Test query context."""
 
     await api.post(
-        "/api/knowledge",
+        "/api/context",
         json={
-            "title": "QueryKnowledge",
+            "title": "QueryContext",
             "source_type": "video",
             "scopes": ["public"],
         },
     )
-    r = await api.get("/api/knowledge", params={"source_type": "video"})
+    r = await api.get("/api/context", params={"source_type": "video"})
     assert r.status_code == 200
     data = r.json()["data"]
     assert len(data) >= 1
 
 
 @pytest.mark.asyncio
-async def test_link_knowledge_to_entity(api):
-    """Test link knowledge to entity."""
+async def test_link_context_to_entity(api):
+    """Test link context to entity."""
 
     kr = await api.post(
-        "/api/knowledge",
+        "/api/context",
         json={
             "title": "LinkTest",
             "scopes": ["public"],
@@ -66,7 +66,7 @@ async def test_link_knowledge_to_entity(api):
     e_id = er.json()["data"]["id"]
 
     r = await api.post(
-        f"/api/knowledge/{k_id}/link",
+        f"/api/context/{k_id}/link",
         json={
             "entity_id": str(e_id),
             "relationship_type": "related-to",
@@ -76,18 +76,18 @@ async def test_link_knowledge_to_entity(api):
 
 
 @pytest.mark.asyncio
-async def test_query_knowledge_pagination(api):
-    """Test query knowledge pagination."""
+async def test_query_context_pagination(api):
+    """Test query context pagination."""
 
     for i in range(3):
         await api.post(
-            "/api/knowledge",
+            "/api/context",
             json={
                 "title": f"KPage{i}",
                 "scopes": ["public"],
             },
         )
-    r = await api.get("/api/knowledge", params={"limit": 2})
+    r = await api.get("/api/context", params={"limit": 2})
     assert r.status_code == 200
     meta = r.json()["meta"]
     assert meta["limit"] == 2

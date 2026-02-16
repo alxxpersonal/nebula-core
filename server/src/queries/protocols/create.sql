@@ -10,7 +10,7 @@ INSERT INTO protocols (
     tags,
     trusted,
     metadata,
-    vault_file_path
+    source_path
 )
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11)
 RETURNING
@@ -25,6 +25,6 @@ RETURNING
     tags,
     trusted,
     metadata,
-    vault_file_path,
+    source_path,
     created_at,
     updated_at;

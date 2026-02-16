@@ -56,15 +56,15 @@ async def _make_entity(db_pool, enums, name, scopes):
     return dict(row)
 
 
-async def _make_knowledge(db_pool, enums, title, scopes):
-    """Insert a test knowledge item for write isolation scenarios."""
+async def _make_context(db_pool, enums, title, scopes):
+    """Insert a test context item for write isolation scenarios."""
 
     status_id = enums.statuses.name_to_id["active"]
     scope_ids = [enums.scopes.name_to_id[s] for s in scopes]
 
     row = await db_pool.fetchrow(
         """
-        INSERT INTO knowledge_items (title, source_type, content, privacy_scope_ids, status_id, tags, metadata)
+        INSERT INTO context_items (title, source_type, content, privacy_scope_ids, status_id, tags, metadata)
         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
         RETURNING *
         """,
@@ -163,11 +163,11 @@ def _auth_override(agent_id, enums):
 
 
 @pytest.mark.asyncio
-async def test_api_update_knowledge_denies_private_scope(db_pool, enums):
-    """Public agents should not update private knowledge items."""
+async def test_api_update_context_denies_private_scope(db_pool, enums):
+    """Public agents should not update private context items."""
 
-    private_knowledge = await _make_knowledge(db_pool, enums, "Private", ["sensitive"])
-    viewer = await _make_agent(db_pool, enums, "knowledge-viewer", ["public"], False)
+    private_context = await _make_context(db_pool, enums, "Private", ["sensitive"])
+    viewer = await _make_agent(db_pool, enums, "context-viewer", ["public"], False)
 
     app.dependency_overrides[require_auth] = _auth_override(viewer["id"], enums)
     app.state.pool = db_pool
@@ -175,7 +175,7 @@ async def test_api_update_knowledge_denies_private_scope(db_pool, enums):
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.patch(
-            f"/api/knowledge/{private_knowledge['id']}",
+            f"/api/context/{private_context['id']}",
             json={"title": "Hijacked"},
         )
     app.dependency_overrides.pop(require_auth, None)

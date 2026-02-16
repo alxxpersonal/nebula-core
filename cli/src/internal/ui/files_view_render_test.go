@@ -20,12 +20,12 @@ func TestFilesListViewRendersItemsAndSearchSuggestTabCompletes(t *testing.T) {
 			json.NewEncoder(w).Encode(map[string]any{
 				"data": []map[string]any{
 					{
-						"id":        "file-1",
-						"filename":  "Alpha.txt",
-						"file_path": "/tmp/alpha.txt",
-						"status":    "active",
-						"tags":      []string{},
-						"metadata":  map[string]any{},
+						"id":         "file-1",
+						"filename":   "Alpha.txt",
+						"file_path":  "/tmp/alpha.txt",
+						"status":     "active",
+						"tags":       []string{},
+						"metadata":   map[string]any{},
 						"created_at": time.Now(),
 						"updated_at": time.Now(),
 					},
@@ -173,12 +173,12 @@ func TestFilesEditViewCommitsTagsAndRenders(t *testing.T) {
 	model.width = 80
 	model.view = filesViewEdit
 	model.detail = &api.File{
-		ID:       "file-1",
-		Filename: "Alpha.txt",
-		FilePath: "/tmp/alpha.txt",
-		Status:   "active",
-		Tags:     []string{},
-		Metadata: api.JSONMap{},
+		ID:        "file-1",
+		Filename:  "Alpha.txt",
+		FilePath:  "/tmp/alpha.txt",
+		Status:    "active",
+		Tags:      []string{},
+		Metadata:  api.JSONMap{},
 		CreatedAt: time.Now(),
 	}
 	model.startEdit()
@@ -196,4 +196,3 @@ func TestFilesEditViewCommitsTagsAndRenders(t *testing.T) {
 	clean := components.SanitizeText(out)
 	assert.Contains(t, clean, "alpha")
 }
-

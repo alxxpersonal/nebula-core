@@ -20,6 +20,7 @@ from nebula_mcp.helpers import (
     scope_names_from_ids,
 )
 from nebula_mcp.query_loader import QueryLoader
+from nebula_mcp.schema import load_export_schema_contract
 
 QUERIES = QueryLoader(Path(__file__).resolve().parents[2] / "queries")
 
@@ -120,6 +121,18 @@ def _export_response(rows: list[dict[str, Any]], fmt: str) -> dict[str, Any]:
     return success({"format": "json", "items": rows, "count": len(rows)})
 
 
+@router.get("/schema")
+async def export_schema(
+    request: Request,
+    auth: dict = Depends(require_auth),
+) -> dict[str, Any]:
+    """Return JSON schema contract for export resources."""
+
+    _ = request
+    _ = auth
+    return success(load_export_schema_contract())
+
+
 @router.get("/entities")
 async def export_entities(
     request: Request,
@@ -181,8 +194,8 @@ async def export_entities(
     return _export_response(results, format)
 
 
-@router.get("/knowledge")
-async def export_knowledge(
+@router.get("/context")
+async def export_context(
     request: Request,
     auth: dict = Depends(require_auth),
     format: str = "json",
@@ -193,13 +206,13 @@ async def export_knowledge(
     limit: int = Query(500, le=2000),
     offset: int = 0,
 ) -> dict[str, Any]:
-    """Export knowledge items as JSON or CSV.
+    """Export context items as JSON or CSV.
 
     Args:
         request: FastAPI request.
         auth: Auth context.
         format: Response format.
-        source_type: Knowledge source type filter.
+        source_type: Context source type filter.
         tags: Tag filters.
         search_text: Full-text search filter.
         scopes: Privacy scope filters.
@@ -215,7 +228,7 @@ async def export_knowledge(
     scope_ids = _resolve_scope_ids(scopes, auth, enums)
 
     rows = await pool.fetch(
-        QUERIES["knowledge/query"],
+        QUERIES["context/query"],
         source_type,
         tags or None,
         search_text,
@@ -341,15 +354,15 @@ async def export_jobs(
     return _export_response([dict(r) for r in rows], format)
 
 
-@router.get("/context")
-async def export_context(
+@router.get("/snapshot")
+async def export_snapshot(
     request: Request,
     auth: dict = Depends(require_auth),
     format: str = "json",
     limit: int = Query(500, le=2000),
     offset: int = 0,
 ) -> dict[str, Any]:
-    """Export a full context snapshot as JSON only.
+    """Export a full workspace snapshot as JSON only.
 
     Args:
         request: FastAPI request.
@@ -362,7 +375,7 @@ async def export_context(
         Export response payload.
     """
     if format.lower() != "json":
-        api_error("VALIDATION_ERROR", "Context export supports json only", 400)
+        api_error("VALIDATION_ERROR", "Snapshot export supports json only", 400)
 
     pool = request.app.state.pool
     enums = request.app.state.enums
@@ -378,8 +391,8 @@ async def export_context(
         limit,
         offset,
     )
-    knowledge_rows = await pool.fetch(
-        QUERIES["knowledge/query"],
+    context_rows = await pool.fetch(
+        QUERIES["context/query"],
         None,
         None,
         None,
@@ -419,12 +432,12 @@ async def export_context(
         if item.get("metadata"):
             item["metadata"] = filter_context_segments(item["metadata"], scope_names)
         entities.append(item)
-    knowledge = []
-    for row in knowledge_rows:
+    context = []
+    for row in context_rows:
         item = dict(row)
         if item.get("metadata"):
             item["metadata"] = filter_context_segments(item["metadata"], scope_names)
-        knowledge.append(item)
+        context.append(item)
     relationships = []
     if auth["caller_type"] != "agent" or _is_admin(auth, enums):
         relationships = [dict(r) for r in relationships_rows]
@@ -442,7 +455,7 @@ async def export_context(
         {
             "format": "json",
             "entities": entities,
-            "knowledge": knowledge,
+            "context": context,
             "relationships": relationships,
             "jobs": [dict(r) for r in jobs_rows],
         }

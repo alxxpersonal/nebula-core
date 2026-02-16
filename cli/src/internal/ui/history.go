@@ -375,7 +375,7 @@ func (m HistoryModel) renderList() string {
 			activeRowRel = len(tableRows)
 		}
 		tableRows = append(tableRows, []string{
-			at.Format("01-02 15:04"),
+			formatLocalTimeCompact(at),
 			components.ClampTextWidthEllipsis(strings.ToUpper(action), actionWidth),
 			components.ClampTextWidthEllipsis(tableName, tableNameWidth),
 			components.ClampTextWidthEllipsis(actor, actorWidth),
@@ -441,7 +441,7 @@ func (m HistoryModel) renderAuditPreview(entry api.AuditEntry, width int) string
 	lines = append(lines, renderPreviewRow("Table", tableName, width))
 	lines = append(lines, renderPreviewRow("Action", strings.ToUpper(action), width))
 	lines = append(lines, renderPreviewRow("Actor", actor, width))
-	lines = append(lines, renderPreviewRow("At", entry.ChangedAt.Format("2006-01-02 15:04"), width))
+	lines = append(lines, renderPreviewRow("At", formatLocalTimeFull(entry.ChangedAt), width))
 	if strings.TrimSpace(entry.RecordID) != "" {
 		lines = append(lines, renderPreviewRow("Record", shortID(entry.RecordID), width))
 	}
@@ -490,8 +490,8 @@ func (m HistoryModel) renderScopes() string {
 
 	agentsWidth := 6
 	entitiesWidth := 8
-	knowledgeWidth := 10
-	scopeWidth := availableCols - (agentsWidth + entitiesWidth + knowledgeWidth)
+	contextWidth := 10
+	scopeWidth := availableCols - (agentsWidth + entitiesWidth + contextWidth)
 	if scopeWidth < 12 {
 		scopeWidth = 12
 	}
@@ -500,7 +500,7 @@ func (m HistoryModel) renderScopes() string {
 		{Header: "Scope", Width: scopeWidth, Align: lipgloss.Left},
 		{Header: "Agents", Width: agentsWidth, Align: lipgloss.Right},
 		{Header: "Entities", Width: entitiesWidth, Align: lipgloss.Right},
-		{Header: "Knowledge", Width: knowledgeWidth, Align: lipgloss.Right},
+		{Header: "Context", Width: contextWidth, Align: lipgloss.Right},
 	}
 
 	tableRows := make([][]string, 0, len(visible))
@@ -524,7 +524,7 @@ func (m HistoryModel) renderScopes() string {
 			components.ClampTextWidthEllipsis(components.SanitizeOneLine(scope.Name), scopeWidth),
 			fmt.Sprintf("%d", scope.AgentCount),
 			fmt.Sprintf("%d", scope.EntityCount),
-			fmt.Sprintf("%d", scope.KnowledgeCount),
+			fmt.Sprintf("%d", scope.ContextCount),
 		})
 	}
 
@@ -566,7 +566,7 @@ func (m HistoryModel) renderScopePreview(scope api.AuditScope, width int) string
 
 	lines = append(lines, renderPreviewRow("Agents", fmt.Sprintf("%d", scope.AgentCount), width))
 	lines = append(lines, renderPreviewRow("Entities", fmt.Sprintf("%d", scope.EntityCount), width))
-	lines = append(lines, renderPreviewRow("Knowledge", fmt.Sprintf("%d", scope.KnowledgeCount), width))
+	lines = append(lines, renderPreviewRow("Context", fmt.Sprintf("%d", scope.ContextCount), width))
 	if scope.Description != nil && strings.TrimSpace(*scope.Description) != "" {
 		lines = append(lines, renderPreviewRow("Desc", strings.TrimSpace(*scope.Description), width))
 	}
@@ -646,7 +646,7 @@ func (m HistoryModel) renderActors() string {
 		tableRows = append(tableRows, []string{
 			components.ClampTextWidthEllipsis(components.SanitizeOneLine(display), actorWidth),
 			fmt.Sprintf("%d", actor.ActionCount),
-			actor.LastSeen.Format("01-02 15:04"),
+			formatLocalTimeCompact(actor.LastSeen),
 		})
 	}
 
@@ -689,13 +689,13 @@ func (m HistoryModel) renderActorPreview(actor api.AuditActor, width int) string
 
 	lines = append(lines, renderPreviewRow("Actor", actor.ActorType+":"+shortID(actor.ActorID), width))
 	lines = append(lines, renderPreviewRow("Actions", fmt.Sprintf("%d", actor.ActionCount), width))
-	lines = append(lines, renderPreviewRow("Last", actor.LastSeen.Format("2006-01-02 15:04"), width))
+	lines = append(lines, renderPreviewRow("Last", formatLocalTimeFull(actor.LastSeen), width))
 
 	return padPreviewLines(lines, width)
 }
 
 func (m HistoryModel) renderDetail(entry api.AuditEntry) string {
-	when := entry.ChangedAt.Format("2006-01-02 15:04")
+	when := formatLocalTimeFull(entry.ChangedAt)
 	actor := formatAuditActor(entry)
 	fields := ""
 	if len(entry.ChangedFields) > 0 {
@@ -802,7 +802,7 @@ func formatAuditActor(entry api.AuditEntry) string {
 }
 
 func formatAuditLine(entry api.AuditEntry) string {
-	when := entry.ChangedAt.Format("01-02 15:04")
+	when := formatLocalTimeCompact(entry.ChangedAt)
 	actor := formatAuditActor(entry)
 	action := entry.Action
 	if action == "" {
@@ -817,11 +817,11 @@ func formatScopeLine(scope api.AuditScope) string {
 		desc = " - " + *scope.Description
 	}
 	return fmt.Sprintf(
-		"%s  agents:%d entities:%d knowledge:%d%s",
+		"%s  agents:%d entities:%d context:%d%s",
 		scope.Name,
 		scope.AgentCount,
 		scope.EntityCount,
-		scope.KnowledgeCount,
+		scope.ContextCount,
 		desc,
 	)
 }
@@ -831,7 +831,7 @@ func formatActorLine(actor api.AuditActor) string {
 	if actor.ActorName != nil && *actor.ActorName != "" {
 		name = *actor.ActorName
 	}
-	when := actor.LastSeen.Format("01-02 15:04")
+	when := formatLocalTimeCompact(actor.LastSeen)
 	return fmt.Sprintf(
 		"%s  %s:%s  actions:%d  last:%s",
 		name,
@@ -930,7 +930,7 @@ func formatAuditValue(value any) string {
 		}
 		return v
 	case time.Time:
-		return v.Format("2006-01-02 15:04")
+		return formatLocalTimeFull(v)
 	default:
 		b, err := json.Marshal(v)
 		if err != nil {

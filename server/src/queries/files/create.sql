@@ -1,6 +1,7 @@
 -- Create file metadata entry
 INSERT INTO files (
     filename,
+    uri,
     file_path,
     mime_type,
     size_bytes,
@@ -9,5 +10,15 @@ INSERT INTO files (
     tags,
     metadata
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
+VALUES (
+    $1,
+    COALESCE($2, $3),
+    COALESCE($3, $2),
+    $4,
+    $5,
+    $6,
+    $7,
+    $8,
+    $9::jsonb
+)
 RETURNING *;

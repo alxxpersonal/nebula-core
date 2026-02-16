@@ -24,7 +24,7 @@ async def _make_trusted_protocol(db_pool, enums, name: str) -> None:
             tags,
             trusted,
             metadata,
-            vault_file_path
+            source_path
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE, $9::jsonb, $10)
         """,

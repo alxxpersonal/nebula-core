@@ -60,13 +60,13 @@ func TestClientHandlesMalformedJSON(t *testing.T) {
 
 func TestClientUnicodePayload(t *testing.T) {
 	_, client := testServer(t, func(w http.ResponseWriter, r *http.Request) {
-		var body CreateKnowledgeInput
+		var body CreateContextInput
 		json.NewDecoder(r.Body).Decode(&body)
 		assert.Equal(t, "🚀", body.Metadata["emoji"])
 		w.Write(jsonResponse(map[string]any{"id": "k-1", "name": body.Title}))
 	})
 
-	_, err := client.CreateKnowledge(CreateKnowledgeInput{
+	_, err := client.CreateContext(CreateContextInput{
 		Title:      "unicode",
 		SourceType: "note",
 		Metadata: map[string]any{

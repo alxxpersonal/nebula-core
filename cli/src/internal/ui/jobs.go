@@ -356,7 +356,7 @@ func (m JobsModel) renderList() string {
 			components.ClampTextWidthEllipsis(components.SanitizeOneLine(j.Title), titleWidth),
 			components.ClampTextWidthEllipsis(status, statusWidth),
 			components.ClampTextWidthEllipsis(priority, prioWidth),
-			at.Format("01-02 15:04"),
+			formatLocalTimeCompact(at),
 		})
 	}
 	title := "Jobs"
@@ -420,7 +420,7 @@ func (m JobsModel) renderJobPreview(j api.Job, width int) string {
 
 	lines = append(lines, renderPreviewRow("Status", status, width))
 	lines = append(lines, renderPreviewRow("Priority", priority, width))
-	lines = append(lines, renderPreviewRow("At", at.Format("01-02 15:04"), width))
+	lines = append(lines, renderPreviewRow("At", formatLocalTimeCompact(at), width))
 
 	if j.Description != nil && strings.TrimSpace(*j.Description) != "" {
 		desc := truncateString(strings.TrimSpace(components.SanitizeText(*j.Description)), 120)
@@ -1007,9 +1007,9 @@ func (m JobsModel) renderDetail() string {
 	if j.Priority != nil && strings.TrimSpace(*j.Priority) != "" {
 		rows = append(rows, components.TableRow{Label: "Priority", Value: *j.Priority})
 	}
-	rows = append(rows, components.TableRow{Label: "Created", Value: j.CreatedAt.Format("2006-01-02 15:04")})
+	rows = append(rows, components.TableRow{Label: "Created", Value: formatLocalTimeFull(j.CreatedAt)})
 	if !j.UpdatedAt.IsZero() {
-		rows = append(rows, components.TableRow{Label: "Updated", Value: j.UpdatedAt.Format("2006-01-02 15:04")})
+		rows = append(rows, components.TableRow{Label: "Updated", Value: formatLocalTimeFull(j.UpdatedAt)})
 	}
 	sections = append(sections, components.Table("Job", rows, m.width))
 

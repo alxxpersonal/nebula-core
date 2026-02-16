@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestKnowledgeAddLinkSearchSaveAndReset(t *testing.T) {
+func TestContextAddLinkSearchSaveAndReset(t *testing.T) {
 	now := time.Now()
 	createCalled := false
 	linkCalled := false
@@ -32,7 +32,7 @@ func TestKnowledgeAddLinkSearchSaveAndReset(t *testing.T) {
 					{"id": "ent-1", "name": "OpenAI", "type": "organization", "status": "active", "tags": []string{}, "metadata": map[string]any{}},
 				},
 			})
-		case r.URL.Path == "/api/knowledge" && r.Method == http.MethodPost:
+		case r.URL.Path == "/api/context" && r.Method == http.MethodPost:
 			createCalled = true
 			json.NewEncoder(w).Encode(map[string]any{
 				"data": map[string]any{
@@ -47,7 +47,7 @@ func TestKnowledgeAddLinkSearchSaveAndReset(t *testing.T) {
 					"updated_at":        now,
 				},
 			})
-		case r.URL.Path == "/api/knowledge/k-1/link" && r.Method == http.MethodPost:
+		case r.URL.Path == "/api/context/k-1/link" && r.Method == http.MethodPost:
 			linkCalled = true
 			w.WriteHeader(http.StatusOK)
 		default:
@@ -55,7 +55,7 @@ func TestKnowledgeAddLinkSearchSaveAndReset(t *testing.T) {
 		}
 	})
 
-	model := NewKnowledgeModel(client)
+	model := NewContextModel(client)
 	model.width = 90
 
 	// Init + load scopes.
@@ -112,7 +112,7 @@ func TestKnowledgeAddLinkSearchSaveAndReset(t *testing.T) {
 	model, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter}) // exit selector
 	assert.Contains(t, model.scopes, "public")
 
-	// Save knowledge (Create + Link).
+	// Save context (Create + Link).
 	var saveCmd tea.Cmd
 	model, saveCmd = model.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
 	require.NotNil(t, saveCmd)
@@ -122,7 +122,7 @@ func TestKnowledgeAddLinkSearchSaveAndReset(t *testing.T) {
 	assert.True(t, createCalled)
 	assert.True(t, linkCalled)
 	assert.True(t, model.saved)
-	assert.Contains(t, components.SanitizeText(model.View()), "Knowledge saved!")
+	assert.Contains(t, components.SanitizeText(model.View()), "Context saved!")
 
 	// Esc should reset add state.
 	model, _ = model.Update(tea.KeyMsg{Type: tea.KeyEsc})
@@ -132,10 +132,10 @@ func TestKnowledgeAddLinkSearchSaveAndReset(t *testing.T) {
 	assert.Len(t, model.scopes, 0)
 }
 
-func TestKnowledgeLibraryDetailEditAndSave(t *testing.T) {
+func TestContextLibraryDetailEditAndSave(t *testing.T) {
 	now := time.Now()
 	updateCalled := false
-	vaultPath := "/vault/knowledge/alpha.md"
+	vaultPath := "/vault/context/alpha.md"
 	content := "notes"
 	url := "https://example.com"
 
@@ -147,7 +147,7 @@ func TestKnowledgeLibraryDetailEditAndSave(t *testing.T) {
 					{"id": "scope-1", "name": "public", "agent_count": 1},
 				},
 			})
-		case r.URL.Path == "/api/knowledge" && r.Method == http.MethodGet:
+		case r.URL.Path == "/api/context" && r.Method == http.MethodGet:
 			json.NewEncoder(w).Encode(map[string]any{
 				"data": []map[string]any{
 					{
@@ -160,13 +160,13 @@ func TestKnowledgeLibraryDetailEditAndSave(t *testing.T) {
 						"status":            "active",
 						"tags":              []string{"demo"},
 						"metadata":          map[string]any{"role": "builder"},
-						"vault_file_path":   vaultPath,
+						"source_path":       vaultPath,
 						"created_at":        now,
 						"updated_at":        now,
 					},
 				},
 			})
-		case r.URL.Path == "/api/knowledge/k-1" && r.Method == http.MethodGet:
+		case r.URL.Path == "/api/context/k-1" && r.Method == http.MethodGet:
 			json.NewEncoder(w).Encode(map[string]any{
 				"data": map[string]any{
 					"id":                "k-1",
@@ -178,12 +178,12 @@ func TestKnowledgeLibraryDetailEditAndSave(t *testing.T) {
 					"status":            "active",
 					"tags":              []string{"demo"},
 					"metadata":          map[string]any{"role": "builder"},
-					"vault_file_path":   vaultPath,
+					"source_path":       vaultPath,
 					"created_at":        now,
 					"updated_at":        now,
 				},
 			})
-		case r.URL.Path == "/api/knowledge/k-1" && r.Method == http.MethodPatch:
+		case r.URL.Path == "/api/context/k-1" && r.Method == http.MethodPatch:
 			updateCalled = true
 			json.NewEncoder(w).Encode(map[string]any{
 				"data": map[string]any{
@@ -196,7 +196,7 @@ func TestKnowledgeLibraryDetailEditAndSave(t *testing.T) {
 					"status":            "active",
 					"tags":              []string{"demo", "new"},
 					"metadata":          map[string]any{"role": "builder"},
-					"vault_file_path":   vaultPath,
+					"source_path":       vaultPath,
 					"created_at":        now,
 					"updated_at":        now,
 				},
@@ -206,7 +206,7 @@ func TestKnowledgeLibraryDetailEditAndSave(t *testing.T) {
 		}
 	})
 
-	model := NewKnowledgeModel(client)
+	model := NewContextModel(client)
 	model.width = 90
 
 	// Init + load scopes.
@@ -222,10 +222,10 @@ func TestKnowledgeLibraryDetailEditAndSave(t *testing.T) {
 	require.NotNil(t, cmd)
 	msg = cmd()
 	model, _ = model.Update(msg)
-	assert.Equal(t, knowledgeViewList, model.view)
+	assert.Equal(t, contextViewList, model.view)
 
 	out := components.SanitizeText(model.View())
-	assert.Contains(t, out, "Knowledge")
+	assert.Contains(t, out, "Context")
 	assert.Contains(t, out, "1 total")
 	assert.Contains(t, out, "Alpha")
 
@@ -234,21 +234,21 @@ func TestKnowledgeLibraryDetailEditAndSave(t *testing.T) {
 	require.NotNil(t, cmd)
 	msg = cmd()
 	model, _ = model.Update(msg)
-	assert.Equal(t, knowledgeViewDetail, model.view)
+	assert.Equal(t, contextViewDetail, model.view)
 
 	out = components.SanitizeText(model.View())
 	assert.Contains(t, out, "Title")
 	assert.Contains(t, out, "Alpha")
 	assert.Contains(t, out, "Scopes")
 	assert.Contains(t, out, "public")
-	assert.Contains(t, out, "Vault Path")
+	assert.Contains(t, out, "Source Path")
 
 	// Enter edit mode.
 	model, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
-	assert.Equal(t, knowledgeViewEdit, model.view)
+	assert.Equal(t, contextViewEdit, model.view)
 
 	// Add a tag and save.
-	model.editFocus = knowledgeEditFieldTags
+	model.editFocus = contextEditFieldTags
 	for _, r := range []rune("new") {
 		model, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
 	}
@@ -261,5 +261,5 @@ func TestKnowledgeLibraryDetailEditAndSave(t *testing.T) {
 	model, _ = model.Update(msg)
 
 	assert.True(t, updateCalled)
-	assert.Equal(t, knowledgeViewDetail, model.view)
+	assert.Equal(t, contextViewDetail, model.view)
 }

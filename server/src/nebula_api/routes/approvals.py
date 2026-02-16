@@ -6,7 +6,7 @@ from typing import Any
 from uuid import UUID
 
 # Third-Party
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel
 
 # Local
@@ -77,7 +77,10 @@ class ApproveBody(BaseModel):
 
 @router.get("/pending")
 async def get_pending(
-    request: Request, auth: dict = Depends(require_auth)
+    request: Request,
+    auth: dict = Depends(require_auth),
+    limit: int = Query(200, ge=1, le=5000),
+    offset: int = Query(0, ge=0),
 ) -> dict[str, Any]:
     """List pending approval requests.
 
@@ -91,7 +94,7 @@ async def get_pending(
     pool = request.app.state.pool
     enums = request.app.state.enums
     _require_admin_scope(auth, enums)
-    results = await get_pending_approvals_all(pool)
+    results = await get_pending_approvals_all(pool, limit=limit, offset=offset)
     return success(results)
 
 

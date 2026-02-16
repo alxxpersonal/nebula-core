@@ -29,14 +29,14 @@ async def _insert_entity(db_pool, enums, *, name: str, scopes: list[str], metada
     return out
 
 
-async def _insert_knowledge(
+async def _insert_context(
     db_pool, enums, *, title: str, scopes: list[str], content: str
 ):
     status_id = enums.statuses.name_to_id["active"]
     scope_ids = [enums.scopes.name_to_id[s] for s in scopes]
     row = await db_pool.fetchrow(
         """
-        INSERT INTO knowledge_items (title, source_type, content, status_id, privacy_scope_ids, tags, metadata)
+        INSERT INTO context_items (title, source_type, content, status_id, privacy_scope_ids, tags, metadata)
         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
         RETURNING id, title
         """,
@@ -55,7 +55,7 @@ async def _insert_knowledge(
 
 @pytest.mark.asyncio
 async def test_semantic_search_happy_path(api, db_pool, enums):
-    """Semantic search should return ranked matches for entities and knowledge."""
+    """Semantic search should return ranked matches for entities and context."""
 
     entity = await _insert_entity(
         db_pool,
@@ -64,7 +64,7 @@ async def test_semantic_search_happy_path(api, db_pool, enums):
         scopes=["public"],
         metadata={"summary": "Context memory mesh for agent collaboration"},
     )
-    knowledge = await _insert_knowledge(
+    context = await _insert_context(
         db_pool,
         enums,
         title="Prompt Memory Patterns",
@@ -74,13 +74,13 @@ async def test_semantic_search_happy_path(api, db_pool, enums):
 
     resp = await api.post(
         "/api/search/semantic",
-        json={"query": "agent retrieval memory", "kinds": ["entity", "knowledge"]},
+        json={"query": "agent retrieval memory", "kinds": ["entity", "context"]},
     )
     assert resp.status_code == 200
     data = resp.json()["data"]
     ids = {item["id"] for item in data}
     assert entity["id"] in ids
-    assert knowledge["id"] in ids
+    assert context["id"] in ids
     assert all("score" in item for item in data)
 
 

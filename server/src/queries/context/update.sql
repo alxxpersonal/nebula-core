@@ -1,6 +1,6 @@
--- Update knowledge item fields
+-- Update context item fields
 WITH updated AS (
-    UPDATE knowledge_items
+    UPDATE context_items
     SET
         title = COALESCE($2, title),
         url = COALESCE($3, url),
@@ -23,7 +23,7 @@ SELECT
     s.name AS status,
     u.tags,
     u.metadata,
-    u.vault_file_path,
+    u.source_path,
     u.created_at,
     u.updated_at
 FROM updated u

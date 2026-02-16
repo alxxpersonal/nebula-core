@@ -11,7 +11,7 @@ SELECT
     p.tags,
     p.trusted,
     p.metadata,
-    p.vault_file_path,
+    p.source_path,
     p.created_at,
     p.updated_at
 FROM protocols p

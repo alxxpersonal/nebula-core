@@ -360,7 +360,7 @@ func (m FilesModel) renderList() string {
 			components.ClampTextWidthEllipsis(components.SanitizeOneLine(f.Filename), fileWidth),
 			components.ClampTextWidthEllipsis(status, statusWidth),
 			components.ClampTextWidthEllipsis(size, sizeWidth),
-			at.Format("01-02 15:04"),
+			formatLocalTimeCompact(at),
 		})
 	}
 
@@ -422,7 +422,7 @@ func (m FilesModel) renderFilePreview(f api.File, width int) string {
 
 	lines = append(lines, renderPreviewRow("Status", status, width))
 	lines = append(lines, renderPreviewRow("Size", size, width))
-	lines = append(lines, renderPreviewRow("At", at.Format("01-02 15:04"), width))
+	lines = append(lines, renderPreviewRow("At", formatLocalTimeCompact(at), width))
 	if strings.TrimSpace(f.FilePath) != "" {
 		lines = append(lines, renderPreviewRow("Path", f.FilePath, width))
 	}
@@ -537,9 +537,9 @@ func (m FilesModel) renderDetail() string {
 	if len(f.Tags) > 0 {
 		rows = append(rows, components.TableRow{Label: "Tags", Value: strings.Join(f.Tags, ", ")})
 	}
-	rows = append(rows, components.TableRow{Label: "Created", Value: f.CreatedAt.Format("2006-01-02 15:04")})
+	rows = append(rows, components.TableRow{Label: "Created", Value: formatLocalTimeFull(f.CreatedAt)})
 	if !f.UpdatedAt.IsZero() {
-		rows = append(rows, components.TableRow{Label: "Updated", Value: f.UpdatedAt.Format("2006-01-02 15:04")})
+		rows = append(rows, components.TableRow{Label: "Updated", Value: formatLocalTimeFull(f.UpdatedAt)})
 	}
 
 	sections := []string{components.Table("File", rows, m.width)}

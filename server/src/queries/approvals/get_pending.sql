@@ -5,4 +5,5 @@ SELECT
 FROM approval_requests ar
 LEFT JOIN agents a ON ar.requested_by = a.id
 WHERE ar.status = 'pending'
-ORDER BY ar.created_at ASC;
+ORDER BY ar.created_at ASC
+LIMIT $1 OFFSET $2;

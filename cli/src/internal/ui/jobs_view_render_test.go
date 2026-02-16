@@ -181,4 +181,3 @@ func TestJobsDetailRendersAndEditSaves(t *testing.T) {
 
 	assert.True(t, updateCalled)
 }
-

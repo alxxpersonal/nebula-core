@@ -6,7 +6,9 @@ WITH updated AS (
         description = COALESCE($3, description),
         status_id = COALESCE($4, status_id),
         priority = COALESCE($5, priority),
-        metadata = COALESCE($6::jsonb, metadata)
+        metadata = COALESCE($6::jsonb, metadata),
+        assigned_to = COALESCE($7::uuid, assigned_to),
+        due_at = COALESCE($8::timestamptz, due_at)
     WHERE id = $1
     RETURNING *
 )

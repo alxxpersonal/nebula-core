@@ -34,6 +34,8 @@ MIGRATION_FILES = [
     "015_add_default_log_types.sql",
     "016_jobs_privacy_scopes.sql",
     "017_enterprise_defaults.sql",
+    "018_context_core_rename.sql",
+    "019_source_refs_and_files_uri.sql",
 ]
 
 TEST_DB = os.getenv("NEBULA_TEST_DB", "postgres")
@@ -51,12 +53,13 @@ MUTABLE_TABLES = [
     "semantic_search",
     "relationships",
     "jobs",
-    "knowledge_items",
+    "context_items",
     "logs",
     "files",
     "protocols",
     "entities",
     "agents",
+    "external_refs",
 ]
 
 

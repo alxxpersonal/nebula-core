@@ -104,7 +104,7 @@ func TestQuickstartKeyFlowRoutesTabsAndCompletes(t *testing.T) {
 	model, _ = app.handleQuickstartKeys(tea.KeyMsg{Type: tea.KeyEnter})
 	updated = model.(App)
 	assert.Equal(t, tabKnow, updated.tab)
-	assert.Equal(t, knowledgeViewAdd, updated.know.view)
+	assert.Equal(t, contextViewAdd, updated.know.view)
 	assert.Equal(t, 2, updated.quickstartStep)
 
 	app = updated

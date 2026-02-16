@@ -1,4 +1,4 @@
-"""Knowledge API routes."""
+"""Context API routes."""
 
 # Standard Library
 from pathlib import Path
@@ -14,9 +14,9 @@ from nebula_api.auth import maybe_check_agent_approval, require_auth
 from nebula_api.response import paginated, success
 from nebula_mcp.enums import require_relationship_type, require_scopes, require_status
 from nebula_mcp.executors import (
-    execute_create_knowledge,
+    execute_create_context,
     execute_create_relationship,
-    execute_update_knowledge,
+    execute_update_context,
 )
 from nebula_mcp.helpers import (
     enforce_scope_subset,
@@ -66,14 +66,14 @@ async def _require_entity_write_access(
         raise HTTPException(status_code=403, detail="Forbidden")
 
 
-async def _require_knowledge_write_access(
-    pool: Any, enums: Any, auth: dict, knowledge_id: str
+async def _require_context_write_access(
+    pool: Any, enums: Any, auth: dict, context_id: str
 ) -> None:
     if auth["caller_type"] != "agent":
         return
     if _is_admin(auth, enums):
         return
-    row = await pool.fetchrow(QUERIES["knowledge/get"], knowledge_id, None)
+    row = await pool.fetchrow(QUERIES["context/get"], context_id, None)
     if not row:
         raise HTTPException(status_code=404, detail="Not Found")
     if not _has_write_scopes(
@@ -94,13 +94,13 @@ def _validate_tag_list(tags: list[str] | None) -> list[str] | None:
     return cleaned
 
 
-class CreateKnowledgeBody(BaseModel):
-    """Payload for creating a knowledge item.
+class CreateContextBody(BaseModel):
+    """Payload for creating a context item.
 
     Attributes:
-        title: Knowledge title.
+        title: Context title.
         url: Optional URL.
-        source_type: Knowledge source type.
+        source_type: Context source type.
         content: Optional content text.
         scopes: Privacy scopes.
         tags: Tag list.
@@ -131,8 +131,8 @@ class CreateKnowledgeBody(BaseModel):
         return v
 
 
-class LinkKnowledgeBody(BaseModel):
-    """Payload for linking knowledge to an entity.
+class LinkContextBody(BaseModel):
+    """Payload for linking context to an entity.
 
     Attributes:
         entity_id: Target entity id.
@@ -143,8 +143,8 @@ class LinkKnowledgeBody(BaseModel):
     relationship_type: str = "related-to"
 
 
-class UpdateKnowledgeBody(BaseModel):
-    """Payload for updating a knowledge item.
+class UpdateContextBody(BaseModel):
+    """Payload for updating a context item.
 
     Attributes:
         title: Updated title.
@@ -183,20 +183,20 @@ class UpdateKnowledgeBody(BaseModel):
 
 
 @router.post("/")
-async def create_knowledge(
-    payload: CreateKnowledgeBody,
+async def create_context(
+    payload: CreateContextBody,
     request: Request,
     auth: dict = Depends(require_auth),
 ) -> dict[str, Any]:
-    """Create a knowledge item.
+    """Create a context item.
 
     Args:
-        payload: Knowledge creation payload.
+        payload: Context creation payload.
         request: FastAPI request.
         auth: Auth context.
 
     Returns:
-        API response with created knowledge or approval requirement.
+        API response with created context or approval requirement.
     """
     pool = request.app.state.pool
     enums = request.app.state.enums
@@ -216,17 +216,17 @@ async def create_knowledge(
         require_scopes(data["scopes"], enums)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
-    if resp := await maybe_check_agent_approval(pool, auth, "create_knowledge", data):
+    if resp := await maybe_check_agent_approval(pool, auth, "create_context", data):
         return resp
     try:
-        result = await execute_create_knowledge(pool, enums, data)
+        result = await execute_create_context(pool, enums, data)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return success(result)
 
 
 @router.get("/")
-async def query_knowledge(
+async def query_context(
     request: Request,
     auth: dict = Depends(require_auth),
     source_type: str | None = None,
@@ -235,7 +235,7 @@ async def query_knowledge(
     limit: int = Query(50, le=MAX_PAGE_LIMIT),
     offset: int = 0,
 ) -> dict[str, Any]:
-    """Query knowledge items with filters.
+    """Query context items with filters.
 
     Args:
         request: FastAPI request.
@@ -247,14 +247,14 @@ async def query_knowledge(
         offset: Offset for pagination.
 
     Returns:
-        Paginated API response with knowledge items.
+        Paginated API response with context items.
     """
     pool = request.app.state.pool
     scope_ids = auth.get("scopes", [])
     tag_list = tags.split(",") if tags else None
 
     rows = await pool.fetch(
-        QUERIES["knowledge/query"],
+        QUERIES["context/query"],
         source_type,
         tag_list,
         search_text,
@@ -272,31 +272,31 @@ async def query_knowledge(
     return paginated(results, len(results), limit, offset)
 
 
-@router.get("/{knowledge_id}")
-async def get_knowledge(
-    knowledge_id: str,
+@router.get("/{context_id}")
+async def get_context(
+    context_id: str,
     request: Request,
     auth: dict = Depends(require_auth),
 ) -> dict[str, Any]:
-    """Fetch a knowledge item by id.
+    """Fetch a context item by id.
 
     Args:
-        knowledge_id: Knowledge id.
+        context_id: Context id.
         request: FastAPI request.
         auth: Auth context.
 
     Returns:
-        API response with knowledge data.
+        API response with context data.
     """
     pool = request.app.state.pool
     scope_ids = auth.get("scopes", [])
     try:
-        UUID(knowledge_id)
+        UUID(context_id)
     except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid knowledge id")
+        raise HTTPException(status_code=400, detail="Invalid context id")
     row = await pool.fetchrow(
-        QUERIES["knowledge/get"],
-        knowledge_id,
+        QUERIES["context/get"],
+        context_id,
         scope_ids,
     )
     if not row:
@@ -308,17 +308,17 @@ async def get_knowledge(
     return success(item)
 
 
-@router.post("/{knowledge_id}/link")
+@router.post("/{context_id}/link")
 async def link_to_entity(
-    knowledge_id: str,
-    payload: LinkKnowledgeBody,
+    context_id: str,
+    payload: LinkContextBody,
     request: Request,
     auth: dict = Depends(require_auth),
 ) -> dict[str, Any]:
-    """Create a relationship from knowledge to an entity.
+    """Create a relationship from context to an entity.
 
     Args:
-        knowledge_id: Knowledge id.
+        context_id: Context id.
         payload: Link payload.
         request: FastAPI request.
         auth: Auth context.
@@ -329,15 +329,15 @@ async def link_to_entity(
     pool = request.app.state.pool
     enums = request.app.state.enums
     try:
-        UUID(knowledge_id)
+        UUID(context_id)
         UUID(payload.entity_id)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid id")
-    await _require_knowledge_write_access(pool, enums, auth, knowledge_id)
+    await _require_context_write_access(pool, enums, auth, context_id)
     await _require_entity_write_access(pool, enums, auth, payload.entity_id)
     relationship_payload = {
-        "source_type": "knowledge",
-        "source_id": knowledge_id,
+        "source_type": "context",
+        "source_id": context_id,
         "target_type": "entity",
         "target_id": payload.entity_id,
         "relationship_type": payload.relationship_type,
@@ -359,32 +359,32 @@ async def link_to_entity(
     return success(result)
 
 
-@router.patch("/{knowledge_id}")
-async def update_knowledge(
-    knowledge_id: str,
-    payload: UpdateKnowledgeBody,
+@router.patch("/{context_id}")
+async def update_context(
+    context_id: str,
+    payload: UpdateContextBody,
     request: Request,
     auth: dict = Depends(require_auth),
 ) -> dict[str, Any]:
-    """Update a knowledge item.
+    """Update a context item.
 
     Args:
-        knowledge_id: Knowledge id.
-        payload: Knowledge update payload.
+        context_id: Context id.
+        payload: Context update payload.
         request: FastAPI request.
         auth: Auth context.
 
     Returns:
-        API response with updated knowledge or approval requirement.
+        API response with updated context or approval requirement.
     """
     pool = request.app.state.pool
     enums = request.app.state.enums
     try:
-        UUID(knowledge_id)
+        UUID(context_id)
     except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid knowledge id")
+        raise HTTPException(status_code=400, detail="Invalid context id")
 
-    await _require_knowledge_write_access(pool, enums, auth, knowledge_id)
+    await _require_context_write_access(pool, enums, auth, context_id)
 
     data = payload.model_dump()
     if data.get("status"):
@@ -405,11 +405,11 @@ async def update_knowledge(
             require_scopes(data["scopes"], enums)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
-    change = {"knowledge_id": knowledge_id, **data}
-    if resp := await maybe_check_agent_approval(pool, auth, "update_knowledge", change):
+    change = {"context_id": context_id, **data}
+    if resp := await maybe_check_agent_approval(pool, auth, "update_context", change):
         return resp
     try:
-        updated = await execute_update_knowledge(pool, enums, change)
+        updated = await execute_update_context(pool, enums, change)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return success(updated)

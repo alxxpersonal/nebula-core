@@ -36,7 +36,7 @@ const (
 	protoFieldTags
 	protoFieldContent
 	protoFieldMetadata
-	protoFieldVault
+	protoFieldSourcePath
 	protoFieldCount
 )
 
@@ -49,7 +49,7 @@ const (
 	protoEditFieldTags
 	protoEditFieldContent
 	protoEditFieldMetadata
-	protoEditFieldVault
+	protoEditFieldSourcePath
 	protoEditFieldCount
 )
 
@@ -110,7 +110,7 @@ func NewProtocolsModel(client *api.Client) ProtocolsModel {
 			{label: "Tags"},
 			{label: "Content"},
 			{label: "Metadata"},
-			{label: "Vault Path"},
+			{label: "Source Path"},
 		},
 		editFields: []formField{
 			{label: "Title"},
@@ -121,7 +121,7 @@ func NewProtocolsModel(client *api.Client) ProtocolsModel {
 			{label: "Tags"},
 			{label: "Content"},
 			{label: "Metadata"},
-			{label: "Vault Path"},
+			{label: "Source Path"},
 		},
 	}
 }
@@ -403,7 +403,7 @@ func (m ProtocolsModel) renderList() string {
 			components.ClampTextWidthEllipsis(name, nameWidth),
 			components.ClampTextWidthEllipsis(title, titleWidth),
 			components.ClampTextWidthEllipsis(status, statusWidth),
-			at.Format("01-02 15:04"),
+			formatLocalTimeCompact(at),
 		})
 	}
 
@@ -464,7 +464,7 @@ func (m ProtocolsModel) renderProtocolPreview(p api.Protocol, width int) string 
 
 	lines = append(lines, renderPreviewRow("Name", name, width))
 	lines = append(lines, renderPreviewRow("Status", status, width))
-	lines = append(lines, renderPreviewRow("At", at.Format("2006-01-02 15:04"), width))
+	lines = append(lines, renderPreviewRow("At", formatLocalTimeFull(at), width))
 	if p.Version != nil && strings.TrimSpace(*p.Version) != "" {
 		lines = append(lines, renderPreviewRow("Version", strings.TrimSpace(*p.Version), width))
 	}
@@ -525,12 +525,12 @@ func (m ProtocolsModel) renderDetail() string {
 	if len(p.Tags) > 0 {
 		rows = append(rows, components.TableRow{Label: "Tags", Value: strings.Join(p.Tags, ", ")})
 	}
-	if p.VaultFile != nil && *p.VaultFile != "" {
-		rows = append(rows, components.TableRow{Label: "Vault Path", Value: *p.VaultFile})
+	if p.SourcePath != nil && *p.SourcePath != "" {
+		rows = append(rows, components.TableRow{Label: "Source Path", Value: *p.SourcePath})
 	}
-	rows = append(rows, components.TableRow{Label: "Created", Value: p.CreatedAt.Format("2006-01-02 15:04")})
+	rows = append(rows, components.TableRow{Label: "Created", Value: formatLocalTimeFull(p.CreatedAt)})
 	if !p.UpdatedAt.IsZero() {
-		rows = append(rows, components.TableRow{Label: "Updated", Value: p.UpdatedAt.Format("2006-01-02 15:04")})
+		rows = append(rows, components.TableRow{Label: "Updated", Value: formatLocalTimeFull(p.UpdatedAt)})
 	}
 
 	sections := []string{components.Table("Protocol", rows, m.width)}
@@ -668,7 +668,7 @@ func (m ProtocolsModel) saveAdd() (ProtocolsModel, tea.Cmd) {
 		Status:       protocolStatusOptions[m.addStatusIdx],
 		Tags:         append([]string{}, m.addTags...),
 		Metadata:     meta,
-		VaultFile:    stringPtr(strings.TrimSpace(m.addFields[protoFieldVault].value)),
+		SourcePath:   stringPtr(strings.TrimSpace(m.addFields[protoFieldSourcePath].value)),
 	}
 	m.addSaving = true
 	return m, func() tea.Msg {
@@ -702,8 +702,8 @@ func (m ProtocolsModel) startEdit() {
 	if p.Content != nil {
 		m.editFields[protoEditFieldContent].value = *p.Content
 	}
-	if p.VaultFile != nil {
-		m.editFields[protoEditFieldVault].value = *p.VaultFile
+	if p.SourcePath != nil {
+		m.editFields[protoEditFieldSourcePath].value = *p.SourcePath
 	}
 	m.editStatusIdx = statusIndex(protocolStatusOptions, p.Status)
 	m.editMeta.Load(map[string]any(p.Metadata))
@@ -810,7 +810,7 @@ func (m ProtocolsModel) saveEdit() (ProtocolsModel, tea.Cmd) {
 		Status:       stringPtr(protocolStatusOptions[m.editStatusIdx]),
 		Tags:         slicePtr(m.editTags),
 		Metadata:     meta,
-		VaultFile:    stringPtr(strings.TrimSpace(m.editFields[protoEditFieldVault].value)),
+		SourcePath:   stringPtr(strings.TrimSpace(m.editFields[protoEditFieldSourcePath].value)),
 	}
 
 	m.editSaving = true

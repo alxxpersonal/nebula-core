@@ -165,7 +165,7 @@ func TestRelationshipsInitViewDetailEditAndConfirmFlow(t *testing.T) {
 			return
 		case r.URL.Path == "/api/audit/scopes" && r.Method == http.MethodGet:
 			json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{
-				{"id": "s1", "name": "public", "agent_count": 0, "entity_count": 0, "knowledge_count": 0},
+				{"id": "s1", "name": "public", "agent_count": 0, "entity_count": 0, "context_count": 0},
 			}})
 			return
 		case r.URL.Path == "/api/entities" && r.Method == http.MethodGet:

@@ -15,8 +15,8 @@ SELECT
   ) AS entity_count,
   (
     SELECT COUNT(*)
-    FROM knowledge_items k
+    FROM context_items k
     WHERE k.privacy_scope_ids && ARRAY[ps.id]
-  ) AS knowledge_count
+  ) AS context_count
 FROM privacy_scopes ps
 ORDER BY ps.name;

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -20,6 +21,7 @@ type keyCreatedMsg struct{ resp *api.CreateKeyResponse }
 type keyRevokedMsg struct{}
 type agentUpdatedMsg struct{}
 type apiKeySavedMsg struct{}
+type pendingLimitSavedMsg struct{ limit int }
 
 // --- Profile Model ---
 
@@ -35,12 +37,14 @@ type ProfileModel struct {
 	agentList   *components.List
 	agentDetail *api.Agent
 
-	loading    bool
-	creating   bool
-	createBuf  string
-	createdKey string
-	editAPIKey bool
-	apiKeyBuf  string
+	loading          bool
+	creating         bool
+	createBuf        string
+	createdKey       string
+	editAPIKey       bool
+	apiKeyBuf        string
+	editPendingLimit bool
+	pendingLimitBuf  string
 
 	taxKind            int
 	taxIncludeInactive bool
@@ -113,6 +117,10 @@ func (m ProfileModel) Update(msg tea.Msg) (ProfileModel, tea.Cmd) {
 		m.editAPIKey = false
 		m.apiKeyBuf = ""
 		return m, nil
+	case pendingLimitSavedMsg:
+		m.editPendingLimit = false
+		m.pendingLimitBuf = ""
+		return m, nil
 
 	case taxonomyLoadedMsg:
 		if msg.kind != m.taxonomyKindPath() {
@@ -130,6 +138,9 @@ func (m ProfileModel) Update(msg tea.Msg) (ProfileModel, tea.Cmd) {
 	case tea.KeyMsg:
 		if m.taxPromptMode != taxPromptNone {
 			return m.handleTaxonomyPrompt(msg)
+		}
+		if m.editPendingLimit {
+			return m.handlePendingLimitInput(msg)
 		}
 		if m.editAPIKey {
 			return m.handleAPIKeyInput(msg)
@@ -176,6 +187,13 @@ func (m ProfileModel) Update(msg tea.Msg) (ProfileModel, tea.Cmd) {
 		case isKey(msg, "k"):
 			m.editAPIKey = true
 			m.apiKeyBuf = m.config.APIKey
+		case isKey(msg, "p"):
+			m.editPendingLimit = true
+			limit := 500
+			if m.config != nil && m.config.PendingLimit > 0 {
+				limit = m.config.PendingLimit
+			}
+			m.pendingLimitBuf = fmt.Sprintf("%d", limit)
 		case isKey(msg, "r"):
 			if m.section == 0 {
 				return m.revokeSelected()
@@ -258,6 +276,9 @@ func (m ProfileModel) View() string {
 	if m.editAPIKey {
 		return components.Indent(components.InputDialog("Set API Key", m.apiKeyBuf), 1)
 	}
+	if m.editPendingLimit {
+		return components.Indent(components.InputDialog("Pending Queue Limit", m.pendingLimitBuf), 1)
+	}
 
 	if m.creating {
 		return components.Indent(components.InputDialog("New Key Name", m.createBuf), 1)
@@ -278,6 +299,7 @@ func (m ProfileModel) View() string {
 	b.WriteString(components.Indent(components.Table("Settings", []components.TableRow{
 		{Label: "User", Value: m.config.Username},
 		{Label: "API Key", Value: maskedAPIKey(m.config.APIKey)},
+		{Label: "Pending Queue", Value: fmt.Sprintf("%d", m.config.PendingLimit)},
 	}, m.width), 1))
 	b.WriteString("\n\n")
 
@@ -400,6 +422,55 @@ func (m ProfileModel) handleAPIKeyInput(msg tea.KeyMsg) (ProfileModel, tea.Cmd) 
 		}
 	}
 	return m, nil
+}
+
+func (m ProfileModel) handlePendingLimitInput(msg tea.KeyMsg) (ProfileModel, tea.Cmd) {
+	switch {
+	case isBack(msg):
+		m.editPendingLimit = false
+		m.pendingLimitBuf = ""
+		return m, nil
+	case isEnter(msg):
+		raw := strings.TrimSpace(m.pendingLimitBuf)
+		if raw == "" {
+			return m, func() tea.Msg { return errMsg{fmt.Errorf("pending limit cannot be empty")} }
+		}
+		limit, err := parsePositiveInt(raw)
+		if err != nil {
+			return m, func() tea.Msg { return errMsg{err} }
+		}
+		if limit > 5000 {
+			limit = 5000
+		}
+		return m, func() tea.Msg {
+			m.config.PendingLimit = limit
+			if err := m.config.Save(); err != nil {
+				return errMsg{err}
+			}
+			return pendingLimitSavedMsg{limit: limit}
+		}
+	case isKey(msg, "backspace", "delete"):
+		if len(m.pendingLimitBuf) > 0 {
+			m.pendingLimitBuf = m.pendingLimitBuf[:len(m.pendingLimitBuf)-1]
+		}
+	default:
+		ch := msg.String()
+		if len(ch) == 1 && ch[0] >= '0' && ch[0] <= '9' {
+			m.pendingLimitBuf += ch
+		}
+	}
+	return m, nil
+}
+
+func parsePositiveInt(raw string) (int, error) {
+	n, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, fmt.Errorf("pending limit must be a number")
+	}
+	if n <= 0 {
+		return 0, fmt.Errorf("pending limit must be greater than zero")
+	}
+	return n, nil
 }
 
 func (m ProfileModel) revokeSelected() (ProfileModel, tea.Cmd) {
@@ -572,12 +643,12 @@ func (m ProfileModel) renderKeyPreview(k api.APIKey, width int) string {
 
 	lines = append(lines, renderPreviewRow("Prefix", k.KeyPrefix+"...", width))
 	lines = append(lines, renderPreviewRow("Owner", owner, width))
-	lines = append(lines, renderPreviewRow("Created", k.CreatedAt.Format("2006-01-02 15:04"), width))
+	lines = append(lines, renderPreviewRow("Created", formatLocalTimeFull(k.CreatedAt), width))
 	if k.LastUsedAt != nil {
-		lines = append(lines, renderPreviewRow("Last Used", k.LastUsedAt.Format("2006-01-02 15:04"), width))
+		lines = append(lines, renderPreviewRow("Last Used", formatLocalTimeFull(*k.LastUsedAt), width))
 	}
 	if k.ExpiresAt != nil {
-		lines = append(lines, renderPreviewRow("Expires", k.ExpiresAt.Format("2006-01-02 15:04"), width))
+		lines = append(lines, renderPreviewRow("Expires", formatLocalTimeFull(*k.ExpiresAt), width))
 	}
 
 	return padPreviewLines(lines, width)
@@ -760,8 +831,8 @@ func (m ProfileModel) renderAgentDetail() string {
 		{Label: "Trust", Value: trust},
 		{Label: "Scopes", Value: scopes},
 		{Label: "Capabilities", Value: caps},
-		{Label: "Created", Value: agent.CreatedAt.Format("2006-01-02 15:04")},
-		{Label: "Updated", Value: agent.UpdatedAt.Format("2006-01-02 15:04")},
+		{Label: "Created", Value: formatLocalTimeFull(agent.CreatedAt)},
+		{Label: "Updated", Value: formatLocalTimeFull(agent.UpdatedAt)},
 	}
 	if agent.Description != nil && strings.TrimSpace(*agent.Description) != "" {
 		rows = append(rows, components.TableRow{Label: "Description", Value: strings.TrimSpace(*agent.Description)})

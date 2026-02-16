@@ -1,4 +1,4 @@
-"""Red team API tests for knowledge metadata privacy filtering."""
+"""Red team API tests for context metadata privacy filtering."""
 
 # Standard Library
 import json
@@ -13,7 +13,7 @@ from nebula_api.auth import require_auth
 
 
 async def _make_agent(db_pool, enums, name):
-    """Insert a test agent for knowledge metadata scenarios."""
+    """Insert a test agent for context metadata scenarios."""
 
     status_id = enums.statuses.name_to_id["active"]
     scope_ids = [enums.scopes.name_to_id["public"]]
@@ -33,15 +33,15 @@ async def _make_agent(db_pool, enums, name):
     return dict(row)
 
 
-async def _make_knowledge(db_pool, enums, title, scopes, metadata):
-    """Insert a test knowledge item for metadata filtering tests."""
+async def _make_context(db_pool, enums, title, scopes, metadata):
+    """Insert a test context item for metadata filtering tests."""
 
     status_id = enums.statuses.name_to_id["active"]
     scope_ids = [enums.scopes.name_to_id[s] for s in scopes]
 
     row = await db_pool.fetchrow(
         """
-        INSERT INTO knowledge_items (title, source_type, content, privacy_scope_ids, status_id, tags, metadata)
+        INSERT INTO context_items (title, source_type, content, privacy_scope_ids, status_id, tags, metadata)
         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
         RETURNING *
         """,
@@ -78,7 +78,7 @@ def _auth_override(agent_id, enums):
 
 
 @pytest.mark.asyncio
-async def test_api_query_knowledge_filters_context_segments(db_pool, enums):
+async def test_api_query_context_filters_context_segments(db_pool, enums):
     """API query results should not include context segments outside scopes."""
 
     metadata = {
@@ -87,10 +87,10 @@ async def test_api_query_knowledge_filters_context_segments(db_pool, enums):
             {"text": "private info", "scopes": ["private"]},
         ]
     }
-    knowledge = await _make_knowledge(
+    context = await _make_context(
         db_pool, enums, "Mixed Scope", ["public", "private"], metadata
     )
-    agent = await _make_agent(db_pool, enums, "knowledge-viewer")
+    agent = await _make_agent(db_pool, enums, "context-viewer")
 
     app.dependency_overrides[require_auth] = _auth_override(agent["id"], enums)
     app.state.pool = db_pool
@@ -99,7 +99,7 @@ async def test_api_query_knowledge_filters_context_segments(db_pool, enums):
     async with AsyncClient(
         transport=transport, base_url="http://test", follow_redirects=True
     ) as client:
-        resp = await client.get("/api/knowledge/")
+        resp = await client.get("/api/context/")
     app.dependency_overrides.pop(require_auth, None)
 
     assert resp.status_code == 200
@@ -111,7 +111,7 @@ async def test_api_query_knowledge_filters_context_segments(db_pool, enums):
 
 
 @pytest.mark.asyncio
-async def test_api_get_knowledge_filters_context_segments(db_pool, enums):
+async def test_api_get_context_filters_context_segments(db_pool, enums):
     """API get should not include context segments outside scopes."""
 
     metadata = {
@@ -120,17 +120,17 @@ async def test_api_get_knowledge_filters_context_segments(db_pool, enums):
             {"text": "private info", "scopes": ["private"]},
         ]
     }
-    knowledge = await _make_knowledge(
+    context = await _make_context(
         db_pool, enums, "Mixed Scope", ["public", "private"], metadata
     )
-    agent = await _make_agent(db_pool, enums, "knowledge-viewer-2")
+    agent = await _make_agent(db_pool, enums, "context-viewer-2")
 
     app.dependency_overrides[require_auth] = _auth_override(agent["id"], enums)
     app.state.pool = db_pool
     app.state.enums = enums
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        resp = await client.get(f"/api/knowledge/{knowledge['id']}")
+        resp = await client.get(f"/api/context/{context['id']}")
     app.dependency_overrides.pop(require_auth, None)
 
     assert resp.status_code == 200

@@ -53,7 +53,7 @@ func TestHistoryViewRendersScopesActorsAndDetail(t *testing.T) {
 	model.view = historyViewScopes
 	model, _ = model.Update(historyScopesLoadedMsg{
 		items: []api.AuditScope{
-			{ID: "scope-1", Name: "public", AgentCount: 1, EntityCount: 2, KnowledgeCount: 3},
+			{ID: "scope-1", Name: "public", AgentCount: 1, EntityCount: 2, ContextCount: 3},
 		},
 	})
 	out := components.SanitizeText(model.View())

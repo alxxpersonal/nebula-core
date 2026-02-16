@@ -19,7 +19,7 @@ func searchTestClient(t *testing.T, handler http.HandlerFunc) (*httptest.Server,
 }
 
 func TestSearchModelQueryCallsEndpoints(t *testing.T) {
-	var entityQuery, knowledgeQuery, jobQuery string
+	var entityQuery, contextQuery, jobQuery string
 	_, client := searchTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/entities":
@@ -29,8 +29,8 @@ func TestSearchModelQueryCallsEndpoints(t *testing.T) {
 					{"id": "ent-1", "name": "alxx", "type": "person"},
 				},
 			})
-		case "/api/knowledge":
-			knowledgeQuery = r.URL.Query().Get("search_text")
+		case "/api/context":
+			contextQuery = r.URL.Query().Get("search_text")
 			json.NewEncoder(w).Encode(map[string]any{
 				"data": []map[string]any{
 					{"id": "kn-1", "name": "Nebula Notes", "source_type": "note"},
@@ -55,7 +55,7 @@ func TestSearchModelQueryCallsEndpoints(t *testing.T) {
 	model, _ = model.Update(msg)
 
 	assert.Equal(t, "a", entityQuery)
-	assert.Equal(t, "a", knowledgeQuery)
+	assert.Equal(t, "a", contextQuery)
 	assert.Equal(t, "a", jobQuery)
 	assert.Len(t, model.items, 3)
 }
@@ -69,7 +69,7 @@ func TestSearchModelSelectionEmitsMsg(t *testing.T) {
 					{"id": "ent-1", "name": "alpha", "type": "tool"},
 				},
 			})
-		case "/api/knowledge":
+		case "/api/context":
 			json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{}})
 		case "/api/jobs":
 			json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{}})

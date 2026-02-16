@@ -18,8 +18,8 @@ from nebula_mcp.semantic import rank_semantic_candidates
 QUERIES = QueryLoader(Path(__file__).resolve().parents[2] / "queries")
 
 router = APIRouter()
-ALLOWED_SEMANTIC_KINDS = {"entity", "knowledge"}
-DEFAULT_SEMANTIC_KINDS = ["entity", "knowledge"]
+ALLOWED_SEMANTIC_KINDS = {"entity", "context"}
+DEFAULT_SEMANTIC_KINDS = ["entity", "context"]
 
 
 class SemanticSearchBody(BaseModel):
@@ -81,7 +81,7 @@ def _entity_candidate(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _knowledge_candidate(row: dict[str, Any]) -> dict[str, Any]:
+def _context_candidate(row: dict[str, Any]) -> dict[str, Any]:
     metadata = row.get("metadata") or {}
     tags = row.get("tags") or []
     content = str(row.get("content") or "")
@@ -94,7 +94,7 @@ def _knowledge_candidate(row: dict[str, Any]) -> dict[str, Any]:
             json.dumps(metadata, sort_keys=True),
         ]
     ).strip()
-    subtitle = str(row.get("source_type", "") or "knowledge")
+    subtitle = str(row.get("source_type", "") or "context")
     snippet_base = content.strip().replace("\n", " ")
     if len(snippet_base) > 120:
         snippet_base = snippet_base[:120].rstrip() + "..."
@@ -102,7 +102,7 @@ def _knowledge_candidate(row: dict[str, Any]) -> dict[str, Any]:
     if snippet_base:
         snippet_parts.append(snippet_base)
     return {
-        "kind": "knowledge",
+        "kind": "context",
         "id": str(row.get("id", "")),
         "title": str(row.get("title", "")),
         "subtitle": subtitle,
@@ -117,7 +117,7 @@ async def semantic_search(
     request: Request,
     auth: dict = Depends(require_auth),
 ) -> dict[str, Any]:
-    """Run semantic search across entities and knowledge with scope filtering."""
+    """Run semantic search across entities and context with scope filtering."""
 
     pool = request.app.state.pool
     enums = request.app.state.enums
@@ -132,13 +132,13 @@ async def semantic_search(
         )
         candidates.extend(_entity_candidate(dict(row)) for row in rows)
 
-    if "knowledge" in payload.kinds:
+    if "context" in payload.kinds:
         rows = await pool.fetch(
-            QUERIES["search/knowledge_semantic_candidates"],
+            QUERIES["search/context_semantic_candidates"],
             scope_ids,
             payload.candidate_limit,
         )
-        candidates.extend(_knowledge_candidate(dict(row)) for row in rows)
+        candidates.extend(_context_candidate(dict(row)) for row in rows)
 
     ranked = rank_semantic_candidates(payload.query, candidates, limit=payload.limit)
     for item in ranked:

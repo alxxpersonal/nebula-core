@@ -1,4 +1,4 @@
--- Candidate knowledge items for semantic ranking.
+-- Candidate context items for semantic ranking.
 SELECT
     k.id,
     k.title,
@@ -9,7 +9,7 @@ SELECT
     k.privacy_scope_ids,
     k.created_at,
     k.updated_at
-FROM knowledge_items k
+FROM context_items k
 JOIN statuses s ON s.id = k.status_id
 WHERE
     s.category = 'active'

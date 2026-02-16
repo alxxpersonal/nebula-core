@@ -117,7 +117,7 @@ class CreateEntityBody(BaseModel):
         scopes: Privacy scopes.
         tags: Tag list.
         metadata: Arbitrary metadata.
-        vault_file_path: Optional file path reference.
+        source_path: Optional file path reference.
     """
 
     name: str
@@ -126,7 +126,7 @@ class CreateEntityBody(BaseModel):
     scopes: list[str] = []
     tags: list[str] = []
     metadata: dict | None = None
-    vault_file_path: str | None = None
+    source_path: str | None = None
 
     @field_validator("tags", mode="before")
     @classmethod

@@ -6,7 +6,7 @@ INSERT INTO entities (
   status_id,
   tags,
   metadata,
-  vault_file_path
+  source_path
 )
 VALUES ($1, $2, $3, $4, $5, $6, $7)
 RETURNING *;

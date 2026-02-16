@@ -18,7 +18,7 @@ func TestImportExportImportFlowReadsFileCallsAPIAndShowsResult(t *testing.T) {
 	var gotBody map[string]any
 	_, client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
-		if r.URL.Path == "/api/imports/entities" {
+		if r.URL.Path == "/api/import/entities" {
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&gotBody))
 			json.NewEncoder(w).Encode(map[string]any{
 				"data": map[string]any{
@@ -63,7 +63,7 @@ func TestImportExportImportFlowReadsFileCallsAPIAndShowsResult(t *testing.T) {
 	m, _ = m.Update(msg)
 	assert.Equal(t, stepResult, m.step)
 
-	assert.Equal(t, "/api/imports/entities", gotPath)
+	assert.Equal(t, "/api/import/entities", gotPath)
 	assert.Equal(t, "json", gotBody["format"])
 	assert.Equal(t, "[]", gotBody["data"])
 
@@ -90,7 +90,7 @@ func TestImportExportEmptyPathDoesNotRun(t *testing.T) {
 
 func TestImportExportExportJSONWritesFile(t *testing.T) {
 	_, client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/exports/entities" {
+		if r.URL.Path == "/api/export/entities" {
 			json.NewEncoder(w).Encode(map[string]any{
 				"data": map[string]any{
 					"format": "json",
@@ -138,7 +138,7 @@ func TestImportExportExportJSONWritesFile(t *testing.T) {
 
 func TestImportExportExportCSVWritesFile(t *testing.T) {
 	_, client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/exports/entities" {
+		if r.URL.Path == "/api/export/entities" {
 			json.NewEncoder(w).Encode(map[string]any{
 				"data": map[string]any{
 					"format":  "csv",

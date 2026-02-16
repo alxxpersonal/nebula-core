@@ -57,7 +57,7 @@ class CreateProtocolBody(BaseModel):
     status: str = "active"
     tags: list[str] = []
     metadata: dict | None = None
-    vault_file_path: str | None = None
+    source_path: str | None = None
     trusted: bool = False
 
     @field_validator("tags", mode="before")
@@ -77,7 +77,7 @@ class UpdateProtocolBody(BaseModel):
     status: str | None = None
     tags: list[str] | None = None
     metadata: dict | None = None
-    vault_file_path: str | None = None
+    source_path: str | None = None
     trusted: bool | None = None
 
     @field_validator("tags", mode="before")

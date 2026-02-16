@@ -9,7 +9,7 @@ SET
   status_reason = $7::text,
   tags = COALESCE($8::text[], '{}'),
   metadata = COALESCE($9::jsonb, '{}'::jsonb),
-  vault_file_path = $10::text
+  source_path = $10::text
 WHERE id = $1::uuid
 RETURNING
   id,

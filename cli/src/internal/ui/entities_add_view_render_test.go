@@ -47,4 +47,3 @@ func TestEntitiesCommitAddScopeNormalizesAndDedupes(t *testing.T) {
 	model.commitAddScope()
 	assert.Equal(t, []string{"public"}, model.addScopes)
 }
-

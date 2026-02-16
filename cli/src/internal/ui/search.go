@@ -12,29 +12,29 @@ import (
 )
 
 type searchResultsMsg struct {
-	query     string
-	mode      string
-	entities  []api.Entity
-	knowledge []api.Knowledge
-	jobs      []api.Job
-	semantic  []api.SemanticSearchResult
+	query    string
+	mode     string
+	entities []api.Entity
+	context  []api.Context
+	jobs     []api.Job
+	semantic []api.SemanticSearchResult
 }
 
 type searchSelectionMsg struct {
-	kind      string
-	entity    *api.Entity
-	knowledge *api.Knowledge
-	job       *api.Job
+	kind    string
+	entity  *api.Entity
+	context *api.Context
+	job     *api.Job
 }
 
 type searchEntry struct {
-	kind      string
-	id        string
-	label     string
-	desc      string
-	entity    *api.Entity
-	knowledge *api.Knowledge
-	job       *api.Job
+	kind    string
+	id      string
+	label   string
+	desc    string
+	entity  *api.Entity
+	context *api.Context
+	job     *api.Job
 }
 
 type SearchModel struct {
@@ -79,7 +79,7 @@ func (m SearchModel) Update(msg tea.Msg) (SearchModel, tea.Cmd) {
 		if m.mode == searchModeSemantic {
 			m.items = buildSemanticEntries(msg.semantic)
 		} else {
-			m.items = buildSearchEntries(msg.query, msg.entities, msg.knowledge, msg.jobs)
+			m.items = buildSearchEntries(msg.query, msg.entities, msg.context, msg.jobs)
 		}
 		labels := make([]string, len(m.items))
 		for i, item := range m.items {
@@ -317,22 +317,22 @@ func (m SearchModel) renderSearchPreview(entry searchEntry, width int) string {
 		if len(entry.entity.Tags) > 0 {
 			lines = append(lines, renderPreviewRow("Tags", strings.Join(entry.entity.Tags, ", "), width))
 		}
-	} else if entry.knowledge != nil {
-		src := strings.TrimSpace(components.SanitizeOneLine(entry.knowledge.SourceType))
+	} else if entry.context != nil {
+		src := strings.TrimSpace(components.SanitizeOneLine(entry.context.SourceType))
 		if src != "" {
 			lines = append(lines, renderPreviewRow("Source", src, width))
 		}
-		status := strings.TrimSpace(components.SanitizeOneLine(entry.knowledge.Status))
+		status := strings.TrimSpace(components.SanitizeOneLine(entry.context.Status))
 		if status != "" {
 			lines = append(lines, renderPreviewRow("Status", status, width))
 		}
-		if entry.knowledge.URL != nil && strings.TrimSpace(*entry.knowledge.URL) != "" {
-			lines = append(lines, renderPreviewRow("URL", strings.TrimSpace(*entry.knowledge.URL), width))
+		if entry.context.URL != nil && strings.TrimSpace(*entry.context.URL) != "" {
+			lines = append(lines, renderPreviewRow("URL", strings.TrimSpace(*entry.context.URL), width))
 		}
-		if len(entry.knowledge.Tags) > 0 {
-			lines = append(lines, renderPreviewRow("Tags", strings.Join(entry.knowledge.Tags, ", "), width))
+		if len(entry.context.Tags) > 0 {
+			lines = append(lines, renderPreviewRow("Tags", strings.Join(entry.context.Tags, ", "), width))
 		}
-		if snippet := previewStringValue(entry.knowledge.Metadata, "snippet"); snippet != "" {
+		if snippet := previewStringValue(entry.context.Metadata, "snippet"); snippet != "" {
 			lines = append(lines, renderPreviewRow("Snippet", snippet, width))
 		}
 	} else if entry.job != nil {
@@ -363,7 +363,7 @@ func (m *SearchModel) search(query string) tea.Cmd {
 	mode := m.mode
 	return func() tea.Msg {
 		if mode == searchModeSemantic {
-			results, err := m.client.SemanticSearch(q, []string{"entity", "knowledge"}, 20)
+			results, err := m.client.SemanticSearch(q, []string{"entity", "context"}, 20)
 			if err != nil {
 				return errMsg{err}
 			}
@@ -380,7 +380,7 @@ func (m *SearchModel) search(query string) tea.Cmd {
 		if err != nil {
 			return errMsg{err}
 		}
-		knowledge, err := m.client.QueryKnowledge(api.QueryParams{
+		context, err := m.client.QueryContext(api.QueryParams{
 			"search_text": q,
 			"limit":       "20",
 		})
@@ -395,11 +395,11 @@ func (m *SearchModel) search(query string) tea.Cmd {
 			return errMsg{err}
 		}
 		return searchResultsMsg{
-			query:     q,
-			mode:      mode,
-			entities:  filterEntitiesByQuery(entities, q),
-			knowledge: filterKnowledgeByQuery(knowledge, q),
-			jobs:      filterJobsByQuery(jobs, q),
+			query:    q,
+			mode:     mode,
+			entities: filterEntitiesByQuery(entities, q),
+			context:  filterContextByQuery(context, q),
+			jobs:     filterJobsByQuery(jobs, q),
 		}
 	}
 }
@@ -415,13 +415,13 @@ func (m SearchModel) emitSelection(entry searchEntry) tea.Cmd {
 				}
 				return searchSelectionMsg{kind: entry.kind, entity: item}
 			}
-		case "knowledge":
-			if entry.knowledge == nil {
-				item, err := m.client.GetKnowledge(entry.id)
+		case "context":
+			if entry.context == nil {
+				item, err := m.client.GetContext(entry.id)
 				if err != nil {
 					return errMsg{err}
 				}
-				return searchSelectionMsg{kind: entry.kind, knowledge: item}
+				return searchSelectionMsg{kind: entry.kind, context: item}
 			}
 		case "job":
 			if entry.job == nil {
@@ -433,10 +433,10 @@ func (m SearchModel) emitSelection(entry searchEntry) tea.Cmd {
 			}
 		}
 		return searchSelectionMsg{
-			kind:      entry.kind,
-			entity:    entry.entity,
-			knowledge: entry.knowledge,
-			job:       entry.job,
+			kind:    entry.kind,
+			entity:  entry.entity,
+			context: entry.context,
+			job:     entry.job,
 		}
 	}
 }
@@ -467,8 +467,8 @@ func buildSemanticEntries(items []api.SemanticSearchResult) []searchEntry {
 	return out
 }
 
-func buildSearchEntries(query string, entities []api.Entity, knowledge []api.Knowledge, jobs []api.Job) []searchEntry {
-	items := make([]searchEntry, 0, len(entities)+len(knowledge)+len(jobs))
+func buildSearchEntries(query string, entities []api.Entity, context []api.Context, jobs []api.Job) []searchEntry {
+	items := make([]searchEntry, 0, len(entities)+len(context)+len(jobs))
 	for _, e := range entities {
 		kind := "entity"
 		descType := e.Type
@@ -484,19 +484,19 @@ func buildSearchEntries(query string, entities []api.Entity, knowledge []api.Kno
 			entity: &entity,
 		})
 	}
-	for _, k := range knowledge {
-		kind := "knowledge"
+	for _, k := range context {
+		kind := "context"
 		descType := k.SourceType
 		if descType == "" {
-			descType = "knowledge"
+			descType = "context"
 		}
-		knowledgeItem := k
+		contextItem := k
 		items = append(items, searchEntry{
-			kind:      kind,
-			id:        k.ID,
-			label:     components.SanitizeText(k.Name),
-			desc:      components.SanitizeText(fmt.Sprintf("%s · %s", descType, shortID(k.ID))),
-			knowledge: &knowledgeItem,
+			kind:    kind,
+			id:      k.ID,
+			label:   components.SanitizeText(k.Name),
+			desc:    components.SanitizeText(fmt.Sprintf("%s · %s", descType, shortID(k.ID))),
+			context: &contextItem,
 		})
 	}
 	for _, j := range jobs {
@@ -533,12 +533,12 @@ func filterEntitiesByQuery(items []api.Entity, query string) []api.Entity {
 	return out
 }
 
-func filterKnowledgeByQuery(items []api.Knowledge, query string) []api.Knowledge {
+func filterContextByQuery(items []api.Context, query string) []api.Context {
 	q := strings.ToLower(strings.TrimSpace(query))
 	if q == "" {
 		return items
 	}
-	out := make([]api.Knowledge, 0, len(items))
+	out := make([]api.Context, 0, len(items))
 	for _, k := range items {
 		if strings.Contains(strings.ToLower(k.Name), q) || strings.Contains(strings.ToLower(k.ID), q) {
 			out = append(out, k)

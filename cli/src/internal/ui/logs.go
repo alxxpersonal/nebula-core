@@ -381,7 +381,7 @@ func (m LogsModel) renderList() string {
 			components.ClampTextWidthEllipsis(typ, typeWidth),
 			components.ClampTextWidthEllipsis(value, valueWidth),
 			components.ClampTextWidthEllipsis(status, statusWidth),
-			at.Format("01-02 15:04"),
+			formatLocalTimeCompact(at),
 		})
 	}
 
@@ -441,7 +441,7 @@ func (m LogsModel) renderLogPreview(l api.Log, width int) string {
 	lines = append(lines, "")
 
 	lines = append(lines, renderPreviewRow("Status", status, width))
-	lines = append(lines, renderPreviewRow("At", at.Format("2006-01-02 15:04"), width))
+	lines = append(lines, renderPreviewRow("At", formatLocalTimeFull(at), width))
 	if len(l.Tags) > 0 {
 		lines = append(lines, renderPreviewRow("Tags", strings.Join(l.Tags, ", "), width))
 	}
@@ -536,7 +536,7 @@ func (m LogsModel) renderDetail() string {
 	rows := []components.TableRow{
 		{Label: "ID", Value: l.ID},
 		{Label: "Type", Value: l.LogType},
-		{Label: "Timestamp", Value: l.Timestamp.Format("2006-01-02 15:04")},
+		{Label: "Timestamp", Value: formatLocalTimeFull(l.Timestamp)},
 	}
 	if l.Status != "" {
 		rows = append(rows, components.TableRow{Label: "Status", Value: l.Status})
@@ -544,9 +544,9 @@ func (m LogsModel) renderDetail() string {
 	if len(l.Tags) > 0 {
 		rows = append(rows, components.TableRow{Label: "Tags", Value: strings.Join(l.Tags, ", ")})
 	}
-	rows = append(rows, components.TableRow{Label: "Created", Value: l.CreatedAt.Format("2006-01-02 15:04")})
+	rows = append(rows, components.TableRow{Label: "Created", Value: formatLocalTimeFull(l.CreatedAt)})
 	if !l.UpdatedAt.IsZero() {
-		rows = append(rows, components.TableRow{Label: "Updated", Value: l.UpdatedAt.Format("2006-01-02 15:04")})
+		rows = append(rows, components.TableRow{Label: "Updated", Value: formatLocalTimeFull(l.UpdatedAt)})
 	}
 
 	sections := []string{components.Table("Log", rows, m.width)}

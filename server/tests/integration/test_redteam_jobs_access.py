@@ -163,7 +163,6 @@ async def test_create_job_denies_agent_spoofing(db_pool, enums):
     ctx = _make_context(db_pool, enums, other)
     payload = CreateJobInput(
         title="Injected Job",
-        status="active",
         priority="medium",
         agent_id=str(owner["id"]),
     )

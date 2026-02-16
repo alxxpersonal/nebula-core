@@ -67,11 +67,11 @@ func TestAppHelpAndQuitConfirmViewsRender(t *testing.T) {
 	assert.Contains(t, cleanHelp, "Help")
 	assert.Contains(t, cleanHelp, "esc to close")
 
-	// Trigger quit confirm by creating an unsaved knowledge draft.
+	// Trigger quit confirm by creating an unsaved context draft.
 	app = NewApp(client, &config.Config{})
 	model, _ = app.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 	app = model.(App)
-	app.know.view = knowledgeViewAdd
+	app.know.view = contextViewAdd
 	app.know.fields[fieldTitle].value = "draft"
 
 	model, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})

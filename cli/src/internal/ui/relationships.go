@@ -362,7 +362,7 @@ func (m RelationshipsModel) renderList() string {
 		if status == "" {
 			status = "-"
 		}
-		when := rel.CreatedAt.Format("01-02 15:04")
+		when := formatLocalTimeCompact(rel.CreatedAt)
 
 		if m.list.IsSelected(absIdx) {
 			activeRowRel = len(tableRows)
@@ -429,7 +429,7 @@ func (m RelationshipsModel) renderDetail() string {
 		{Label: "Status", Value: rel.Status},
 		{Label: "Source", Value: m.displayNode(rel.SourceID, rel.SourceType, rel.SourceName)},
 		{Label: "Target", Value: m.displayNode(rel.TargetID, rel.TargetType, rel.TargetName)},
-		{Label: "Created", Value: rel.CreatedAt.Format("2006-01-02 15:04")},
+		{Label: "Created", Value: formatLocalTimeFull(rel.CreatedAt)},
 	}
 
 	sections := []string{components.Table("Relationship", rows, m.width)}
@@ -471,7 +471,7 @@ func (m RelationshipsModel) renderRelationshipPreview(rel api.Relationship, widt
 	lines = append(lines, renderPreviewRow("From", source, width))
 	lines = append(lines, renderPreviewRow("To", target, width))
 	lines = append(lines, renderPreviewRow("Status", status, width))
-	lines = append(lines, renderPreviewRow("At", rel.CreatedAt.Format("01-02 15:04"), width))
+	lines = append(lines, renderPreviewRow("At", formatLocalTimeCompact(rel.CreatedAt), width))
 
 	return padPreviewLines(lines, width)
 }
@@ -1150,8 +1150,8 @@ func (m RelationshipsModel) loadRelationshipNames(items []api.Relationship) tea.
 				if err == nil && ent != nil && ent.Name != "" {
 					names[id] = ent.Name
 				}
-			case "knowledge":
-				ki, err := m.client.GetKnowledge(id)
+			case "context":
+				ki, err := m.client.GetContext(id)
 				if err == nil && ki != nil && ki.Name != "" {
 					names[id] = ki.Name
 				}
@@ -1191,8 +1191,8 @@ func (m RelationshipsModel) displayNode(id, typ, name string) string {
 	switch strings.TrimSpace(typ) {
 	case "", "entity":
 		return "unknown entity"
-	case "knowledge":
-		return "unknown knowledge"
+	case "context":
+		return "unknown context"
 	case "job":
 		return "unknown job"
 	default:

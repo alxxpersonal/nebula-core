@@ -276,8 +276,8 @@ func runImport(client *api.Client, resource, format, path string) tea.Msg {
 	switch resource {
 	case "entities":
 		result, err = client.ImportEntities(payload)
-	case "knowledge":
-		result, err = client.ImportKnowledge(payload)
+	case "context":
+		result, err = client.ImportContext(payload)
 	case "relationships":
 		result, err = client.ImportRelationships(payload)
 	case "jobs":
@@ -313,13 +313,13 @@ func runExport(client *api.Client, resource, format, path string) tea.Msg {
 	switch resource {
 	case "entities":
 		result, err = client.ExportEntities(params)
-	case "knowledge":
-		result, err = client.ExportKnowledge(params)
+	case "context":
+		result, err = client.ExportContextItems(params)
 	case "relationships":
 		result, err = client.ExportRelationships(params)
 	case "jobs":
 		result, err = client.ExportJobs(params)
-	case "context":
+	case "snapshot":
 		result, err = client.ExportContext(params)
 	default:
 		return importExportErrorMsg{err: fmt.Errorf("unknown export resource")}
@@ -346,16 +346,16 @@ func importExportResourcesForMode(mode importExportMode) []importExportResource 
 	if mode == importMode {
 		return []importExportResource{
 			{label: "Entities", value: "entities"},
-			{label: "Knowledge", value: "knowledge"},
+			{label: "Context", value: "context"},
 			{label: "Relationships", value: "relationships"},
 			{label: "Jobs", value: "jobs"},
 		}
 	}
 	return []importExportResource{
 		{label: "Entities", value: "entities"},
-		{label: "Knowledge", value: "knowledge"},
+		{label: "Context", value: "context"},
 		{label: "Relationships", value: "relationships"},
 		{label: "Jobs", value: "jobs"},
-		{label: "Context", value: "context"},
+		{label: "Snapshot", value: "snapshot"},
 	}
 }

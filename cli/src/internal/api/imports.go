@@ -10,16 +10,16 @@ type BulkImportRequest struct {
 
 // ImportEntities sends a bulk entity import request.
 func (c *Client) ImportEntities(payload BulkImportRequest) (*BulkImportResult, error) {
-	data, err := c.post("/api/imports/entities", payload)
+	data, err := c.post("/api/import/entities", payload)
 	if err != nil {
 		return nil, err
 	}
 	return decodeOne[BulkImportResult](data)
 }
 
-// ImportKnowledge sends a bulk knowledge import request.
-func (c *Client) ImportKnowledge(payload BulkImportRequest) (*BulkImportResult, error) {
-	data, err := c.post("/api/imports/knowledge", payload)
+// ImportContext sends a bulk context import request.
+func (c *Client) ImportContext(payload BulkImportRequest) (*BulkImportResult, error) {
+	data, err := c.post("/api/import/context", payload)
 	if err != nil {
 		return nil, err
 	}
@@ -28,7 +28,7 @@ func (c *Client) ImportKnowledge(payload BulkImportRequest) (*BulkImportResult, 
 
 // ImportRelationships sends a bulk relationship import request.
 func (c *Client) ImportRelationships(payload BulkImportRequest) (*BulkImportResult, error) {
-	data, err := c.post("/api/imports/relationships", payload)
+	data, err := c.post("/api/import/relationships", payload)
 	if err != nil {
 		return nil, err
 	}
@@ -37,7 +37,7 @@ func (c *Client) ImportRelationships(payload BulkImportRequest) (*BulkImportResu
 
 // ImportJobs sends a bulk job import request.
 func (c *Client) ImportJobs(payload BulkImportRequest) (*BulkImportResult, error) {
-	data, err := c.post("/api/imports/jobs", payload)
+	data, err := c.post("/api/import/jobs", payload)
 	if err != nil {
 		return nil, err
 	}

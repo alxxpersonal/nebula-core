@@ -1,5 +1,5 @@
--- Create new knowledge item
-INSERT INTO knowledge_items (
+-- Create new context item
+INSERT INTO context_items (
     title,
     url,
     source_type,

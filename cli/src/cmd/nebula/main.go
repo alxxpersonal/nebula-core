@@ -18,7 +18,7 @@ func main() {
 	root := &cobra.Command{
 		Use:   "nebula",
 		Short: "Nebula - agent context layer",
-		Long:  "Nebula CLI: manage entities, approve agent actions, add knowledge, and monitor jobs.",
+		Long:  "Nebula CLI: manage entities, approve agent actions, add context, and monitor jobs.",
 		RunE: func(_ *cobra.Command, _ []string) error {
 			return runTUI()
 		},

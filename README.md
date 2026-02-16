@@ -21,11 +21,11 @@ Just as developers need GitHub to collaborate on code, agents need Nebula to col
 ## Data model
 
 - Entities: people, orgs, tools, projects
-- Knowledge items: articles, notes, videos, papers
+- Context items: articles, notes, videos, papers
 - Relationships: polymorphic graph edges with properties
 - Jobs: tasks with priorities and subtasks
 - Logs: structured events and notes
-- Files: file metadata with links to entities or knowledge
+- Files: file metadata with links to entities or context
 - Protocols: system rules stored in the database
 - Agents: identities, scopes, and capabilities
 - Approvals: gatekeeper for untrusted actions
@@ -123,7 +123,7 @@ nebula-core/
 
 ## MCP toolset
 
-The MCP server exposes tools across entities, knowledge, relationships, jobs, files, protocols, approvals, and audit. See `server/src/nebula_mcp/server.py` and the SQL under `server/src/queries/` for the full list.
+The MCP server exposes tools across entities, context, relationships, jobs, files, protocols, approvals, and audit. See `server/src/nebula_mcp/server.py` and the SQL under `server/src/queries/` for the full list.
 
 ## License
 

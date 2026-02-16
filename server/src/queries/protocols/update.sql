@@ -10,7 +10,7 @@ SET
     tags = COALESCE($8, tags),
     trusted = COALESCE($9, trusted),
     metadata = COALESCE($10::jsonb, metadata),
-    vault_file_path = COALESCE($11, vault_file_path)
+    source_path = COALESCE($11, source_path)
 WHERE name = $1
 RETURNING
     id,
@@ -24,6 +24,6 @@ RETURNING
     tags,
     trusted,
     metadata,
-    vault_file_path,
+    source_path,
     created_at,
     updated_at;

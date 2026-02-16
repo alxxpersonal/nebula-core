@@ -57,8 +57,8 @@ async def _file_visible(
                 scopes = row.get("privacy_scope_ids") or []
                 if scopes and not any(s in scope_ids for s in scopes):
                     return False
-            if rel_type == "knowledge":
-                row = await pool.fetchrow(QUERIES["knowledge/get"], rel_id, None)
+            if rel_type == "context":
+                row = await pool.fetchrow(QUERIES["context/get"], rel_id, None)
                 if not row:
                     return False
                 scopes = row.get("privacy_scope_ids") or []
@@ -78,7 +78,8 @@ class CreateFileBody(BaseModel):
     """Payload for creating a file entry."""
 
     filename: str
-    file_path: str
+    uri: str | None = None
+    file_path: str | None = None
     mime_type: str | None = None
     size_bytes: int | None = None
     checksum: str | None = None
@@ -91,6 +92,7 @@ class UpdateFileBody(BaseModel):
     """Payload for updating a file entry."""
 
     filename: str | None = None
+    uri: str | None = None
     file_path: str | None = None
     mime_type: str | None = None
     size_bytes: int | None = None
@@ -171,6 +173,12 @@ async def create_file(
     data = payload.model_dump()
     if data.get("metadata") is None:
         data["metadata"] = {}
+    if not data.get("uri") and not data.get("file_path"):
+        api_error("INVALID_INPUT", "uri or file_path is required", 400)
+    if not data.get("uri") and data.get("file_path"):
+        data["uri"] = data["file_path"]
+    if not data.get("file_path") and data.get("uri"):
+        data["file_path"] = data["uri"]
 
     # Validate taxonomy-backed fields before queuing approvals.
     try:
@@ -206,6 +214,10 @@ async def update_file(
 
     data = payload.model_dump()
     data["file_id"] = file_id
+    if data.get("uri") is None and data.get("file_path") is not None:
+        data["uri"] = data["file_path"]
+    if data.get("file_path") is None and data.get("uri") is not None:
+        data["file_path"] = data["uri"]
 
     if auth["caller_type"] == "agent" and not await _file_visible(
         pool, enums, auth, file_id

@@ -359,7 +359,7 @@ async def execute_update_job(
         Updated job row as dict.
     """
 
-    from .models import UpdateJobInput
+    from .models import UpdateJobInput, parse_optional_datetime
 
     if isinstance(change_details, str):
         change_details = json.loads(change_details)
@@ -369,6 +369,7 @@ async def execute_update_job(
     status_id = None
     if payload.status:
         status_id = require_status(payload.status, enums)
+    due_at = parse_optional_datetime(payload.due_at, "due_at")
 
     row = await pool.fetchrow(
         QUERIES["jobs/update"],
@@ -378,6 +379,8 @@ async def execute_update_job(
         status_id,
         payload.priority,
         json.dumps(payload.metadata) if payload.metadata is not None else None,
+        payload.assigned_to,
+        due_at,
     )
 
     if not row:

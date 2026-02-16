@@ -7,6 +7,7 @@ from pydantic import ValidationError
 from nebula_mcp.models import (
     BaseMetadata,
     ContextSegment,
+    CreateJobInput,
     CourseMetadata,
     CreateEntityInput,
     FrameworkMetadata,
@@ -298,6 +299,16 @@ class TestQueryFilterModels:
         assert q.limit == 50
         assert q.overdue_only is False
         assert q.status_names == []
+
+    def test_create_job_rejects_unknown_status_field(self):
+        """CreateJobInput should reject unsupported status field payloads."""
+
+        with pytest.raises(ValidationError):
+            CreateJobInput(
+                title="Queue Probe",
+                priority="medium",
+                status="todo",
+            )
 
     def test_update_entity_only_required(self):
         """UpdateEntityInput only requires entity_id."""

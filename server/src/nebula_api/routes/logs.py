@@ -56,8 +56,8 @@ async def _log_visible(pool: Any, enums: Any, auth: dict, log_id: str) -> bool:
                 scopes = row.get("privacy_scope_ids") or []
                 if scopes and not any(s in scope_ids for s in scopes):
                     return False
-            if rel_type == "knowledge":
-                row = await pool.fetchrow(QUERIES["knowledge/get"], rel_id, None)
+            if rel_type == "context":
+                row = await pool.fetchrow(QUERIES["context/get"], rel_id, None)
                 if not row:
                     return False
                 scopes = row.get("privacy_scope_ids") or []

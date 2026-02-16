@@ -2,6 +2,7 @@
 SELECT
     f.id,
     f.filename,
+    f.uri,
     f.file_path,
     f.mime_type,
     f.size_bytes,

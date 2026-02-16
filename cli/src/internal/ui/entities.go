@@ -986,7 +986,7 @@ func (m EntitiesModel) renderList() string {
 			components.ClampTextWidthEllipsis(displayName, nameWidth),
 			components.ClampTextWidthEllipsis(typ, typeWidth),
 			components.ClampTextWidthEllipsis(status, statusWidth),
-			at.Format("01-02 15:04"),
+			formatLocalTimeCompact(at),
 		})
 	}
 
@@ -1052,7 +1052,7 @@ func (m EntitiesModel) renderEntityPreview(e api.Entity, width int) string {
 
 	lines = append(lines, renderPreviewRow("Type", typ, width))
 	lines = append(lines, renderPreviewRow("Status", status, width))
-	lines = append(lines, renderPreviewRow("At", at.Format("01-02 15:04"), width))
+	lines = append(lines, renderPreviewRow("At", formatLocalTimeCompact(at), width))
 
 	if len(e.PrivacyScopeIDs) > 0 {
 		lines = append(lines, renderPreviewRow("Scopes", m.formatEntityScopes(e.PrivacyScopeIDs), width))
@@ -1294,12 +1294,12 @@ func (m EntitiesModel) renderDetail() string {
 	if len(e.PrivacyScopeIDs) > 0 {
 		rows = append(rows, components.TableRow{Label: "Scopes", Value: m.formatEntityScopes(e.PrivacyScopeIDs)})
 	}
-	rows = append(rows, components.TableRow{Label: "Created", Value: e.CreatedAt.Format("2006-01-02 15:04")})
+	rows = append(rows, components.TableRow{Label: "Created", Value: formatLocalTimeFull(e.CreatedAt)})
 	if !e.UpdatedAt.IsZero() {
-		rows = append(rows, components.TableRow{Label: "Updated", Value: e.UpdatedAt.Format("2006-01-02 15:04")})
+		rows = append(rows, components.TableRow{Label: "Updated", Value: formatLocalTimeFull(e.UpdatedAt)})
 	}
-	if e.VaultFilePath != nil && *e.VaultFilePath != "" {
-		rows = append(rows, components.TableRow{Label: "Vault Path", Value: *e.VaultFilePath})
+	if e.SourcePath != nil && *e.SourcePath != "" {
+		rows = append(rows, components.TableRow{Label: "Source Path", Value: *e.SourcePath})
 	}
 
 	sections := []string{components.Table("Entity", rows, m.width)}
@@ -1445,7 +1445,7 @@ func (m EntitiesModel) renderHistory() string {
 		}
 
 		tableRows = append(tableRows, []string{
-			entry.ChangedAt.Format("01-02 15:04"),
+			formatLocalTimeCompact(entry.ChangedAt),
 			components.ClampTextWidthEllipsis(strings.ToUpper(action), actionWidth),
 			components.ClampTextWidthEllipsis(fields, fieldsWidth),
 		})
@@ -1479,7 +1479,7 @@ func (m EntitiesModel) renderEntityHistoryPreview(entry api.AuditEntry, width in
 	if action == "" {
 		action = "update"
 	}
-	heading := strings.ToUpper(action) + " @ " + entry.ChangedAt.Format("2006-01-02 15:04")
+	heading := strings.ToUpper(action) + " @ " + formatLocalTimeFull(entry.ChangedAt)
 
 	var lines []string
 	lines = append(lines, MetaKeyStyle.Render("Selected"))
@@ -1489,7 +1489,7 @@ func (m EntitiesModel) renderEntityHistoryPreview(entry api.AuditEntry, width in
 	lines = append(lines, "")
 
 	lines = append(lines, renderPreviewRow("Action", strings.ToUpper(action), width))
-	lines = append(lines, renderPreviewRow("At", entry.ChangedAt.Format("2006-01-02 15:04"), width))
+	lines = append(lines, renderPreviewRow("At", formatLocalTimeFull(entry.ChangedAt), width))
 	if len(entry.ChangedFields) > 0 {
 		lines = append(lines, renderPreviewRow("Fields", strings.Join(entry.ChangedFields, ", "), width))
 	}
@@ -1898,7 +1898,7 @@ func (m EntitiesModel) renderConfirm() string {
 		if m.confirmAudit != nil {
 			summary = append(summary, components.TableRow{
 				Label: "Changed At",
-				Value: m.confirmAudit.ChangedAt.Format("2006-01-02 15:04"),
+				Value: formatLocalTimeFull(m.confirmAudit.ChangedAt),
 			})
 			for _, row := range buildAuditDiffRows(*m.confirmAudit) {
 				diffs = append(diffs, row)
@@ -2016,7 +2016,7 @@ func (m EntitiesModel) renderRelationships() string {
 		{Label: "Status", Value: rel.Status},
 		{Label: "Direction", Value: direction},
 		{Label: "Other", Value: other},
-		{Label: "Created", Value: rel.CreatedAt.Format("2006-01-02 15:04")},
+		{Label: "Created", Value: formatLocalTimeFull(rel.CreatedAt)},
 	}
 
 	sections := []string{components.Table("Relationship", rows, m.width)}
@@ -2579,7 +2579,7 @@ func formatHistoryLine(entry api.AuditEntry) string {
 	if action == "" {
 		action = "update"
 	}
-	when := entry.ChangedAt.Format("2006-01-02 15:04")
+	when := formatLocalTimeFull(entry.ChangedAt)
 	fieldCount := len(entry.ChangedFields)
 	fields := ""
 	if fieldCount > 0 {

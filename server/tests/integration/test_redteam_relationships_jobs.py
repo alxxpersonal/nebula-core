@@ -8,8 +8,12 @@ from unittest.mock import MagicMock
 import pytest
 
 # Local
-from nebula_mcp.models import GetRelationshipsInput, QueryRelationshipsInput
-from nebula_mcp.server import get_relationships, query_relationships
+from nebula_mcp.models import (
+    CreateRelationshipInput,
+    GetRelationshipsInput,
+    QueryRelationshipsInput,
+)
+from nebula_mcp.server import create_relationship, get_relationships, query_relationships
 
 
 def _make_context(pool, enums, agent):
@@ -163,3 +167,25 @@ async def test_query_relationships_hides_out_of_scope_job_links(db_pool, enums):
     ids = {row["id"] for row in results}
 
     assert rel["id"] not in ids
+
+
+@pytest.mark.asyncio
+async def test_create_relationship_accepts_job_id_format(db_pool, enums):
+    """Relationship create should accept canonical job IDs for job nodes."""
+
+    owner = await _make_agent(db_pool, enums, "rel-owner-3", ["public"])
+    entity = await _make_entity(db_pool, enums, "Public Node 3", ["public"])
+    job = await _make_job(db_pool, enums, "Public Job 3", owner["id"], ["public"])
+
+    ctx = _make_context(db_pool, enums, owner)
+    payload = CreateRelationshipInput(
+        source_type="entity",
+        source_id=str(entity["id"]),
+        target_type="job",
+        target_id=job["id"],
+        relationship_type="related-to",
+        properties={},
+    )
+    result = await create_relationship(payload, ctx)
+    assert result["target_type"] == "job"
+    assert result["target_id"] == job["id"]

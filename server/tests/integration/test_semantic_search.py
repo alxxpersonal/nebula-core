@@ -33,14 +33,14 @@ async def _insert_entity(db_pool, enums, *, name: str, scopes: list[str], summar
     return str(row["id"])
 
 
-async def _insert_knowledge(
+async def _insert_context(
     db_pool, enums, *, title: str, scopes: list[str], content: str
 ):
     status_id = enums.statuses.name_to_id["active"]
     scope_ids = [enums.scopes.name_to_id[s] for s in scopes]
     row = await db_pool.fetchrow(
         """
-        INSERT INTO knowledge_items (title, source_type, content, status_id, privacy_scope_ids, tags, metadata)
+        INSERT INTO context_items (title, source_type, content, status_id, privacy_scope_ids, tags, metadata)
         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
         RETURNING id
         """,
@@ -56,7 +56,7 @@ async def _insert_knowledge(
 
 
 async def test_semantic_search_tool_happy_path(mock_mcp_context, db_pool, enums):
-    """MCP semantic search should return ranked entity and knowledge matches."""
+    """MCP semantic search should return ranked entity and context matches."""
 
     entity_id = await _insert_entity(
         db_pool,
@@ -65,7 +65,7 @@ async def test_semantic_search_tool_happy_path(mock_mcp_context, db_pool, enums)
         scopes=["public"],
         summary="Shared memory system for agents",
     )
-    knowledge_id = await _insert_knowledge(
+    context_id = await _insert_context(
         db_pool,
         enums,
         title="Memory Retrieval Guide",
@@ -79,7 +79,7 @@ async def test_semantic_search_tool_happy_path(mock_mcp_context, db_pool, enums)
     )
     ids = {row["id"] for row in rows}
     assert entity_id in ids
-    assert knowledge_id in ids
+    assert context_id in ids
 
 
 async def test_semantic_search_tool_scope_enforced(untrusted_mcp_context, db_pool, enums):

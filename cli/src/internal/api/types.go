@@ -53,7 +53,7 @@ type Entity struct {
 	PrivacyScopeIDs []string  `json:"privacy_scope_ids,omitempty"`
 	Tags            []string  `json:"tags"`
 	Metadata        JSONMap   `json:"metadata"`
-	VaultFilePath   *string   `json:"vault_file_path,omitempty"`
+	SourcePath      *string   `json:"source_path,omitempty"`
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`
 }
@@ -97,12 +97,13 @@ type BulkUpdateResult struct {
 	EntityIDs []string `json:"entity_ids"`
 }
 
-// --- Knowledge ---
+// --- Context ---
 
-// Knowledge represents a piece of information or documentation.
-type Knowledge struct {
+// Context represents a piece of information or documentation.
+type Context struct {
 	ID              string    `json:"id"`
-	Name            string    `json:"name"`
+	Title           string    `json:"title"`
+	Name            string    `json:"name,omitempty"`
 	URL             *string   `json:"url,omitempty"`
 	SourceType      string    `json:"source_type,omitempty"`
 	Content         *string   `json:"content,omitempty"`
@@ -110,13 +111,30 @@ type Knowledge struct {
 	Status          string    `json:"status,omitempty"`
 	Tags            []string  `json:"tags"`
 	Metadata        JSONMap   `json:"metadata"`
-	VaultFilePath   *string   `json:"vault_file_path,omitempty"`
+	SourcePath      *string   `json:"source_path,omitempty"`
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`
 }
 
-// CreateKnowledgeInput defines the fields required to create new knowledge.
-type CreateKnowledgeInput struct {
+// UnmarshalJSON keeps compatibility with legacy payloads that still return name.
+func (c *Context) UnmarshalJSON(data []byte) error {
+	type rawContext Context
+	var raw rawContext
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	*c = Context(raw)
+	if c.Title == "" && c.Name != "" {
+		c.Title = c.Name
+	}
+	if c.Name == "" && c.Title != "" {
+		c.Name = c.Title
+	}
+	return nil
+}
+
+// CreateContextInput defines the fields required to create new context.
+type CreateContextInput struct {
 	Title      string         `json:"title"`
 	URL        string         `json:"url,omitempty"`
 	SourceType string         `json:"source_type"`
@@ -126,8 +144,8 @@ type CreateKnowledgeInput struct {
 	Metadata   map[string]any `json:"metadata,omitempty"`
 }
 
-// UpdateKnowledgeInput defines the fields for updating knowledge.
-type UpdateKnowledgeInput struct {
+// UpdateContextInput defines the fields for updating context.
+type UpdateContextInput struct {
 	Title      *string        `json:"title,omitempty"`
 	URL        *string        `json:"url,omitempty"`
 	SourceType *string        `json:"source_type,omitempty"`
@@ -153,7 +171,7 @@ type Protocol struct {
 	Tags         []string  `json:"tags,omitempty"`
 	Trusted      *bool     `json:"trusted,omitempty"`
 	Metadata     JSONMap   `json:"metadata"`
-	VaultFile    *string   `json:"vault_file_path,omitempty"`
+	SourcePath   *string   `json:"source_path,omitempty"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 }
@@ -170,7 +188,7 @@ type CreateProtocolInput struct {
 	Tags         []string       `json:"tags,omitempty"`
 	Trusted      bool           `json:"trusted,omitempty"`
 	Metadata     map[string]any `json:"metadata,omitempty"`
-	VaultFile    *string        `json:"vault_file_path,omitempty"`
+	SourcePath   *string        `json:"source_path,omitempty"`
 }
 
 // UpdateProtocolInput defines the fields for updating a protocol.
@@ -184,7 +202,7 @@ type UpdateProtocolInput struct {
 	Tags         *[]string      `json:"tags,omitempty"`
 	Trusted      *bool          `json:"trusted,omitempty"`
 	Metadata     map[string]any `json:"metadata,omitempty"`
-	VaultFile    *string        `json:"vault_file_path,omitempty"`
+	SourcePath   *string        `json:"source_path,omitempty"`
 }
 
 // --- Logs ---
@@ -228,6 +246,7 @@ type UpdateLogInput struct {
 type File struct {
 	ID        string    `json:"id"`
 	Filename  string    `json:"filename"`
+	URI       string    `json:"uri"`
 	FilePath  string    `json:"file_path"`
 	MimeType  *string   `json:"mime_type,omitempty"`
 	SizeBytes *int64    `json:"size_bytes,omitempty"`
@@ -242,7 +261,8 @@ type File struct {
 // CreateFileInput defines fields for creating a file record.
 type CreateFileInput struct {
 	Filename  string         `json:"filename"`
-	FilePath  string         `json:"file_path"`
+	URI       string         `json:"uri,omitempty"`
+	FilePath  string         `json:"file_path,omitempty"`
 	MimeType  string         `json:"mime_type,omitempty"`
 	SizeBytes *int64         `json:"size_bytes,omitempty"`
 	Checksum  string         `json:"checksum,omitempty"`
@@ -254,6 +274,7 @@ type CreateFileInput struct {
 // UpdateFileInput defines fields for updating a file record.
 type UpdateFileInput struct {
 	Filename  *string        `json:"filename,omitempty"`
+	URI       *string        `json:"uri,omitempty"`
 	FilePath  *string        `json:"file_path,omitempty"`
 	MimeType  *string        `json:"mime_type,omitempty"`
 	SizeBytes *int64         `json:"size_bytes,omitempty"`
@@ -379,12 +400,12 @@ type AuditEntry struct {
 
 // AuditScope represents privacy scope usage stats.
 type AuditScope struct {
-	ID             string  `json:"id"`
-	Name           string  `json:"name"`
-	Description    *string `json:"description"`
-	AgentCount     int     `json:"agent_count"`
-	EntityCount    int     `json:"entity_count"`
-	KnowledgeCount int     `json:"knowledge_count"`
+	ID           string  `json:"id"`
+	Name         string  `json:"name"`
+	Description  *string `json:"description"`
+	AgentCount   int     `json:"agent_count"`
+	EntityCount  int     `json:"entity_count"`
+	ContextCount int     `json:"context_count"`
 }
 
 // AuditActor represents an audit actor and activity summary.

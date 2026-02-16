@@ -32,12 +32,13 @@ func RunInteractiveLogin(in io.Reader, out io.Writer) error {
 	}
 
 	cfg := &config.Config{
-		APIKey:           resp.APIKey,
-		UserEntityID:     resp.EntityID,
-		Username:         resp.Username,
-		Theme:            "dark",
-		VimKeys:          true,
+		APIKey:            resp.APIKey,
+		UserEntityID:      resp.EntityID,
+		Username:          resp.Username,
+		Theme:             "dark",
+		VimKeys:           true,
 		QuickstartPending: true,
+		PendingLimit:      500,
 	}
 
 	if err := cfg.Save(); err != nil {

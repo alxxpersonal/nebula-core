@@ -70,10 +70,10 @@ async def _validate_relationship_node(
         ):
             api_error("FORBIDDEN", "Access denied", 403)
         return
-    if node_type == "knowledge":
-        row = await pool.fetchrow(QUERIES["knowledge/get"], node_id, None)
+    if node_type == "context":
+        row = await pool.fetchrow(QUERIES["context/get"], node_id, None)
         if not row:
-            api_error("NOT_FOUND", "Knowledge not found", 404)
+            api_error("NOT_FOUND", "Context not found", 404)
         if not _has_write_scopes(
             auth.get("scopes", []), row.get("privacy_scope_ids") or []
         ):

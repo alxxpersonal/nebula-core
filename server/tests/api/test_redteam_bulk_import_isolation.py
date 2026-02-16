@@ -201,11 +201,11 @@ async def test_bulk_import_relationships_private_target(db_pool, enums):
 
 
 @pytest.mark.asyncio
-async def test_bulk_import_knowledge_scope_escalation(db_pool, enums):
-    """Agents should not bulk import knowledge with private scopes."""
+async def test_bulk_import_context_scope_escalation(db_pool, enums):
+    """Agents should not bulk import context with private scopes."""
 
     agent = await _make_agent(
-        db_pool, enums, "bulk-knowledge-viewer", ["public"], False
+        db_pool, enums, "bulk-context-viewer", ["public"], False
     )
     app.dependency_overrides[require_auth] = _auth_override(
         agent["id"], ["public"], enums
@@ -217,7 +217,7 @@ async def test_bulk_import_knowledge_scope_escalation(db_pool, enums):
         "format": "json",
         "items": [
             {
-                "title": "Escalated Knowledge",
+                "title": "Escalated Context",
                 "source_type": "note",
                 "content": "secret",
                 "scopes": ["private"],
@@ -229,7 +229,7 @@ async def test_bulk_import_knowledge_scope_escalation(db_pool, enums):
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        resp = await client.post("/api/import/knowledge", json=payload)
+        resp = await client.post("/api/import/context", json=payload)
     app.dependency_overrides.pop(require_auth, None)
 
     assert resp.status_code == 200

@@ -63,7 +63,7 @@ async def _make_approval_request(db_pool, agent_id):
                 "scopes": ["public"],
                 "tags": [],
                 "metadata": {},
-                "vault_file_path": None,
+                "source_path": None,
                 "status": "active",
             }
         ),

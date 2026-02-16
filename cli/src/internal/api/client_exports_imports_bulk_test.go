@@ -24,35 +24,35 @@ func TestExportMethodsBuildPathQueryAndDecode(t *testing.T) {
 	}{
 		{
 			name: "entities",
-			path: "/api/exports/entities",
+			path: "/api/export/entities",
 			call: func(c *Client) (*ExportResult, error) {
 				return c.ExportEntities(QueryParams{"format": "json", "limit": "10"})
 			},
 		},
 		{
-			name: "knowledge",
-			path: "/api/exports/knowledge",
+			name: "context-items",
+			path: "/api/export/context",
 			call: func(c *Client) (*ExportResult, error) {
-				return c.ExportKnowledge(QueryParams{"format": "json", "limit": "10"})
+				return c.ExportContextItems(QueryParams{"format": "json", "limit": "10"})
 			},
 		},
 		{
 			name: "relationships",
-			path: "/api/exports/relationships",
+			path: "/api/export/relationships",
 			call: func(c *Client) (*ExportResult, error) {
 				return c.ExportRelationships(QueryParams{"format": "json", "limit": "10"})
 			},
 		},
 		{
 			name: "jobs",
-			path: "/api/exports/jobs",
+			path: "/api/export/jobs",
 			call: func(c *Client) (*ExportResult, error) {
 				return c.ExportJobs(QueryParams{"format": "json", "limit": "10"})
 			},
 		},
 		{
-			name: "context",
-			path: "/api/exports/context",
+			name: "context-snapshot",
+			path: "/api/export/snapshot",
 			call: func(c *Client) (*ExportResult, error) {
 				return c.ExportContext(QueryParams{"format": "json", "limit": "10"})
 			},
@@ -90,22 +90,22 @@ func TestImportMethodsEncodeBodyAndDecode(t *testing.T) {
 		call func(c *Client) (*BulkImportResult, error)
 	}{
 		{
-			name: "knowledge",
-			path: "/api/imports/knowledge",
+			name: "context",
+			path: "/api/import/context",
 			call: func(c *Client) (*BulkImportResult, error) {
-				return c.ImportKnowledge(BulkImportRequest{Format: "json", Data: "[]"})
+				return c.ImportContext(BulkImportRequest{Format: "json", Data: "[]"})
 			},
 		},
 		{
 			name: "relationships",
-			path: "/api/imports/relationships",
+			path: "/api/import/relationships",
 			call: func(c *Client) (*BulkImportResult, error) {
 				return c.ImportRelationships(BulkImportRequest{Format: "json", Data: "[]"})
 			},
 		},
 		{
 			name: "jobs",
-			path: "/api/imports/jobs",
+			path: "/api/import/jobs",
 			call: func(c *Client) (*BulkImportResult, error) {
 				return c.ImportJobs(BulkImportRequest{Format: "json", Data: "[]"})
 			},

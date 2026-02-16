@@ -13,7 +13,7 @@ import (
 func TestImportEntities(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPost, r.Method)
-		assert.Equal(t, "/api/imports/entities", r.URL.Path)
+		assert.Equal(t, "/api/import/entities", r.URL.Path)
 
 		var body BulkImportRequest
 		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))

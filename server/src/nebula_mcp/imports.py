@@ -156,19 +156,19 @@ def normalize_entity(item: dict[str, Any], defaults: dict[str, Any] | None) -> d
         "scopes": scopes,
         "tags": coerce_list(merged.get("tags")),
         "metadata": coerce_json(merged.get("metadata")),
-        "vault_file_path": coerce_text(merged.get("vault_file_path")),
+        "source_path": coerce_text(merged.get("source_path")),
     }
 
 
-def normalize_knowledge(item: dict[str, Any], defaults: dict[str, Any] | None) -> dict:
-    """Normalize a knowledge payload for bulk import.
+def normalize_context(item: dict[str, Any], defaults: dict[str, Any] | None) -> dict:
+    """Normalize a context payload for bulk import.
 
     Args:
-        item: Raw knowledge dictionary.
+        item: Raw context dictionary.
         defaults: Default values applied to missing fields.
 
     Returns:
-        Normalized knowledge dictionary.
+        Normalized context dictionary.
 
     Raises:
         ValueError: If required fields are missing.
@@ -177,7 +177,7 @@ def normalize_knowledge(item: dict[str, Any], defaults: dict[str, Any] | None) -
     title = coerce_text(merged.get("title"))
     source_type = coerce_text(merged.get("source_type"))
     if not title or not source_type:
-        raise ValueError("Knowledge title and source_type are required")
+        raise ValueError("Context title and source_type are required")
     scopes = coerce_list(merged.get("scopes")) or coerce_list(
         (defaults or {}).get("scopes")
     )
@@ -187,7 +187,7 @@ def normalize_knowledge(item: dict[str, Any], defaults: dict[str, Any] | None) -
     if url:
         url = url.strip()
         if not (url.startswith("http://") or url.startswith("https://")):
-            raise ValueError("Knowledge URL must start with http:// or https://")
+            raise ValueError("Context URL must start with http:// or https://")
     return {
         "title": title,
         "url": url,

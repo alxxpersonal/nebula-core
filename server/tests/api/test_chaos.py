@@ -76,18 +76,18 @@ async def test_malformed_json_rejected(api):
 
 @pytest.mark.asyncio
 async def test_large_payload_and_unicode(api):
-    """Handle large payloads and unicode data in knowledge creation."""
+    """Handle large payloads and unicode data in context creation."""
 
     big_text = "x" * 10_000_000
     payload = {
-        "title": "big-knowledge",
+        "title": "big-context",
         "source_type": "note",
         "content": big_text,
         "scopes": ["public"],
         "tags": ["load"],
         "metadata": {"emoji": "🚀", "lang": "日本語"},
     }
-    resp = await api.post("/api/knowledge", json=payload)
+    resp = await api.post("/api/context", json=payload)
     assert resp.status_code in (200, 202, 413)
 
 

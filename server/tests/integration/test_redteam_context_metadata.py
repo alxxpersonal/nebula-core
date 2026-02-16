@@ -1,4 +1,4 @@
-"""Red team tests for knowledge metadata privacy filtering."""
+"""Red team tests for context metadata privacy filtering."""
 
 # Standard Library
 import json
@@ -8,8 +8,8 @@ from unittest.mock import MagicMock
 import pytest
 
 # Local
-from nebula_mcp.models import QueryKnowledgeInput
-from nebula_mcp.server import query_knowledge
+from nebula_mcp.models import QueryContextInput
+from nebula_mcp.server import query_context
 
 
 def _make_context(pool, enums, agent):
@@ -24,15 +24,15 @@ def _make_context(pool, enums, agent):
     return ctx
 
 
-async def _make_knowledge(db_pool, enums, title, scopes, metadata):
-    """Insert a knowledge item for metadata filtering tests."""
+async def _make_context_item(db_pool, enums, title, scopes, metadata):
+    """Insert a context item for metadata filtering tests."""
 
     status_id = enums.statuses.name_to_id["active"]
     scope_ids = [enums.scopes.name_to_id[s] for s in scopes]
 
     row = await db_pool.fetchrow(
         """
-        INSERT INTO knowledge_items (title, source_type, content, privacy_scope_ids, status_id, tags, metadata)
+        INSERT INTO context_items (title, source_type, content, privacy_scope_ids, status_id, tags, metadata)
         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
         RETURNING *
         """,
@@ -48,7 +48,7 @@ async def _make_knowledge(db_pool, enums, title, scopes, metadata):
 
 
 @pytest.mark.asyncio
-async def test_query_knowledge_filters_context_segments(db_pool, enums):
+async def test_query_context_filters_context_segments(db_pool, enums):
     """Query results should not include context segments outside agent scopes."""
 
     metadata = {
@@ -57,7 +57,7 @@ async def test_query_knowledge_filters_context_segments(db_pool, enums):
             {"text": "private info", "scopes": ["private"]},
         ]
     }
-    await _make_knowledge(
+    await _make_context_item(
         db_pool, enums, "Mixed Scope", ["public", "private"], metadata
     )
 
@@ -67,8 +67,8 @@ async def test_query_knowledge_filters_context_segments(db_pool, enums):
     }
     ctx = _make_context(db_pool, enums, public_agent)
 
-    payload = QueryKnowledgeInput(scopes=["public"])
-    rows = await query_knowledge(payload, ctx)
+    payload = QueryContextInput(scopes=["public"])
+    rows = await query_context(payload, ctx)
     assert rows
     segments = rows[0]["metadata"].get("context_segments", [])
 

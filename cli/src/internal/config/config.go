@@ -10,12 +10,13 @@ import (
 
 // Config holds CLI configuration stored at ~/.nebula/config.
 type Config struct {
-	APIKey       string `yaml:"api_key"`
-	UserEntityID string `yaml:"user_entity_id"`
-	Username     string `yaml:"username"`
-	Theme        string `yaml:"theme"`
-	VimKeys      bool   `yaml:"vim_keys"`
-	QuickstartPending bool `yaml:"quickstart_pending,omitempty"`
+	APIKey            string `yaml:"api_key"`
+	UserEntityID      string `yaml:"user_entity_id"`
+	Username          string `yaml:"username"`
+	Theme             string `yaml:"theme"`
+	VimKeys           bool   `yaml:"vim_keys"`
+	QuickstartPending bool   `yaml:"quickstart_pending,omitempty"`
+	PendingLimit      int    `yaml:"pending_limit,omitempty"`
 }
 
 // Path returns the config file path.
@@ -51,6 +52,9 @@ func Load() (*Config, error) {
 	if cfg.APIKey == "" {
 		return nil, fmt.Errorf("config missing api_key")
 	}
+	if cfg.PendingLimit <= 0 {
+		cfg.PendingLimit = 500
+	}
 
 	return &cfg, nil
 }
@@ -59,6 +63,9 @@ func Load() (*Config, error) {
 func (c *Config) Save() error {
 	path := Path()
 	dir := filepath.Dir(path)
+	if c.PendingLimit <= 0 {
+		c.PendingLimit = 500
+	}
 
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return fmt.Errorf("create config dir: %w", err)

@@ -47,7 +47,7 @@ async def pending_approval(db_pool, untrusted_agent):
                 "scopes": ["public"],
                 "tags": [],
                 "metadata": {},
-                "vault_file_path": None,
+                "source_path": None,
                 "status": "active",
             }
         ),
@@ -382,8 +382,8 @@ async def test_get_approval_diff_create_job(api, db_pool, untrusted_agent, auth_
 
 
 @pytest.mark.asyncio
-async def test_get_approval_diff_create_knowledge(api, db_pool, untrusted_agent, auth_override, enums):
-    """Approval diff should include create_knowledge fields."""
+async def test_get_approval_diff_create_context(api, db_pool, untrusted_agent, auth_override, enums):
+    """Approval diff should include create_context fields."""
     auth_override["scopes"] = [enums.scopes.name_to_id["admin"]]
 
     row = await db_pool.fetchrow(
@@ -392,10 +392,10 @@ async def test_get_approval_diff_create_knowledge(api, db_pool, untrusted_agent,
         VALUES ($1, $2, $3::jsonb, $4)
         RETURNING *
         """,
-        "create_knowledge",
+        "create_context",
         untrusted_agent["id"],
         json.dumps(
-            {"title": "Diff Knowledge", "source_type": "note", "scopes": ["public"]}
+            {"title": "Diff Context", "source_type": "note", "scopes": ["public"]}
         ),
         "pending",
     )
@@ -403,8 +403,8 @@ async def test_get_approval_diff_create_knowledge(api, db_pool, untrusted_agent,
     r = await api.get(f"/api/approvals/{row['id']}/diff")
     assert r.status_code == 200
     data = r.json()["data"]
-    assert data["request_type"] == "create_knowledge"
-    assert data["changes"]["title"]["to"] == "Diff Knowledge"
+    assert data["request_type"] == "create_context"
+    assert data["changes"]["title"]["to"] == "Diff Context"
 
 
 @pytest.mark.asyncio

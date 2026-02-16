@@ -2,42 +2,42 @@ package api
 
 import "fmt"
 
-// --- Knowledge Methods ---
+// --- Context Methods ---
 
-func (c *Client) CreateKnowledge(input CreateKnowledgeInput) (*Knowledge, error) {
-	data, err := c.post("/api/knowledge", input)
+func (c *Client) CreateContext(input CreateContextInput) (*Context, error) {
+	data, err := c.post("/api/context", input)
 	if err != nil {
 		return nil, err
 	}
-	return decodeOne[Knowledge](data)
+	return decodeOne[Context](data)
 }
 
-func (c *Client) GetKnowledge(id string) (*Knowledge, error) {
-	data, err := c.get(fmt.Sprintf("/api/knowledge/%s", id))
+func (c *Client) GetContext(id string) (*Context, error) {
+	data, err := c.get(fmt.Sprintf("/api/context/%s", id))
 	if err != nil {
 		return nil, err
 	}
-	return decodeOne[Knowledge](data)
+	return decodeOne[Context](data)
 }
 
-func (c *Client) QueryKnowledge(params QueryParams) ([]Knowledge, error) {
-	data, err := c.get(buildQuery("/api/knowledge", params))
+func (c *Client) QueryContext(params QueryParams) ([]Context, error) {
+	data, err := c.get(buildQuery("/api/context", params))
 	if err != nil {
 		return nil, err
 	}
-	return decodeList[Knowledge](data)
+	return decodeList[Context](data)
 }
 
-func (c *Client) UpdateKnowledge(id string, input UpdateKnowledgeInput) (*Knowledge, error) {
-	data, err := c.patch(fmt.Sprintf("/api/knowledge/%s", id), input)
+func (c *Client) UpdateContext(id string, input UpdateContextInput) (*Context, error) {
+	data, err := c.patch(fmt.Sprintf("/api/context/%s", id), input)
 	if err != nil {
 		return nil, err
 	}
-	return decodeOne[Knowledge](data)
+	return decodeOne[Context](data)
 }
 
-func (c *Client) LinkKnowledge(id, entityID string) error {
+func (c *Client) LinkContext(id, entityID string) error {
 	body := map[string]string{"entity_id": entityID}
-	_, err := c.post(fmt.Sprintf("/api/knowledge/%s/link", id), body)
+	_, err := c.post(fmt.Sprintf("/api/context/%s/link", id), body)
 	return err
 }

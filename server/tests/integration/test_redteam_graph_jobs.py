@@ -160,3 +160,53 @@ async def test_graph_shortest_path_hides_out_of_scope_jobs(db_pool, enums):
 
     with pytest.raises(ValueError):
         await graph_shortest_path(payload, ctx)
+
+
+@pytest.mark.asyncio
+async def test_graph_neighbors_accepts_job_id_format(db_pool, enums):
+    """Graph neighbors should accept canonical job IDs as source IDs."""
+
+    owner = await _make_agent(db_pool, enums, "job-owner-visible", ["public"])
+    viewer = await _make_agent(db_pool, enums, "job-viewer-visible", ["public"])
+    entity = await _make_entity(db_pool, enums, "Visible Node", ["public"])
+    job = await _make_job(db_pool, enums, "Visible Job", owner["id"], ["public"])
+    await _make_relationship(
+        db_pool, enums, "job", job["id"], "entity", str(entity["id"])
+    )
+
+    ctx = _make_context(db_pool, enums, viewer)
+    payload = GraphNeighborsInput(
+        source_type="job",
+        source_id=job["id"],
+        max_hops=2,
+        limit=10,
+    )
+
+    results = await graph_neighbors(payload, ctx)
+    ids = {row["node_id"] for row in results}
+    assert str(entity["id"]) in ids
+
+
+@pytest.mark.asyncio
+async def test_graph_shortest_path_accepts_job_id_format(db_pool, enums):
+    """Shortest path should accept canonical job IDs as target IDs."""
+
+    owner = await _make_agent(db_pool, enums, "job-owner-path-visible", ["public"])
+    viewer = await _make_agent(db_pool, enums, "job-viewer-path-visible", ["public"])
+    entity = await _make_entity(db_pool, enums, "Path Start", ["public"])
+    job = await _make_job(db_pool, enums, "Path End Job", owner["id"], ["public"])
+    await _make_relationship(
+        db_pool, enums, "entity", str(entity["id"]), "job", job["id"]
+    )
+
+    ctx = _make_context(db_pool, enums, viewer)
+    payload = GraphShortestPathInput(
+        source_type="entity",
+        source_id=str(entity["id"]),
+        target_type="job",
+        target_id=job["id"],
+        max_hops=3,
+    )
+
+    result = await graph_shortest_path(payload, ctx)
+    assert result["depth"] >= 1

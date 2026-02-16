@@ -14,19 +14,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func knowledgeTestClient(t *testing.T, handler http.HandlerFunc) (*httptest.Server, *api.Client) {
+func contextTestClient(t *testing.T, handler http.HandlerFunc) (*httptest.Server, *api.Client) {
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
 	return srv, api.NewClient(srv.URL, "test-key")
 }
 
-func TestKnowledgeSaveLinksEntities(t *testing.T) {
+func TestContextSaveLinksEntities(t *testing.T) {
 	var linked []string
-	_, client := knowledgeTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+	_, client := contextTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.URL.Path == "/api/knowledge" && r.Method == http.MethodPost:
+		case r.URL.Path == "/api/context" && r.Method == http.MethodPost:
 			json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"id": "k-1", "name": "note"}})
-		case strings.HasPrefix(r.URL.Path, "/api/knowledge/") && strings.HasSuffix(r.URL.Path, "/link"):
+		case strings.HasPrefix(r.URL.Path, "/api/context/") && strings.HasSuffix(r.URL.Path, "/link"):
 			var body map[string]string
 			json.NewDecoder(r.Body).Decode(&body)
 			linked = append(linked, body["entity_id"])
@@ -36,7 +36,7 @@ func TestKnowledgeSaveLinksEntities(t *testing.T) {
 		}
 	})
 
-	model := NewKnowledgeModel(client)
+	model := NewContextModel(client)
 	model.fields[fieldTitle].value = "Test"
 	model.fields[fieldNotes].value = "Notes"
 	model.linkEntities = []api.Entity{{ID: "ent-1", Name: "Alpha"}, {ID: "ent-2", Name: "Beta"}}
@@ -50,8 +50,8 @@ func TestKnowledgeSaveLinksEntities(t *testing.T) {
 	assert.True(t, model.saved)
 }
 
-func TestKnowledgeLinkSearchAddsEntity(t *testing.T) {
-	model := NewKnowledgeModel(nil)
+func TestContextLinkSearchAddsEntity(t *testing.T) {
+	model := NewContextModel(nil)
 	model.linkSearching = true
 	model.linkResults = []api.Entity{{ID: "ent-1", Name: "Alpha"}}
 	model.linkList.SetItems([]string{"Alpha"})
@@ -62,8 +62,8 @@ func TestKnowledgeLinkSearchAddsEntity(t *testing.T) {
 	assert.False(t, model.linkSearching)
 }
 
-func TestKnowledgeLinkSearchCommand(t *testing.T) {
-	_, client := knowledgeTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+func TestContextLinkSearchCommand(t *testing.T) {
+	_, client := contextTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/entities" {
 			json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{{"id": "ent-1", "name": "Alpha", "tags": []string{}}}})
 			return
@@ -71,7 +71,7 @@ func TestKnowledgeLinkSearchCommand(t *testing.T) {
 		w.WriteHeader(http.StatusNotFound)
 	})
 
-	model := NewKnowledgeModel(client)
+	model := NewContextModel(client)
 	model.linkSearching = true
 	model.linkQuery = ""
 
@@ -96,7 +96,7 @@ func TestNormalizeScope(t *testing.T) {
 }
 
 func TestCommitTagDedupes(t *testing.T) {
-	model := NewKnowledgeModel(nil)
+	model := NewContextModel(nil)
 	model.tags = []string{"alpha"}
 	model.tagBuf = "ALPHA"
 	model.commitTag()
@@ -104,7 +104,7 @@ func TestCommitTagDedupes(t *testing.T) {
 }
 
 func TestCommitScopeDedupes(t *testing.T) {
-	model := NewKnowledgeModel(nil)
+	model := NewContextModel(nil)
 	model.scopes = []string{"public"}
 	model.scopeBuf = " Public "
 	model.commitScope()
@@ -112,17 +112,17 @@ func TestCommitScopeDedupes(t *testing.T) {
 }
 
 func TestCommitEditScopeDedupes(t *testing.T) {
-	model := NewKnowledgeModel(nil)
+	model := NewContextModel(nil)
 	model.editScopes = []string{"public"}
 	model.editScopeBuf = " PUBLIC "
 	model.commitEditScope()
 	assert.Equal(t, []string{"public"}, model.editScopes)
 }
 
-func TestKnowledgeToggleModeLoadsList(t *testing.T) {
+func TestContextToggleModeLoadsList(t *testing.T) {
 	now := time.Now().UTC().Format(time.RFC3339)
-	_, client := knowledgeTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/knowledge" {
+	_, client := contextTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/context" {
 			json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{
 				{"id": "k-1", "name": "Alpha", "source_type": "note", "tags": []string{}, "created_at": now},
 			}})
@@ -131,42 +131,42 @@ func TestKnowledgeToggleModeLoadsList(t *testing.T) {
 		w.WriteHeader(http.StatusNotFound)
 	})
 
-	model := NewKnowledgeModel(client)
-	model.view = knowledgeViewAdd
+	model := NewContextModel(client)
+	model.view = contextViewAdd
 
 	model, cmd := model.toggleMode()
 	require.NotNil(t, cmd)
 	msg := cmd()
 	model, _ = model.Update(msg)
 
-	assert.Equal(t, knowledgeViewList, model.view)
+	assert.Equal(t, contextViewList, model.view)
 	assert.Len(t, model.items, 1)
 }
 
-func TestKnowledgeListEnterShowsDetail(t *testing.T) {
-	model := NewKnowledgeModel(nil)
-	model.view = knowledgeViewList
-	model.items = []api.Knowledge{
+func TestContextListEnterShowsDetail(t *testing.T) {
+	model := NewContextModel(nil)
+	model.view = contextViewList
+	model.items = []api.Context{
 		{ID: "k-1", Name: "Alpha", SourceType: "note"},
 	}
-	model.list.SetItems([]string{formatKnowledgeLine(model.items[0])})
+	model.list.SetItems([]string{formatContextLine(model.items[0])})
 
 	model, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
 
 	require.NotNil(t, model.detail)
 	assert.Equal(t, "k-1", model.detail.ID)
-	assert.Equal(t, knowledgeViewDetail, model.view)
+	assert.Equal(t, contextViewDetail, model.view)
 }
 
-func TestKnowledgeRenderEditShowsTagsAndScopes(t *testing.T) {
-	model := NewKnowledgeModel(nil)
+func TestContextRenderEditShowsTagsAndScopes(t *testing.T) {
+	model := NewContextModel(nil)
 	model.width = 100
-	model.view = knowledgeViewEdit
+	model.view = contextViewEdit
 	model.editTags = []string{"alpha"}
 	model.editScopes = []string{"public"}
 
 	out := model.renderEdit()
-	assert.Contains(t, out, "Edit Knowledge")
+	assert.Contains(t, out, "Edit Context")
 	assert.Contains(t, out, "alpha")
 	assert.Contains(t, out, "public")
 }

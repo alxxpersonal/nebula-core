@@ -1,4 +1,4 @@
-"""Red team tests for knowledge link isolation."""
+"""Red team tests for context link isolation."""
 
 # Standard Library
 import json
@@ -8,8 +8,8 @@ from unittest.mock import MagicMock
 import pytest
 
 # Local
-from nebula_mcp.models import LinkKnowledgeInput
-from nebula_mcp.server import link_knowledge_to_entity
+from nebula_mcp.models import LinkContextInput
+from nebula_mcp.server import link_context_to_entity
 
 
 def _make_context(pool, enums, agent):
@@ -25,7 +25,7 @@ def _make_context(pool, enums, agent):
 
 
 async def _make_agent(db_pool, enums, name, scopes, requires_approval):
-    """Insert an agent for knowledge link tests."""
+    """Insert an agent for context link tests."""
 
     status_id = enums.statuses.name_to_id["active"]
     scope_ids = [enums.scopes.name_to_id[s] for s in scopes]
@@ -46,7 +46,7 @@ async def _make_agent(db_pool, enums, name, scopes, requires_approval):
 
 
 async def _make_entity(db_pool, enums, name, scopes):
-    """Insert an entity for knowledge link tests."""
+    """Insert an entity for context link tests."""
 
     status_id = enums.statuses.name_to_id["active"]
     type_id = enums.entity_types.name_to_id["person"]
@@ -68,15 +68,15 @@ async def _make_entity(db_pool, enums, name, scopes):
     return dict(row)
 
 
-async def _make_knowledge(db_pool, enums, title, scopes):
-    """Insert a knowledge item for link tests."""
+async def _make_context_item(db_pool, enums, title, scopes):
+    """Insert a context item for link tests."""
 
     status_id = enums.statuses.name_to_id["active"]
     scope_ids = [enums.scopes.name_to_id[s] for s in scopes]
 
     row = await db_pool.fetchrow(
         """
-        INSERT INTO knowledge_items (title, source_type, content, privacy_scope_ids, status_id, tags, metadata)
+        INSERT INTO context_items (title, source_type, content, privacy_scope_ids, status_id, tags, metadata)
         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
         RETURNING *
         """,
@@ -92,19 +92,47 @@ async def _make_knowledge(db_pool, enums, title, scopes):
 
 
 @pytest.mark.asyncio
-async def test_link_knowledge_denies_private_entity(db_pool, enums):
-    """Public agents should not link knowledge to private entities."""
+async def test_link_context_denies_private_entity(db_pool, enums):
+    """Public agents should not link context to private entities."""
 
     private_entity = await _make_entity(db_pool, enums, "Private", ["sensitive"])
-    knowledge = await _make_knowledge(db_pool, enums, "Public Knowledge", ["public"])
-    viewer = await _make_agent(db_pool, enums, "knowledge-linker", ["public"], False)
+    context = await _make_context_item(db_pool, enums, "Public Context", ["public"])
+    viewer = await _make_agent(db_pool, enums, "context-linker", ["public"], False)
     ctx = _make_context(db_pool, enums, viewer)
 
-    payload = LinkKnowledgeInput(
-        knowledge_id=str(knowledge["id"]),
+    payload = LinkContextInput(
+        context_id=str(context["id"]),
         entity_id=str(private_entity["id"]),
         relationship_type="related-to",
     )
 
     with pytest.raises(ValueError):
-        await link_knowledge_to_entity(payload, ctx)
+        await link_context_to_entity(payload, ctx)
+
+
+@pytest.mark.asyncio
+async def test_link_context_duplicate_returns_clean_error(db_pool, enums):
+    """Duplicate context links should return a domain error, not raw DB internals."""
+
+    owner = await _make_agent(db_pool, enums, "context-link-owner", ["public"], False)
+    entity = await _make_entity(db_pool, enums, "Public Entity", ["public"])
+    context = await _make_context_item(db_pool, enums, "Public Context", ["public"])
+    ctx = _make_context(db_pool, enums, owner)
+
+    payload = LinkContextInput(
+        context_id=str(context["id"]),
+        entity_id=str(entity["id"]),
+        relationship_type="related-to",
+    )
+
+    first = await link_context_to_entity(payload, ctx)
+    assert first["source_type"] == "context"
+    assert first["target_type"] == "entity"
+
+    with pytest.raises(ValueError) as exc_info:
+        await link_context_to_entity(payload, ctx)
+
+    message = str(exc_info.value).lower()
+    assert "relationship already exists" in message
+    assert "constraint" not in message
+    assert "duplicate key value" not in message

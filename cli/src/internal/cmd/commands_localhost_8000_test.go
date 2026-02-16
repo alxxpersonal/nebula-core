@@ -115,4 +115,3 @@ func TestKeysAndAgentListHappyPathsAgainstLocalhost8000(t *testing.T) {
 	agents.SetArgs([]string{"list"})
 	require.NoError(t, agents.Execute())
 }
-

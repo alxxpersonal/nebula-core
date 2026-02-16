@@ -9,12 +9,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCreateKnowledge(t *testing.T) {
+func TestCreateContext(t *testing.T) {
 	_, client := testServer(t, func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPost, r.Method)
-		assert.Equal(t, "/api/knowledge", r.URL.Path)
+		assert.Equal(t, "/api/context", r.URL.Path)
 
-		var body CreateKnowledgeInput
+		var body CreateContextInput
 		json.NewDecoder(r.Body).Decode(&body)
 		assert.Equal(t, "video", body.SourceType)
 
@@ -26,7 +26,7 @@ func TestCreateKnowledge(t *testing.T) {
 		}))
 	})
 
-	knowledge, err := client.CreateKnowledge(CreateKnowledgeInput{
+	context, err := client.CreateContext(CreateContextInput{
 		Title:      "Test Video",
 		SourceType: "video",
 		URL:        "https://youtube.com/watch?v=test",
@@ -34,11 +34,11 @@ func TestCreateKnowledge(t *testing.T) {
 		Tags:       []string{},
 	})
 	require.NoError(t, err)
-	assert.Equal(t, "know-1", knowledge.ID)
-	assert.Equal(t, "video", knowledge.SourceType)
+	assert.Equal(t, "know-1", context.ID)
+	assert.Equal(t, "video", context.SourceType)
 }
 
-func TestQueryKnowledge(t *testing.T) {
+func TestQueryContext(t *testing.T) {
 	_, client := testServer(t, func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "video", r.URL.Query().Get("source_type"))
 
@@ -48,13 +48,13 @@ func TestQueryKnowledge(t *testing.T) {
 		}))
 	})
 
-	items, err := client.QueryKnowledge(QueryParams{"source_type": "video"})
+	items, err := client.QueryContext(QueryParams{"source_type": "video"})
 	require.NoError(t, err)
 	assert.Len(t, items, 2)
 	assert.Equal(t, "video", items[0].SourceType)
 }
 
-func TestLinkKnowledge(t *testing.T) {
+func TestLinkContext(t *testing.T) {
 	_, client := testServer(t, func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPost, r.Method)
 		assert.Contains(t, r.URL.Path, "/link")
@@ -66,11 +66,11 @@ func TestLinkKnowledge(t *testing.T) {
 		w.Write(jsonResponse(map[string]any{}))
 	})
 
-	err := client.LinkKnowledge("know-1", "ent-1")
+	err := client.LinkContext("know-1", "ent-1")
 	require.NoError(t, err)
 }
 
-func TestCreateKnowledgeMissingURL(t *testing.T) {
+func TestCreateContextMissingURL(t *testing.T) {
 	_, client := testServer(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(400)
 		b, _ := json.Marshal(map[string]any{
@@ -82,7 +82,7 @@ func TestCreateKnowledgeMissingURL(t *testing.T) {
 		w.Write(b)
 	})
 
-	_, err := client.CreateKnowledge(CreateKnowledgeInput{
+	_, err := client.CreateContext(CreateContextInput{
 		Title:      "Test",
 		SourceType: "video",
 	})
@@ -90,17 +90,17 @@ func TestCreateKnowledgeMissingURL(t *testing.T) {
 	assert.Contains(t, err.Error(), "VALIDATION_ERROR")
 }
 
-func TestQueryKnowledgeEmpty(t *testing.T) {
+func TestQueryContextEmpty(t *testing.T) {
 	_, client := testServer(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Write(jsonResponse([]map[string]any{}))
 	})
 
-	items, err := client.QueryKnowledge(QueryParams{})
+	items, err := client.QueryContext(QueryParams{})
 	require.NoError(t, err)
 	assert.Len(t, items, 0)
 }
 
-func TestLinkKnowledgeInvalidEntity(t *testing.T) {
+func TestLinkContextInvalidEntity(t *testing.T) {
 	_, client := testServer(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(404)
 		b, _ := json.Marshal(map[string]any{
@@ -112,7 +112,7 @@ func TestLinkKnowledgeInvalidEntity(t *testing.T) {
 		w.Write(b)
 	})
 
-	err := client.LinkKnowledge("know-1", "invalid-ent")
+	err := client.LinkContext("know-1", "invalid-ent")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "NOT_FOUND")
 }

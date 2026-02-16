@@ -30,7 +30,7 @@ const (
 	tabCount     = 11
 )
 
-var tabNames = []string{"Inbox", "Entities", "Relationships", "Knowledge", "Jobs", "Logs", "Files", "Protocols", "History", "Search", "Settings"}
+var tabNames = []string{"Inbox", "Entities", "Relationships", "Context", "Jobs", "Logs", "Files", "Protocols", "History", "Search", "Settings"}
 
 // --- Messages ---
 
@@ -115,7 +115,7 @@ type App struct {
 	inbox     InboxModel
 	entities  EntitiesModel
 	rels      RelationshipsModel
-	know      KnowledgeModel
+	know      ContextModel
 	jobs      JobsModel
 	logs      LogsModel
 	files     FilesModel
@@ -130,6 +130,9 @@ type App struct {
 func NewApp(client *api.Client, cfg *config.Config) App {
 	inbox := NewInboxModel(client)
 	inbox.confirmBulk = true
+	if cfg != nil {
+		inbox.SetPendingLimit(cfg.PendingLimit)
+	}
 	onboarding := cfg == nil
 	quickstartPending := cfg != nil && cfg.QuickstartPending
 	startupChecking := client != nil && !onboarding
@@ -151,7 +154,7 @@ func NewApp(client *api.Client, cfg *config.Config) App {
 		inbox:          inbox,
 		entities:       NewEntitiesModel(client),
 		rels:           NewRelationshipsModel(client),
-		know:           NewKnowledgeModel(client),
+		know:           NewContextModel(client),
 		jobs:           NewJobsModel(client),
 		logs:           NewLogsModel(client),
 		files:          NewFilesModel(client),
@@ -256,6 +259,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			Theme:             "dark",
 			VimKeys:           true,
 			QuickstartPending: true,
+			PendingLimit:      500,
 		}
 		if err := cfg.Save(); err != nil {
 			a.err = fmt.Sprintf("save config: %v", err)
@@ -269,6 +273,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		a.profile.client = a.client
 		a.profile.config = cfg
+		a.inbox.SetPendingLimit(cfg.PendingLimit)
 		a.onboarding = false
 		a.onboardingName = ""
 		a.quickstartOpen = cfg.QuickstartPending
@@ -283,6 +288,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			Taxonomy: "checking",
 		}
 		return a, tea.Batch(a.inbox.Init(), a.runStartupCheckCmd(), a.setToast("success", "Logged in. Welcome to Nebula."))
+	case pendingLimitSavedMsg:
+		a.inbox.SetPendingLimit(msg.limit)
+		return a, nil
 	case startupCheckedMsg:
 		a.startupChecking = false
 		a.startup.Done = true
@@ -847,17 +855,17 @@ func (a App) statusHintsForTab() []string {
 			)
 		}
 		switch a.know.view {
-		case knowledgeViewList:
+		case contextViewList:
 			return append(base,
 				components.Hint("↑/↓", "Scroll"),
 				components.Hint("enter", "Details"),
 				components.Hint("esc", "Back"),
 			)
-		case knowledgeViewDetail:
+		case contextViewDetail:
 			return append(base,
 				components.Hint("m", "Metadata"),
 				components.Hint("c", "Content"),
-				components.Hint("v", "Vault"),
+				components.Hint("v", "Source"),
 				components.Hint("esc", "Back"),
 			)
 		default:
@@ -1003,6 +1011,7 @@ func (a App) statusHintsForTab() []string {
 			components.Hint("↑/↓", "Scroll"),
 			components.Hint("←/→", "Section"),
 			components.Hint("k", "API Key"),
+			components.Hint("p", "Queue Limit"),
 		}
 		if a.profile.section == 0 {
 			hints = append(hints,
@@ -1159,8 +1168,8 @@ func (a *App) toastCmdForMsg(msg tea.Msg) tea.Cmd {
 		level, text = "success", "Relationship created."
 	case relationshipUpdatedMsg:
 		level, text = "success", "Relationship updated."
-	case knowledgeSavedMsg, knowledgeUpdatedMsg:
-		level, text = "success", "Knowledge saved."
+	case contextSavedMsg, contextUpdatedMsg:
+		level, text = "success", "Context saved."
 	case jobCreatedMsg:
 		level, text = "success", "Job created."
 	case jobStatusUpdatedMsg:
@@ -1203,7 +1212,7 @@ func (a *App) handleQuickstartKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case 1:
 			a.tab = tabKnow
 			a.tabNav = false
-			a.know.view = knowledgeViewAdd
+			a.know.view = contextViewAdd
 			a.quickstartStep = 2
 			return *a, nil
 		default:
@@ -1309,7 +1318,7 @@ func (a App) renderQuickstart() string {
 	}
 	steps := []quickstartStep{
 		{title: "Step 1/3", desc: "Create your first entity.", target: "Entities -> Add"},
-		{title: "Step 2/3", desc: "Add knowledge to your context graph.", target: "Knowledge -> Add"},
+		{title: "Step 2/3", desc: "Add context to your context graph.", target: "Context -> Add"},
 		{title: "Step 3/3", desc: "Link context with a relationship.", target: "Relationships -> New"},
 	}
 
@@ -1639,7 +1648,7 @@ func (a *App) runPaletteAction(action paletteAction) (tea.Model, tea.Cmd) {
 		return a.switchTab(tabEntities)
 	case "tab:relationships":
 		return a.switchTab(tabRelations)
-	case "tab:knowledge":
+	case "tab:context":
 		return a.switchTab(tabKnow)
 	case "tab:jobs":
 		return a.switchTab(tabJobs)
@@ -1701,12 +1710,12 @@ func (a *App) applySearchSelection(msg searchSelectionMsg) (tea.Model, tea.Cmd) 
 			a.entities.detail = &entity
 			a.entities.view = entitiesViewDetail
 		}
-	case "knowledge":
-		if msg.knowledge != nil {
-			knowledge := *msg.knowledge
+	case "context":
+		if msg.context != nil {
+			context := *msg.context
 			a.tab = tabKnow
-			a.know.detail = &knowledge
-			a.know.view = knowledgeViewDetail
+			a.know.detail = &context
+			a.know.view = contextViewDetail
 		}
 	case "job":
 		if msg.job != nil {
@@ -1730,8 +1739,8 @@ func (a App) hasUnsaved() bool {
 	case relsViewEdit, relsViewCreateSourceSearch, relsViewCreateSourceSelect, relsViewCreateTargetSearch, relsViewCreateTargetSelect, relsViewCreateType:
 		return true
 	}
-	if a.know.view == knowledgeViewAdd && !a.know.saved && !a.know.saving {
-		if knowledgeHasInput(a.know) {
+	if a.know.view == contextViewAdd && !a.know.saved && !a.know.saving {
+		if contextHasInput(a.know) {
 			return true
 		}
 	}
@@ -1747,7 +1756,7 @@ func (a App) hasUnsaved() bool {
 	return false
 }
 
-func knowledgeHasInput(m KnowledgeModel) bool {
+func contextHasInput(m ContextModel) bool {
 	for _, f := range m.fields {
 		if strings.TrimSpace(f.value) != "" {
 			return true
@@ -1767,7 +1776,7 @@ func defaultPaletteActions() []paletteAction {
 		{ID: "tab:inbox", Label: "Inbox", Desc: "Go to inbox"},
 		{ID: "tab:entities", Label: "Entities", Desc: "Browse entities"},
 		{ID: "tab:relationships", Label: "Relationships", Desc: "Browse relationships"},
-		{ID: "tab:knowledge", Label: "Knowledge", Desc: "Add knowledge"},
+		{ID: "tab:context", Label: "Context", Desc: "Add context"},
 		{ID: "tab:jobs", Label: "Jobs", Desc: "View jobs"},
 		{ID: "tab:history", Label: "History", Desc: "Audit log"},
 		{ID: "tab:search", Label: "Search", Desc: "Global search"},
@@ -1861,10 +1870,10 @@ func (a App) canExitToTabNav() bool {
 		}
 		return a.rels.list == nil || a.rels.list.Selected() == 0
 	case tabKnow:
-		if a.know.view == knowledgeViewList {
+		if a.know.view == contextViewList {
 			return a.know.list == nil || a.know.list.Selected() == 0
 		}
-		if a.know.view != knowledgeViewAdd {
+		if a.know.view != contextViewAdd {
 			return false
 		}
 		return !a.know.modeFocus && a.know.focus == fieldTitle

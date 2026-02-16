@@ -1,4 +1,4 @@
-"""Red team API tests for files/logs isolation across knowledge and job attachments."""
+"""Red team API tests for files/logs isolation across context and job attachments."""
 
 # Standard Library
 import json
@@ -53,14 +53,14 @@ async def _make_job(db_pool, enums, title, agent_id, scopes):
     return dict(row)
 
 
-async def _make_knowledge(db_pool, enums, title, scopes):
-    """Insert a knowledge item with specific privacy scopes."""
+async def _make_context(db_pool, enums, title, scopes):
+    """Insert a context item with specific privacy scopes."""
 
     status_id = enums.statuses.name_to_id["active"]
     scope_ids = [enums.scopes.name_to_id[s] for s in scopes]
     row = await db_pool.fetchrow(
         """
-        INSERT INTO knowledge_items (title, source_type, content, privacy_scope_ids, status_id, tags, metadata)
+        INSERT INTO context_items (title, source_type, content, privacy_scope_ids, status_id, tags, metadata)
         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
         RETURNING *
         """,
@@ -155,15 +155,15 @@ def _auth_override(agent_id, enums):
 
 
 @pytest.mark.asyncio
-async def test_api_file_hidden_when_attached_to_private_knowledge(db_pool, enums):
-    """Public agent should not see files attached to private knowledge items."""
+async def test_api_file_hidden_when_attached_to_private_context(db_pool, enums):
+    """Public agent should not see files attached to private context items."""
 
-    knowledge = await _make_knowledge(db_pool, enums, "Private Know", ["sensitive"])
+    context = await _make_context(db_pool, enums, "Private Know", ["sensitive"])
     file_row = await _make_file(db_pool, enums)
     await _attach_relationship(
-        db_pool, enums, "knowledge", knowledge["id"], "file", file_row["id"], "has-file"
+        db_pool, enums, "context", context["id"], "file", file_row["id"], "has-file"
     )
-    viewer = await _make_agent(db_pool, enums, "file-knowledge-viewer", ["public"])
+    viewer = await _make_agent(db_pool, enums, "file-context-viewer", ["public"])
 
     app.dependency_overrides[require_auth] = _auth_override(viewer["id"], enums)
     app.state.pool = db_pool
@@ -215,15 +215,15 @@ async def test_api_file_hidden_when_attached_to_out_of_scope_job(db_pool, enums)
 
 
 @pytest.mark.asyncio
-async def test_api_log_hidden_when_attached_to_private_knowledge(db_pool, enums):
-    """Public agent should not see logs attached to private knowledge items."""
+async def test_api_log_hidden_when_attached_to_private_context(db_pool, enums):
+    """Public agent should not see logs attached to private context items."""
 
-    knowledge = await _make_knowledge(db_pool, enums, "Private Know", ["sensitive"])
+    context = await _make_context(db_pool, enums, "Private Know", ["sensitive"])
     log_row = await _make_log(db_pool, enums)
     await _attach_relationship(
-        db_pool, enums, "log", log_row["id"], "knowledge", knowledge["id"], "related-to"
+        db_pool, enums, "log", log_row["id"], "context", context["id"], "related-to"
     )
-    viewer = await _make_agent(db_pool, enums, "log-knowledge-viewer", ["public"])
+    viewer = await _make_agent(db_pool, enums, "log-context-viewer", ["public"])
 
     app.dependency_overrides[require_auth] = _auth_override(viewer["id"], enums)
     app.state.pool = db_pool

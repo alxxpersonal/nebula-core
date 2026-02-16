@@ -41,21 +41,21 @@ async def test_import_entities_csv(api):
 
 
 @pytest.mark.asyncio
-async def test_import_knowledge_json(api):
-    """Bulk import knowledge from json."""
+async def test_import_context_json(api):
+    """Bulk import context from json."""
 
     payload = {
         "format": "json",
         "items": [
             {
-                "title": "Import Knowledge",
+                "title": "Import Context",
                 "source_type": "note",
                 "scopes": ["public"],
                 "content": "test",
             }
         ],
     }
-    r = await api.post("/api/import/knowledge", json=payload)
+    r = await api.post("/api/import/context", json=payload)
     assert r.status_code == 200
     data = r.json()["data"]
     assert data["created"] == 1

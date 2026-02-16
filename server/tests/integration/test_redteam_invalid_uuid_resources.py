@@ -7,10 +7,10 @@ import pytest
 from nebula_mcp.models import (
     GetFileInput,
     GetLogInput,
-    LinkKnowledgeInput,
+    LinkContextInput,
     UpdateLogInput,
 )
-from nebula_mcp.server import get_file, get_log, link_knowledge_to_entity, update_log
+from nebula_mcp.server import get_file, get_log, link_context_to_entity, update_log
 
 
 @pytest.mark.asyncio
@@ -41,13 +41,13 @@ async def test_get_file_rejects_invalid_uuid(untrusted_mcp_context):
 
 
 @pytest.mark.asyncio
-async def test_link_knowledge_rejects_invalid_uuid(untrusted_mcp_context):
-    """Invalid UUIDs should not crash link_knowledge_to_entity."""
+async def test_link_context_rejects_invalid_uuid(untrusted_mcp_context):
+    """Invalid UUIDs should not crash link_context_to_entity."""
 
-    payload = LinkKnowledgeInput(
-        knowledge_id="not-a-uuid",
+    payload = LinkContextInput(
+        context_id="not-a-uuid",
         entity_id="also-not-a-uuid",
         relationship_type="about",
     )
     with pytest.raises(ValueError):
-        await link_knowledge_to_entity(payload, untrusted_mcp_context)
+        await link_context_to_entity(payload, untrusted_mcp_context)
