@@ -399,11 +399,11 @@ func DiffTable(title string, rows []DiffRow, width int) string {
 	}
 
 	removeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#ff4d6d"))
-	addStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#ffbf3f"))
+	addStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#3f866b"))
 	renderValue := func(style lipgloss.Style, prefix string, value string) string {
 		value = SanitizeText(value)
 		if value == "" {
-			value = "-"
+			value = "None"
 		}
 		lines := strings.Split(value, "\n")
 		var out strings.Builder
@@ -497,7 +497,13 @@ func formatMetadataValue(val any) string {
 			return fmt.Sprintf("%v", typed)
 		}
 		return string(encoded)
+	case nil:
+		return "None"
 	default:
-		return fmt.Sprintf("%v", typed)
+		s := strings.TrimSpace(fmt.Sprintf("%v", typed))
+		if s == "" || s == "<nil>" {
+			return "None"
+		}
+		return s
 	}
 }

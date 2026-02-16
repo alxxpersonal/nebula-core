@@ -1,7 +1,9 @@
 package ui
 
 import (
+	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -168,13 +170,13 @@ func (m InboxModel) View() string {
 
 	if m.rejectPreview {
 		summary := []components.TableRow{
-			{Label: "Action", Value: "reject"},
+			{Label: "Action", Value: "Reject"},
 			{Label: "Requests", Value: fmt.Sprintf("%d", len(m.bulkRejectIDs))},
-			{Label: "Notes", Value: strings.TrimSpace(m.rejectBuf)},
+			{Label: "Notes", Value: formatAny(strings.TrimSpace(m.rejectBuf))},
 		}
 		diffs := []components.DiffRow{
-			{Label: "status", From: "pending", To: "rejected"},
-			{Label: "review_notes", From: "-", To: strings.TrimSpace(m.rejectBuf)},
+			{Label: "Status", From: "Pending", To: "Rejected"},
+			{Label: "Review Notes", From: "None", To: formatAny(strings.TrimSpace(m.rejectBuf))},
 		}
 		return components.Indent(components.ConfirmPreviewDialog("Reject Requests", summary, diffs, m.width), 1)
 	}
@@ -525,11 +527,17 @@ func (m InboxModel) renderDetail() string {
 	sections = append(sections, components.Table("Approval Request", rows, m.width))
 
 	if len(a.ReviewDetails) > 0 {
+		reviewKeys := make([]string, 0, len(a.ReviewDetails))
+		for k := range a.ReviewDetails {
+			reviewKeys = append(reviewKeys, k)
+		}
+		sort.Strings(reviewKeys)
 		var grantRows []components.TableRow
-		for k, v := range a.ReviewDetails {
+		for _, k := range reviewKeys {
+			v := a.ReviewDetails[k]
 			grantRows = append(
 				grantRows,
-				components.TableRow{Label: k, Value: formatAny(v)},
+				components.TableRow{Label: detailLabel(k), Value: formatAny(v)},
 			)
 		}
 		if len(grantRows) > 0 {
@@ -541,13 +549,27 @@ func (m InboxModel) renderDetail() string {
 	if len(a.ChangeDetails) > 0 {
 		var summaryRows []components.TableRow
 		var diffRows []components.DiffRow
-		nested := make(map[string]any)
+		metadata, hasMetadata := map[string]any(nil), false
+		nested := make(map[string]map[string]any)
 
-		for k, v := range a.ChangeDetails {
+		keys := make([]string, 0, len(a.ChangeDetails))
+		for k := range a.ChangeDetails {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+
+		for _, k := range keys {
+			v := a.ChangeDetails[k]
 			if k == "changes" {
 				// Diff object with from/to pairs
 				if changesMap, ok := v.(map[string]any); ok {
-					for field, diff := range changesMap {
+					diffKeys := make([]string, 0, len(changesMap))
+					for field := range changesMap {
+						diffKeys = append(diffKeys, field)
+					}
+					sort.Strings(diffKeys)
+					for _, field := range diffKeys {
+						diff := changesMap[field]
 						if diffObj, ok := diff.(map[string]any); ok {
 							from := formatAny(diffObj["from"])
 							to := formatAny(diffObj["to"])
@@ -555,7 +577,7 @@ func (m InboxModel) renderDetail() string {
 								continue
 							}
 							diffRows = append(diffRows, components.DiffRow{
-								Label: field,
+								Label: detailLabel(field),
 								From:  from,
 								To:    to,
 							})
@@ -564,54 +586,60 @@ func (m InboxModel) renderDetail() string {
 				}
 				continue
 			}
-			switch val := v.(type) {
-			case map[string]any:
-				nested[k] = val
-			case []any:
-				parts := make([]string, len(val))
-				for i, item := range val {
-					parts[i] = fmt.Sprintf("%v", item)
+			if val, ok := v.(map[string]any); ok {
+				if strings.EqualFold(k, "metadata") {
+					metadata = val
+					hasMetadata = true
+					continue
 				}
-				summaryRows = append(summaryRows, components.TableRow{Label: k, Value: strings.Join(parts, ", ")})
-			default:
-				summaryRows = append(summaryRows, components.TableRow{Label: k, Value: fmt.Sprintf("%v", v)})
+				nested[k] = val
+				continue
 			}
+			summaryRows = append(summaryRows, components.TableRow{
+				Label: detailLabel(k),
+				Value: formatAny(v),
+			})
 		}
 
 		if len(summaryRows) > 0 {
 			sections = append(sections, components.Table("Change Details", summaryRows, m.width))
 		}
 
-		// Diff table for update requests
+		if hasMetadata {
+			sections = append(sections, components.MetadataTable(metadata, m.width))
+		}
+
+		nestedKeys := make([]string, 0, len(nested))
+		for k := range nested {
+			nestedKeys = append(nestedKeys, k)
+		}
+		sort.Strings(nestedKeys)
+
+		// Render each nested object as its own titled table.
+		for _, k := range nestedKeys {
+			obj := nested[k]
+			var nestedRows []components.TableRow
+			objKeys := make([]string, 0, len(obj))
+			for sk := range obj {
+				objKeys = append(objKeys, sk)
+			}
+			sort.Strings(objKeys)
+			for _, sk := range objKeys {
+				nestedRows = append(nestedRows, components.TableRow{
+					Label: detailLabel(sk),
+					Value: formatAny(obj[sk]),
+				})
+			}
+			if len(nestedRows) > 0 {
+				sections = append(sections, components.Table(detailLabel(k), nestedRows, m.width))
+			}
+		}
+
+		// Diff table for update requests.
 		if len(diffRows) > 0 {
 			sections = append(sections, components.DiffTable("Changes", diffRows, m.width))
 		}
-
-		// Render each nested object as its own titled table
-		for k, v := range nested {
-			if obj, ok := v.(map[string]any); ok {
-				var nestedRows []components.TableRow
-				for sk, sv := range obj {
-					switch sval := sv.(type) {
-					case []any:
-						parts := make([]string, len(sval))
-						for i, item := range sval {
-							parts[i] = fmt.Sprintf("%v", item)
-						}
-						nestedRows = append(nestedRows, components.TableRow{Label: sk, Value: strings.Join(parts, ", ")})
-					default:
-						nestedRows = append(nestedRows, components.TableRow{Label: sk, Value: fmt.Sprintf("%v", sv)})
-					}
-				}
-				if len(nestedRows) > 0 {
-					sections = append(sections, components.Table(k, nestedRows, m.width))
-				}
-			}
-		}
 	}
-
-	// Hint
-	sections = append(sections, "  "+MutedStyle.Render("a approve  |  r reject  |  esc back"))
 
 	return components.Indent(strings.Join(sections, "\n\n"), 1)
 }
@@ -620,18 +648,98 @@ func formatAny(v any) string {
 	switch val := v.(type) {
 	case map[string]any:
 		lines := metadataLinesPlain(val, 0)
+		if len(lines) == 0 {
+			return "None"
+		}
 		return strings.Join(lines, "\n")
+	case []string:
+		if len(val) == 0 {
+			return "None"
+		}
+		return components.SanitizeOneLine(strings.Join(val, ", "))
 	case []any:
-		parts := make([]string, len(val))
-		for i, item := range val {
-			parts[i] = fmt.Sprintf("%v", item)
+		if len(val) == 0 {
+			return "None"
+		}
+		parts := make([]string, 0, len(val))
+		for _, item := range val {
+			rendered := formatAnyInline(item)
+			if rendered == "" {
+				continue
+			}
+			parts = append(parts, rendered)
+		}
+		if len(parts) == 0 {
+			return "None"
 		}
 		return strings.Join(parts, ", ")
 	case nil:
-		return "-"
+		return "None"
 	default:
-		return fmt.Sprintf("%v", v)
+		s := strings.TrimSpace(fmt.Sprintf("%v", v))
+		if s == "" || s == "<nil>" {
+			return "None"
+		}
+		return components.SanitizeOneLine(s)
 	}
+}
+
+func formatAnyInline(v any) string {
+	switch val := v.(type) {
+	case nil:
+		return ""
+	case string:
+		s := strings.TrimSpace(val)
+		if s == "" || s == "<nil>" {
+			return ""
+		}
+		return components.SanitizeOneLine(s)
+	case map[string]any:
+		encoded, err := json.Marshal(val)
+		if err != nil {
+			return components.SanitizeOneLine(fmt.Sprintf("%v", val))
+		}
+		return components.SanitizeOneLine(string(encoded))
+	default:
+		s := strings.TrimSpace(fmt.Sprintf("%v", val))
+		if s == "" || s == "<nil>" {
+			return ""
+		}
+		return components.SanitizeOneLine(s)
+	}
+}
+
+func detailLabel(raw string) string {
+	key := strings.TrimSpace(raw)
+	if key == "" {
+		return ""
+	}
+	key = strings.ReplaceAll(key, "-", "_")
+	parts := strings.Split(key, "_")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		lower := strings.ToLower(part)
+		switch lower {
+		case "id":
+			out = append(out, "ID")
+		case "url":
+			out = append(out, "URL")
+		case "api":
+			out = append(out, "API")
+		case "mcp":
+			out = append(out, "MCP")
+		default:
+			out = append(out, strings.ToUpper(lower[:1])+lower[1:])
+		}
+	}
+	if len(out) == 0 {
+		return components.SanitizeOneLine(raw)
+	}
+	return components.SanitizeOneLine(strings.Join(out, " "))
 }
 
 func formatApprovalLine(a api.Approval) string {

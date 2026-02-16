@@ -42,7 +42,6 @@ func TestConfirmPreviewDialogIncludesSummaryAndChanges(t *testing.T) {
 	assert.Contains(t, clean, "status")
 	assert.Contains(t, clean, "- active")
 	assert.Contains(t, clean, "+ archived")
-	assert.Contains(t, clean, "y: confirm | n: cancel")
 	assert.Equal(t, 1, strings.Count(clean, "╭"))
 	assert.Equal(t, 1, strings.Count(clean, "╮"))
 }

@@ -53,19 +53,19 @@ func TestInboxDetailViewRendersSummaryDiffAndNestedObjects(t *testing.T) {
 
 	// Summary table.
 	assert.Contains(t, out, "Change Details")
-	assert.Contains(t, out, "name")
+	assert.Contains(t, out, "Name")
 	assert.Contains(t, out, "Alpha")
-	assert.Contains(t, out, "tags")
+	assert.Contains(t, out, "Tags")
 	assert.Contains(t, out, "one, two")
 
 	// Diff table.
 	assert.Contains(t, out, "Changes")
-	assert.Contains(t, out, "status")
+	assert.Contains(t, out, "Status")
 	assert.Contains(t, out, "active")
 	assert.Contains(t, out, "archived")
 
-	// Nested map renders as its own table.
-	assert.Contains(t, out, "metadata")
+	// Metadata renders in a dedicated table above changes.
+	assert.Contains(t, out, "Metadata")
 	assert.Contains(t, out, "role")
 	assert.Contains(t, out, "founder")
 }
@@ -122,4 +122,3 @@ func TestInboxFilterInputAppliesAndClears(t *testing.T) {
 	assert.Equal(t, "", model.filterBuf)
 	assert.Len(t, model.filtered, 2)
 }
-

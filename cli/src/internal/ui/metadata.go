@@ -146,8 +146,14 @@ func formatMetadataValue(value any) string {
 		return components.SanitizeText(string(b))
 	case string:
 		return components.SanitizeText(typed)
+	case nil:
+		return "None"
 	default:
-		return components.SanitizeText(fmt.Sprintf("%v", typed))
+		s := strings.TrimSpace(fmt.Sprintf("%v", typed))
+		if s == "" || s == "<nil>" {
+			return "None"
+		}
+		return components.SanitizeText(s)
 	}
 }
 
@@ -155,8 +161,26 @@ func formatMetadataInline(value any) string {
 	switch typed := value.(type) {
 	case string:
 		return components.SanitizeText(typed)
+	case map[string]any:
+		b, err := json.Marshal(sanitizeMetadataValue(typed))
+		if err != nil {
+			return components.SanitizeText(fmt.Sprintf("%v", typed))
+		}
+		return components.SanitizeText(string(b))
+	case []any:
+		parts := make([]string, 0, len(typed))
+		for _, item := range typed {
+			parts = append(parts, formatMetadataInline(item))
+		}
+		return "[" + strings.Join(parts, ", ") + "]"
+	case nil:
+		return "None"
 	default:
-		return components.SanitizeText(fmt.Sprintf("%v", typed))
+		s := strings.TrimSpace(fmt.Sprintf("%v", typed))
+		if s == "" || s == "<nil>" {
+			return "None"
+		}
+		return components.SanitizeText(s)
 	}
 }
 

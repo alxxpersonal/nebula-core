@@ -65,10 +65,6 @@ func ConfirmPreviewDialog(title string, summary []TableRow, diffs []DiffRow, wid
 			renderDiffRows(diffs, width),
 		)
 	}
-	hint := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#9ba0bf")).
-		Render("y: confirm | n: cancel")
-	sections = append(sections, hint)
 
 	return TitledBox(title, strings.Join(sections, "\n\n"), width)
 }
@@ -134,7 +130,7 @@ func renderDiffRows(rows []DiffRow, width int) string {
 	}
 
 	removeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#ff4d6d"))
-	addStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#ffbf3f"))
+	addStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#3f866b"))
 	contentWidth := BoxContentWidth(width)
 	if contentWidth <= 0 {
 		contentWidth = 60
@@ -162,7 +158,7 @@ func renderDiffRows(rows []DiffRow, width int) string {
 func renderDiffValue(style lipgloss.Style, prefix, value string, valueWidth int) string {
 	safe := SanitizeText(value)
 	if safe == "" {
-		safe = "-"
+		safe = "None"
 	}
 	lines := strings.Split(safe, "\n")
 
