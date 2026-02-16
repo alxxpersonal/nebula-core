@@ -23,6 +23,23 @@ async def test_create_job(api):
 
 
 @pytest.mark.asyncio
+async def test_create_job_accepts_iso_due_at(api):
+    """Create job should accept ISO due_at strings."""
+
+    r = await api.post(
+        "/api/jobs",
+        json={
+            "title": "Timed Job",
+            "due_at": "2026-02-18T18:00:00Z",
+        },
+    )
+    assert r.status_code == 200
+    data = r.json()["data"]
+    assert data["title"] == "Timed Job"
+    assert data["due_at"] is not None
+
+
+@pytest.mark.asyncio
 async def test_get_job(api):
     """Test get job."""
 
@@ -53,6 +70,35 @@ async def test_query_jobs(api):
 
 
 @pytest.mark.asyncio
+async def test_query_jobs_accepts_iso_due_filters(api):
+    """Query jobs should parse ISO due filter params without 500 errors."""
+
+    await api.post(
+        "/api/jobs",
+        json={
+            "title": "Due Filter Job",
+            "due_at": "2026-02-18T18:00:00Z",
+        },
+    )
+    r = await api.get(
+        "/api/jobs",
+        params={"due_before": "2026-12-31T00:00:00Z"},
+    )
+    assert r.status_code == 200
+    assert isinstance(r.json()["data"], list)
+
+
+@pytest.mark.asyncio
+async def test_query_jobs_invalid_due_filter_returns_400(api):
+    """Invalid due filter should return INVALID_INPUT."""
+
+    r = await api.get("/api/jobs", params={"due_before": "not-a-date"})
+    assert r.status_code == 400
+    body = r.json()
+    assert body["detail"]["error"]["code"] == "INVALID_INPUT"
+
+
+@pytest.mark.asyncio
 async def test_update_job_status(api):
     """Test update job status."""
 
@@ -66,6 +112,24 @@ async def test_update_job_status(api):
         },
     )
     assert r.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_update_job_status_accepts_iso_completed_at(api):
+    """Status updates should accept ISO completed_at values."""
+
+    cr = await api.post("/api/jobs", json={"title": "Status Date Job"})
+    job_id = cr.json()["data"]["id"]
+
+    r = await api.patch(
+        f"/api/jobs/{job_id}/status",
+        json={
+            "status": "completed",
+            "completed_at": "2026-02-18T18:00:00Z",
+        },
+    )
+    assert r.status_code == 200
+    assert r.json()["data"]["completed_at"] is not None
 
 
 @pytest.mark.asyncio

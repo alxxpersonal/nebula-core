@@ -2,8 +2,7 @@
 
 # Standard Library
 import unicodedata
-from datetime import datetime
-from pathlib import Path
+from datetime import date, datetime, time, timezone
 from typing import Self
 
 # Third-Party
@@ -23,7 +22,7 @@ MAX_GRAPH_HOPS = 6
 
 BASIC_NODE_TYPES = {
     "entity",
-    "knowledge",
+    "context",
     "log",
     "job",
     "agent",
@@ -128,20 +127,50 @@ def _validate_taxonomy_kind(value: str | None) -> str:
     return cleaned
 
 
-def _sanitize_vault_path(value: str | None) -> str | None:
+def _sanitize_source_path(value: str | None) -> str | None:
     if value is None:
         return None
     cleaned = _strip_control(value)
     if not cleaned:
         return None
-    if cleaned.startswith("~"):
-        raise ValueError("Vault file path must be relative")
-    path = Path(cleaned)
-    if path.is_absolute():
-        raise ValueError("Vault file path must be relative")
-    if ".." in path.parts:
-        raise ValueError("Vault file path may not contain '..'")
     return cleaned
+
+
+def parse_optional_datetime(
+    value: str | datetime | date | None, field_name: str
+) -> datetime | None:
+    """Parse optional ISO datetime/date strings into datetime instances.
+
+    Args:
+        value: Raw input value.
+        field_name: Field label used in validation errors.
+
+    Returns:
+        Parsed datetime or None.
+
+    Raises:
+        ValueError: If the input is not a valid ISO date/datetime.
+    """
+
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, date):
+        return datetime.combine(value, time.min, tzinfo=timezone.utc)
+
+    text = _strip_control(str(value))
+    if text == "":
+        return None
+
+    normalized = text
+    if normalized.endswith("Z"):
+        normalized = normalized[:-1] + "+00:00"
+
+    try:
+        return datetime.fromisoformat(normalized)
+    except ValueError as exc:
+        raise ValueError(f"Invalid {field_name}: expected ISO8601 datetime") from exc
 
 
 # --- Core Input Models ---
@@ -156,7 +185,7 @@ class CreateEntityInput(BaseModel):
     metadata: dict = Field(
         default_factory=dict, description="Flexible metadata payload"
     )
-    vault_file_path: str | None = Field(default=None, description="Source vault path")
+    source_path: str | None = Field(default=None, description="Source path")
 
     @field_validator("name", "type", mode="before")
     @classmethod
@@ -173,10 +202,10 @@ class CreateEntityInput(BaseModel):
     def _clean_metadata(cls, v: dict | None) -> dict | None:
         return _sanitize_metadata(v)
 
-    @field_validator("vault_file_path", mode="before")
+    @field_validator("source_path", mode="before")
     @classmethod
-    def _clean_vault_path(cls, v: str | None) -> str | None:
-        return _sanitize_vault_path(v)
+    def _clean_source_path(cls, v: str | None) -> str | None:
+        return _sanitize_source_path(v)
 
 
 # --- Shared Metadata Models ---
@@ -435,8 +464,8 @@ class SemanticSearchInput(BaseModel):
 
     query: str = Field(..., min_length=2, max_length=512, description="Search query")
     kinds: list[str] = Field(
-        default_factory=lambda: ["entity", "knowledge"],
-        description="Search kinds: entity, knowledge",
+        default_factory=lambda: ["entity", "context"],
+        description="Search kinds: entity, context",
     )
     limit: int = Field(
         default=20, ge=1, le=MAX_PAGE_LIMIT, description="Max results to return"
@@ -454,13 +483,13 @@ class SemanticSearchInput(BaseModel):
     @classmethod
     def _clean_semantic_kinds(cls, v: list[str] | None) -> list[str]:
         if not v:
-            return ["entity", "knowledge"]
+            return ["entity", "context"]
         out: list[str] = []
         for item in v:
             name = str(item or "").strip().lower()
-            if name and name in {"entity", "knowledge"} and name not in out:
+            if name and name in {"entity", "context"} and name not in out:
                 out.append(name)
-        return out or ["entity", "knowledge"]
+        return out or ["entity", "context"]
 
 
 class UpdateEntityInput(BaseModel):
@@ -547,13 +576,13 @@ class SearchEntitiesByMetadataInput(BaseModel):
     )
 
 
-# --- Knowledge Input Models ---
+# --- Context Input Models ---
 
 
-class CreateKnowledgeInput(BaseModel):
-    """Input payload for creating a knowledge item."""
+class CreateContextInput(BaseModel):
+    """Input payload for creating a context item."""
 
-    title: str = Field(..., description="Knowledge item title")
+    title: str = Field(..., description="Context item title")
     url: str | None = Field(default=None, description="Source URL")
     source_type: str = Field(..., description="article, video, paper, tweet, note")
     content: str | None = Field(default=None, description="Full text content")
@@ -563,12 +592,12 @@ class CreateKnowledgeInput(BaseModel):
 
     @field_validator("title", "source_type", mode="before")
     @classmethod
-    def _clean_knowledge_text(cls, v: str | None) -> str | None:
+    def _clean_context_text(cls, v: str | None) -> str | None:
         return _sanitize_text(v)
 
     @field_validator("url", mode="before")
     @classmethod
-    def _validate_knowledge_url(cls, v: str | None) -> str | None:
+    def _validate_context_url(cls, v: str | None) -> str | None:
         if not v:
             return v
         v = v.strip()
@@ -578,19 +607,19 @@ class CreateKnowledgeInput(BaseModel):
 
     @field_validator("tags", mode="before")
     @classmethod
-    def _clean_knowledge_tags(cls, v: list[str] | None) -> list[str] | None:
+    def _clean_context_tags(cls, v: list[str] | None) -> list[str] | None:
         return _sanitize_tags(v)
 
     @field_validator("metadata", mode="before")
     @classmethod
-    def _clean_knowledge_metadata(cls, v: dict | None) -> dict | None:
+    def _clean_context_metadata(cls, v: dict | None) -> dict | None:
         return _sanitize_metadata(v)
 
 
-class UpdateKnowledgeInput(BaseModel):
-    """Input payload for updating a knowledge item."""
+class UpdateContextInput(BaseModel):
+    """Input payload for updating a context item."""
 
-    knowledge_id: str = Field(..., description="Knowledge item UUID")
+    context_id: str = Field(..., description="Context item UUID")
     title: str | None = Field(default=None, description="Updated title")
     url: str | None = Field(default=None, description="Updated URL")
     source_type: str | None = Field(default=None, description="Updated source type")
@@ -602,12 +631,12 @@ class UpdateKnowledgeInput(BaseModel):
 
     @field_validator("title", "source_type", mode="before")
     @classmethod
-    def _clean_update_knowledge_text(cls, v: str | None) -> str | None:
+    def _clean_update_context_text(cls, v: str | None) -> str | None:
         return _sanitize_text(v)
 
     @field_validator("url", mode="before")
     @classmethod
-    def _validate_update_knowledge_url(cls, v: str | None) -> str | None:
+    def _validate_update_context_url(cls, v: str | None) -> str | None:
         if not v:
             return v
         v = v.strip()
@@ -617,17 +646,17 @@ class UpdateKnowledgeInput(BaseModel):
 
     @field_validator("tags", mode="before")
     @classmethod
-    def _clean_update_knowledge_tags(cls, v: list[str] | None) -> list[str] | None:
+    def _clean_update_context_tags(cls, v: list[str] | None) -> list[str] | None:
         return _sanitize_tags(v)
 
     @field_validator("metadata", mode="before")
     @classmethod
-    def _clean_update_knowledge_metadata(cls, v: dict | None) -> dict | None:
+    def _clean_update_context_metadata(cls, v: dict | None) -> dict | None:
         return _sanitize_metadata(v)
 
 
-class QueryKnowledgeInput(BaseModel):
-    """Input payload for searching knowledge items."""
+class QueryContextInput(BaseModel):
+    """Input payload for searching context items."""
 
     source_type: str | None = Field(default=None, description="Filter by source type")
     tags: list[str] = Field(default_factory=list, description="Tag filters")
@@ -640,14 +669,14 @@ class QueryKnowledgeInput(BaseModel):
 
     @field_validator("tags", mode="before")
     @classmethod
-    def _clean_knowledge_query_tags(cls, v: list[str] | None) -> list[str] | None:
+    def _clean_context_query_tags(cls, v: list[str] | None) -> list[str] | None:
         return _sanitize_tags(v)
 
 
-class LinkKnowledgeInput(BaseModel):
-    """Input payload for linking knowledge to entity."""
+class LinkContextInput(BaseModel):
+    """Input payload for linking context to entity."""
 
-    knowledge_id: str = Field(..., description="Knowledge item UUID")
+    context_id: str = Field(..., description="Context item UUID")
     entity_id: str = Field(..., description="Entity UUID")
     relationship_type: str = Field(..., description="about, mentions, created-by")
 
@@ -733,11 +762,11 @@ class CreateRelationshipInput(BaseModel):
     """Input payload for creating a relationship."""
 
     source_type: str = Field(
-        ..., description="entity, knowledge, log, job, agent, file, protocol"
+        ..., description="entity, context, log, job, agent, file, protocol"
     )
     source_id: str = Field(..., description="Source item UUID")
     target_type: str = Field(
-        ..., description="entity, knowledge, log, job, agent, file, protocol"
+        ..., description="entity, context, log, job, agent, file, protocol"
     )
     target_id: str = Field(..., description="Target item UUID")
     relationship_type: str = Field(..., description="Relationship type name")
@@ -763,7 +792,7 @@ class GetRelationshipsInput(BaseModel):
     """Input payload for retrieving relationships."""
 
     source_type: str = Field(
-        ..., description="entity, knowledge, log, job, agent, file, protocol"
+        ..., description="entity, context, log, job, agent, file, protocol"
     )
     source_id: str = Field(..., description="Source item UUID")
     relationship_type: str | None = Field(
@@ -808,7 +837,7 @@ class GraphNeighborsInput(BaseModel):
     """Input payload for graph neighbors."""
 
     source_type: str = Field(
-        ..., description="entity, knowledge, log, job, agent, file, protocol"
+        ..., description="entity, context, log, job, agent, file, protocol"
     )
     source_id: str = Field(..., description="Source item UUID")
     max_hops: int = Field(
@@ -829,11 +858,11 @@ class GraphShortestPathInput(BaseModel):
     """Input payload for shortest path search."""
 
     source_type: str = Field(
-        ..., description="entity, knowledge, log, job, agent, file, protocol"
+        ..., description="entity, context, log, job, agent, file, protocol"
     )
     source_id: str = Field(..., description="Source item UUID")
     target_type: str = Field(
-        ..., description="entity, knowledge, log, job, agent, file, protocol"
+        ..., description="entity, context, log, job, agent, file, protocol"
     )
     target_id: str = Field(..., description="Target item UUID")
     max_hops: int = Field(
@@ -851,6 +880,8 @@ class GraphShortestPathInput(BaseModel):
 
 class CreateJobInput(BaseModel):
     """Input payload for creating a job."""
+
+    model_config = ConfigDict(extra="forbid")
 
     title: str = Field(..., description="Job title")
     description: str | None = Field(default=None, description="Job description")
@@ -950,7 +981,10 @@ class CreateFileInput(BaseModel):
     """Input payload for creating a file record."""
 
     filename: str = Field(..., description="File name")
-    file_path: str = Field(..., description="Absolute or vault-relative path")
+    uri: str | None = Field(default=None, description="Canonical file URI")
+    file_path: str | None = Field(
+        default=None, description="Legacy file path fallback"
+    )
     mime_type: str | None = Field(default=None, description="MIME type")
     size_bytes: int | None = Field(default=None, description="File size in bytes")
     checksum: str | None = Field(default=None, description="Checksum hash")
@@ -963,6 +997,11 @@ class CreateFileInput(BaseModel):
     def _clean_filename(cls, v: str | None) -> str | None:
         return _sanitize_text(v)
 
+    @field_validator("uri", "file_path", mode="before")
+    @classmethod
+    def _clean_file_location(cls, v: str | None) -> str | None:
+        return _sanitize_text(v)
+
     @field_validator("tags", mode="before")
     @classmethod
     def _clean_file_tags(cls, v: list[str] | None) -> list[str] | None:
@@ -972,6 +1011,16 @@ class CreateFileInput(BaseModel):
     @classmethod
     def _clean_file_metadata(cls, v: dict | None) -> dict | None:
         return _sanitize_metadata(v)
+
+    @model_validator(mode="after")
+    def _ensure_file_location(self) -> Self:
+        if not self.uri and not self.file_path:
+            raise ValueError("uri or file_path is required")
+        if not self.uri and self.file_path:
+            self.uri = self.file_path
+        if not self.file_path and self.uri:
+            self.file_path = self.uri
+        return self
 
 
 class GetFileInput(BaseModel):
@@ -1002,9 +1051,10 @@ class UpdateFileInput(BaseModel):
 
     file_id: str = Field(..., description="File UUID")
     filename: str | None = Field(default=None, description="File name")
+    uri: str | None = Field(default=None, description="Canonical file URI")
     file_path: str | None = Field(
         default=None,
-        description="Absolute or vault-relative path",
+        description="Legacy file path fallback",
     )
     mime_type: str | None = Field(default=None, description="MIME type")
     size_bytes: int | None = Field(default=None, description="File size in bytes")
@@ -1018,6 +1068,11 @@ class UpdateFileInput(BaseModel):
     def _clean_update_filename(cls, v: str | None) -> str | None:
         return _sanitize_text(v)
 
+    @field_validator("uri", "file_path", mode="before")
+    @classmethod
+    def _clean_update_file_location(cls, v: str | None) -> str | None:
+        return _sanitize_text(v)
+
     @field_validator("tags", mode="before")
     @classmethod
     def _clean_update_file_tags(cls, v: list[str] | None) -> list[str] | None:
@@ -1027,6 +1082,14 @@ class UpdateFileInput(BaseModel):
     @classmethod
     def _clean_update_file_metadata(cls, v: dict | None) -> dict | None:
         return _sanitize_metadata(v)
+
+    @model_validator(mode="after")
+    def _sync_update_file_location(self) -> Self:
+        if self.uri is None and self.file_path is not None:
+            self.uri = self.file_path
+        if self.file_path is None and self.uri is not None:
+            self.file_path = self.uri
+        return self
 
 
 class AttachFileInput(BaseModel):
@@ -1060,7 +1123,7 @@ class CreateProtocolInput(BaseModel):
     status: str = Field(default="active", description="Status name")
     tags: list[str] = Field(default_factory=list, description="Tags")
     metadata: dict = Field(default_factory=dict, description="Metadata")
-    vault_file_path: str | None = Field(default=None, description="Vault file path")
+    source_path: str | None = Field(default=None, description="Source path")
     trusted: bool = Field(default=False, description="Trusted for prompt use")
 
     @field_validator("name", "title", "protocol_type", mode="before")
@@ -1078,10 +1141,10 @@ class CreateProtocolInput(BaseModel):
     def _clean_protocol_metadata(cls, v: dict | None) -> dict | None:
         return _sanitize_metadata(v)
 
-    @field_validator("vault_file_path", mode="before")
+    @field_validator("source_path", mode="before")
     @classmethod
-    def _clean_protocol_vault_path(cls, v: str | None) -> str | None:
-        return _sanitize_vault_path(v)
+    def _clean_protocol_source_path(cls, v: str | None) -> str | None:
+        return _sanitize_source_path(v)
 
 
 class UpdateProtocolInput(BaseModel):
@@ -1096,7 +1159,7 @@ class UpdateProtocolInput(BaseModel):
     status: str | None = Field(default=None, description="Status name")
     tags: list[str] | None = Field(default=None, description="Tags")
     metadata: dict | None = Field(default=None, description="Metadata")
-    vault_file_path: str | None = Field(default=None, description="Vault file path")
+    source_path: str | None = Field(default=None, description="Source path")
     trusted: bool | None = Field(default=None, description="Trusted for prompt use")
 
     @field_validator("name", "title", "protocol_type", mode="before")
@@ -1114,10 +1177,10 @@ class UpdateProtocolInput(BaseModel):
     def _clean_update_protocol_metadata(cls, v: dict | None) -> dict | None:
         return _sanitize_metadata(v)
 
-    @field_validator("vault_file_path", mode="before")
+    @field_validator("source_path", mode="before")
     @classmethod
-    def _clean_update_protocol_vault_path(cls, v: str | None) -> str | None:
-        return _sanitize_vault_path(v)
+    def _clean_update_protocol_source_path(cls, v: str | None) -> str | None:
+        return _sanitize_source_path(v)
 
 
 # --- Agent Input Models ---

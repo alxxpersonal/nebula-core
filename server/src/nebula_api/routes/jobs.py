@@ -15,6 +15,7 @@ from nebula_api.response import api_error, success
 from nebula_mcp.enums import require_scopes, require_status
 from nebula_mcp.executors import execute_create_job, execute_update_job
 from nebula_mcp.helpers import enforce_scope_subset, scope_names_from_ids
+from nebula_mcp.models import parse_optional_datetime
 from nebula_mcp.query_loader import QueryLoader
 
 QUERIES = QueryLoader(Path(__file__).resolve().parents[2] / "queries")
@@ -160,6 +161,10 @@ async def create_job(
         data["scopes"] = ["public"]
     if data.get("priority") and data["priority"] not in JOB_PRIORITY_VALUES:
         api_error("INVALID_INPUT", f"Invalid priority: {data['priority']}", 400)
+    try:
+        parse_optional_datetime(data.get("due_at"), "due_at")
+    except ValueError as exc:
+        api_error("INVALID_INPUT", str(exc), 400)
     if auth["caller_type"] == "agent" and not _is_admin(auth, enums):
         allowed = scope_names_from_ids(auth.get("scopes", []), enums)
         try:
@@ -246,6 +251,11 @@ async def query_jobs(
     status_list = status_names.split(",") if status_names else None
     if assigned_to:
         _require_uuid(assigned_to, "assignee")
+    try:
+        due_before_dt = parse_optional_datetime(due_before, "due_before")
+        due_after_dt = parse_optional_datetime(due_after, "due_after")
+    except ValueError as exc:
+        api_error("INVALID_INPUT", str(exc), 400)
     agent_filter = agent_id
     scope_filter = None if _is_admin(auth, enums) else (auth.get("scopes", []) or [])
 
@@ -255,8 +265,8 @@ async def query_jobs(
         assigned_to,
         agent_filter,
         priority,
-        due_before,
-        due_after,
+        due_before_dt,
+        due_after_dt,
         overdue_only,
         parent_job_id,
         scope_filter,
@@ -299,6 +309,10 @@ async def update_job_status(
         "status_reason": payload.status_reason,
         "completed_at": payload.completed_at,
     }
+    try:
+        completed_at = parse_optional_datetime(payload.completed_at, "completed_at")
+    except ValueError as exc:
+        api_error("INVALID_INPUT", str(exc), 400)
     if resp := await maybe_check_agent_approval(
         pool, auth, "update_job_status", change
     ):
@@ -309,7 +323,7 @@ async def update_job_status(
         job_id,
         status_id,
         payload.status_reason,
-        payload.completed_at,
+        completed_at,
     )
     if not row:
         api_error("NOT_FOUND", f"Job '{job_id}' not found", 404)
@@ -403,6 +417,10 @@ async def create_subtask(
         "due_at": payload.due_at,
         "metadata": {},
     }
+    try:
+        parse_optional_datetime(payload.due_at, "due_at")
+    except ValueError as exc:
+        api_error("INVALID_INPUT", str(exc), 400)
     if resp := await maybe_check_agent_approval(pool, auth, "create_job", data):
         return resp
     try:

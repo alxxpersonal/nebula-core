@@ -2,6 +2,7 @@
 
 # Standard Library
 import json
+import re
 import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -35,10 +36,10 @@ from nebula_mcp.enums import (
     require_status,
 )
 from nebula_mcp.executors import (
+    execute_create_context,
     execute_create_entity,
     execute_create_file,
     execute_create_job,
-    execute_create_knowledge,
     execute_create_log,
     execute_create_protocol,
     execute_create_relationship,
@@ -77,9 +78,9 @@ from nebula_mcp.helpers import (
 )
 from nebula_mcp.imports import (
     extract_items,
+    normalize_context,
     normalize_entity,
     normalize_job,
-    normalize_knowledge,
     normalize_relationship,
 )
 from nebula_mcp.models import (
@@ -93,10 +94,10 @@ from nebula_mcp.models import (
     BulkImportInput,
     BulkUpdateEntityScopesInput,
     BulkUpdateEntityTagsInput,
+    CreateContextInput,
     CreateEntityInput,
     CreateFileInput,
     CreateJobInput,
-    CreateKnowledgeInput,
     CreateLogInput,
     CreateProtocolInput,
     CreateRelationshipInput,
@@ -113,14 +114,14 @@ from nebula_mcp.models import (
     GetRelationshipsInput,
     GraphNeighborsInput,
     GraphShortestPathInput,
-    LinkKnowledgeInput,
+    LinkContextInput,
     ListAgentsInput,
     ListTaxonomyInput,
     QueryAuditLogInput,
+    QueryContextInput,
     QueryEntitiesInput,
     QueryFilesInput,
     QueryJobsInput,
-    QueryKnowledgeInput,
     QueryLogsInput,
     QueryRelationshipsInput,
     RevertEntityInput,
@@ -133,6 +134,7 @@ from nebula_mcp.models import (
     UpdateProtocolInput,
     UpdateRelationshipInput,
     UpdateTaxonomyInput,
+    parse_optional_datetime,
 )
 from nebula_mcp.query_loader import QueryLoader
 from nebula_mcp.schema import load_schema_contract
@@ -213,6 +215,21 @@ def _require_uuid(value: str, label: str) -> None:
         raise ValueError(f"Invalid {label} id")
 
 
+JOB_ID_PATTERN = re.compile(r"^\d{4}Q[1-4]-[A-Z2-9]{4}$")
+
+
+def _require_job_id(value: str, label: str) -> None:
+    if not JOB_ID_PATTERN.fullmatch(str(value).strip().upper()):
+        raise ValueError(f"Invalid {label} id")
+
+
+def _require_node_id(node_type: str, value: str, label: str) -> None:
+    if node_type == "job":
+        _require_job_id(value, label)
+        return
+    _require_uuid(value, label)
+
+
 def _require_admin(agent: dict, enums: Any) -> None:
     scope_names = scope_names_from_ids(agent.get("scopes", []), enums)
     if not any(scope in ADMIN_SCOPES for scope in scope_names):
@@ -255,7 +272,7 @@ def _entity_semantic_candidate(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _knowledge_semantic_candidate(row: dict[str, Any]) -> dict[str, Any]:
+def _context_semantic_candidate(row: dict[str, Any]) -> dict[str, Any]:
     metadata = row.get("metadata") or {}
     tags = row.get("tags") or []
     content = str(row.get("content") or "")
@@ -268,7 +285,7 @@ def _knowledge_semantic_candidate(row: dict[str, Any]) -> dict[str, Any]:
             json.dumps(metadata, sort_keys=True),
         ]
     ).strip()
-    subtitle = str(row.get("source_type", "") or "knowledge")
+    subtitle = str(row.get("source_type", "") or "context")
     snippet_base = content.strip().replace("\n", " ")
     if len(snippet_base) > 120:
         snippet_base = snippet_base[:120].rstrip() + "..."
@@ -276,7 +293,7 @@ def _knowledge_semantic_candidate(row: dict[str, Any]) -> dict[str, Any]:
     if snippet_base:
         snippet_parts.append(snippet_base)
     return {
-        "kind": "knowledge",
+        "kind": "context",
         "id": str(row.get("id", "")),
         "title": str(row.get("title", "")),
         "subtitle": subtitle,
@@ -407,8 +424,8 @@ async def _has_hidden_relationships(
                     scopes = row.get("privacy_scope_ids") or []
                     if scopes and not any(s in scope_ids for s in scopes):
                         return True
-                if rel_type == "knowledge":
-                    row = await pool.fetchrow(QUERIES["knowledge/get"], rel_id, None)
+                if rel_type == "context":
+                    row = await pool.fetchrow(QUERIES["context/get"], rel_id, None)
                     if not row:
                         return True
                     scopes = row.get("privacy_scope_ids") or []
@@ -454,9 +471,9 @@ async def _node_allowed(
         if not scopes:
             return True
         return any(s in agent.get("scopes", []) for s in scopes)
-    if node_type == "knowledge":
+    if node_type == "context":
         scope_ids = agent.get("scopes", []) or []
-        row = await pool.fetchrow(QUERIES["knowledge/get"], node_id, scope_ids)
+        row = await pool.fetchrow(QUERIES["context/get"], node_id, scope_ids)
         return row is not None
     if node_type == "job":
         row = await pool.fetchrow(QUERIES["jobs/get"], node_id)
@@ -483,8 +500,8 @@ async def _validate_relationship_node(
     label: str,
     require_write: bool = False,
 ) -> None:
-    if node_type in {"entity", "knowledge", "job", "file", "log"}:
-        _require_uuid(node_id, label.lower())
+    if node_type in {"entity", "context", "job", "file", "log"}:
+        _require_node_id(node_type, node_id, label.lower())
     if node_type == "entity":
         row = await pool.fetchrow(QUERIES["entities/get_by_id"], node_id)
         if not row:
@@ -497,11 +514,11 @@ async def _validate_relationship_node(
         elif not await _node_allowed(pool, enums, agent, node_type, node_id):
             raise ValueError("Access denied")
         return
-    if node_type == "knowledge":
+    if node_type == "context":
         scope_ids = None if require_write else _scope_filter_ids(agent, enums)
-        row = await pool.fetchrow(QUERIES["knowledge/get"], node_id, scope_ids)
+        row = await pool.fetchrow(QUERIES["context/get"], node_id, scope_ids)
         if not row:
-            raise ValueError(f"{label} knowledge not found")
+            raise ValueError(f"{label} context not found")
         if require_write and not _has_write_scopes(
             agent.get("scopes", []), row.get("privacy_scope_ids") or []
         ):
@@ -579,7 +596,7 @@ async def _run_bulk_import(
             require_status(str(normalized.get("status") or ""), enums)
             require_scopes(list(normalized.get("scopes") or []), enums)
             return
-        if action == "bulk_import_knowledge":
+        if action == "bulk_import_context":
             require_scopes(list(normalized.get("scopes") or []), enums)
             return
         if action == "bulk_import_relationships":
@@ -913,15 +930,15 @@ async def bulk_import_entities(payload: BulkImportInput, ctx: Context) -> dict:
 
 
 @mcp.tool()
-async def bulk_import_knowledge(payload: BulkImportInput, ctx: Context) -> dict:
-    """Bulk import knowledge items from CSV or JSON."""
+async def bulk_import_context(payload: BulkImportInput, ctx: Context) -> dict:
+    """Bulk import context items from CSV or JSON."""
 
     return await _run_bulk_import(
         payload,
         ctx,
-        normalize_knowledge,
-        execute_create_knowledge,
-        "bulk_import_knowledge",
+        normalize_context,
+        execute_create_context,
+        "bulk_import_context",
     )
 
 
@@ -1030,7 +1047,7 @@ async def query_entities(payload: QueryEntitiesInput, ctx: Context) -> list[dict
 
 @mcp.tool()
 async def semantic_search(payload: SemanticSearchInput, ctx: Context) -> list[dict]:
-    """Run semantic search across entities and knowledge for the active agent."""
+    """Run semantic search across entities and context for the active agent."""
 
     pool, enums, agent = await require_context(ctx)
     scope_ids = _scope_filter_ids(agent, enums)
@@ -1044,13 +1061,13 @@ async def semantic_search(payload: SemanticSearchInput, ctx: Context) -> list[di
         )
         candidates.extend(_entity_semantic_candidate(dict(row)) for row in rows)
 
-    if "knowledge" in payload.kinds:
+    if "context" in payload.kinds:
         rows = await pool.fetch(
-            QUERIES["search/knowledge_semantic_candidates"],
+            QUERIES["search/context_semantic_candidates"],
             scope_ids,
             payload.candidate_limit,
         )
-        candidates.extend(_knowledge_semantic_candidate(dict(row)) for row in rows)
+        candidates.extend(_context_semantic_candidate(dict(row)) for row in rows)
 
     ranked = rank_semantic_candidates(payload.query, candidates, limit=payload.limit)
     for item in ranked:
@@ -1253,12 +1270,12 @@ async def revert_entity(payload: RevertEntityInput, ctx: Context) -> dict:
             await conn.execute("RESET app.changed_by_id")
 
 
-# --- Knowledge Tools ---
+# --- Context Tools ---
 
 
 @mcp.tool()
-async def create_knowledge(payload: CreateKnowledgeInput, ctx: Context) -> dict:
-    """Create a knowledge item."""
+async def create_context(payload: CreateContextInput, ctx: Context) -> dict:
+    """Create a context item."""
 
     pool, enums, agent = await require_context(ctx)
     allowed_scopes = scope_names_from_ids(agent.get("scopes", []), enums)
@@ -1272,15 +1289,15 @@ async def create_knowledge(payload: CreateKnowledgeInput, ctx: Context) -> dict:
         data["url"] = url
 
     require_scopes(requested_scopes, enums)
-    if resp := await maybe_require_approval(pool, agent, "create_knowledge", data):
+    if resp := await maybe_require_approval(pool, agent, "create_context", data):
         return resp
 
-    return await execute_create_knowledge(pool, enums, data)
+    return await execute_create_context(pool, enums, data)
 
 
 @mcp.tool()
-async def query_knowledge(payload: QueryKnowledgeInput, ctx: Context) -> list[dict]:
-    """Search knowledge items with filters."""
+async def query_context(payload: QueryContextInput, ctx: Context) -> list[dict]:
+    """Search context items with filters."""
 
     pool, enums, agent = await require_context(ctx)
 
@@ -1291,7 +1308,7 @@ async def query_knowledge(payload: QueryKnowledgeInput, ctx: Context) -> list[di
     offset = max(0, payload.offset)
 
     rows = await pool.fetch(
-        QUERIES["knowledge/query"],
+        QUERIES["context/query"],
         payload.source_type,
         payload.tags or None,
         payload.search_text,
@@ -1310,20 +1327,20 @@ async def query_knowledge(payload: QueryKnowledgeInput, ctx: Context) -> list[di
 
 
 @mcp.tool()
-async def link_knowledge_to_entity(payload: LinkKnowledgeInput, ctx: Context) -> dict:
-    """Link knowledge item to entity via relationship."""
+async def link_context_to_entity(payload: LinkContextInput, ctx: Context) -> dict:
+    """Link context item to entity via relationship."""
 
     pool, enums, agent = await require_context(ctx)
 
-    _require_uuid(payload.knowledge_id, "knowledge")
+    _require_uuid(payload.context_id, "context")
     _require_uuid(payload.entity_id, "entity")
 
     await _validate_relationship_node(
         pool,
         enums,
         agent,
-        "knowledge",
-        payload.knowledge_id,
+        "context",
+        payload.context_id,
         "Source",
         require_write=True,
     )
@@ -1337,8 +1354,8 @@ async def link_knowledge_to_entity(payload: LinkKnowledgeInput, ctx: Context) ->
         require_write=True,
     )
     relationship_payload = {
-        "source_type": "knowledge",
-        "source_id": payload.knowledge_id,
+        "source_type": "context",
+        "source_id": payload.context_id,
         "target_type": "entity",
         "target_id": payload.entity_id,
         "relationship_type": payload.relationship_type,
@@ -1473,7 +1490,7 @@ async def get_relationships(payload: GetRelationshipsInput, ctx: Context) -> lis
     pool, enums, agent = await require_context(ctx)
     scope_ids = _scope_filter_ids(agent, enums)
 
-    _require_uuid(payload.source_id, "source")
+    _require_node_id(payload.source_type, payload.source_id, "source")
 
     rows = await pool.fetch(
         QUERIES["relationships/get"],
@@ -1606,7 +1623,7 @@ async def graph_neighbors(payload: GraphNeighborsInput, ctx: Context) -> list[di
     pool, enums, agent = await require_context(ctx)
     max_hops = _clamp_hops(payload.max_hops)
     limit = _clamp_limit(payload.limit)
-    _require_uuid(payload.source_id, "source")
+    _require_node_id(payload.source_type, payload.source_id, "source")
 
     if not await _node_allowed(
         pool, enums, agent, payload.source_type, payload.source_id
@@ -1647,8 +1664,8 @@ async def graph_shortest_path(payload: GraphShortestPathInput, ctx: Context) -> 
 
     pool, enums, agent = await require_context(ctx)
     max_hops = _clamp_hops(payload.max_hops)
-    _require_uuid(payload.source_id, "source")
-    _require_uuid(payload.target_id, "target")
+    _require_node_id(payload.source_type, payload.source_id, "source")
+    _require_node_id(payload.target_type, payload.target_id, "target")
 
     if not await _node_allowed(
         pool, enums, agent, payload.source_type, payload.source_id
@@ -1687,6 +1704,7 @@ async def create_job(payload: CreateJobInput, ctx: Context) -> dict:
 
     pool, enums, agent = await require_context(ctx)
     data = payload.model_dump()
+    parse_optional_datetime(data.get("due_at"), "due_at")
     if not data.get("scopes"):
         data["scopes"] = ["public"]
     if data.get("priority") and data["priority"] not in JOB_PRIORITY_VALUES:
@@ -1724,6 +1742,8 @@ async def query_jobs(payload: QueryJobsInput, ctx: Context) -> list[dict]:
     limit = _clamp_limit(payload.limit)
     if payload.assigned_to:
         _require_uuid(payload.assigned_to, "assignee")
+    due_before = parse_optional_datetime(payload.due_before, "due_before")
+    due_after = parse_optional_datetime(payload.due_after, "due_after")
     scope_filter = _scope_filter_ids(agent, enums)
 
     rows = await pool.fetch(
@@ -1732,8 +1752,8 @@ async def query_jobs(payload: QueryJobsInput, ctx: Context) -> list[dict]:
         payload.assigned_to,
         payload.agent_id,
         payload.priority,
-        payload.due_before,
-        payload.due_after,
+        due_before,
+        due_after,
         payload.overdue_only,
         payload.parent_job_id,
         scope_filter,
@@ -1750,6 +1770,7 @@ async def update_job_status(payload: UpdateJobStatusInput, ctx: Context) -> dict
     job = await _get_job_row(pool, payload.job_id)
     _require_job_owner(agent, enums, job)
     status_id = require_status(payload.status, enums)
+    completed_at = parse_optional_datetime(payload.completed_at, "completed_at")
     if resp := await maybe_require_approval(
         pool, agent, "update_job_status", payload.model_dump()
     ):
@@ -1760,7 +1781,7 @@ async def update_job_status(payload: UpdateJobStatusInput, ctx: Context) -> dict
         payload.job_id,
         status_id,
         payload.status_reason,
-        payload.completed_at,
+        completed_at,
     )
     if not row:
         raise ValueError(f"Job '{payload.job_id}' not found")
@@ -1775,6 +1796,7 @@ async def create_subtask(payload: CreateSubtaskInput, ctx: Context) -> dict:
     pool, enums, agent = await require_context(ctx)
     parent_job = await _get_job_row(pool, payload.parent_job_id)
     _require_job_owner(agent, enums, parent_job)
+    parse_optional_datetime(payload.due_at, "due_at")
     parent_scopes = scope_names_from_ids(
         parent_job.get("privacy_scope_ids") or [], enums
     )
@@ -1860,11 +1882,11 @@ async def list_files(payload: QueryFilesInput, ctx: Context) -> list[dict]:
 async def _attach_file(
     ctx: Context, target_type: str, payload: AttachFileInput
 ) -> dict:
-    """Attach a file to a target entity or knowledge item.
+    """Attach a file to a target entity or context item.
 
     Args:
         ctx: MCP request context.
-        target_type: Target type for relationship (entity or knowledge).
+        target_type: Target type for relationship (entity or context).
         payload: File attachment request payload.
 
     Returns:
@@ -1916,10 +1938,10 @@ async def attach_file_to_entity(payload: AttachFileInput, ctx: Context) -> dict:
 
 
 @mcp.tool()
-async def attach_file_to_knowledge(payload: AttachFileInput, ctx: Context) -> dict:
-    """Attach a file to a knowledge item."""
+async def attach_file_to_context(payload: AttachFileInput, ctx: Context) -> dict:
+    """Attach a file to a context item."""
 
-    return await _attach_file(ctx, "knowledge", payload)
+    return await _attach_file(ctx, "context", payload)
 
 
 @mcp.tool()
@@ -2116,9 +2138,7 @@ async def update_taxonomy(payload: UpdateTaxonomyInput, ctx: Context) -> dict:
                 payload.item_id,
                 name,
                 payload.description,
-                json.dumps(payload.metadata)
-                if payload.metadata is not None
-                else None,
+                json.dumps(payload.metadata) if payload.metadata is not None else None,
             )
         elif payload.kind == "relationship-types":
             row = await pool.fetchrow(
@@ -2127,9 +2147,7 @@ async def update_taxonomy(payload: UpdateTaxonomyInput, ctx: Context) -> dict:
                 name,
                 payload.description,
                 payload.is_symmetric,
-                json.dumps(payload.metadata)
-                if payload.metadata is not None
-                else None,
+                json.dumps(payload.metadata) if payload.metadata is not None else None,
             )
         else:
             row = await pool.fetchrow(

@@ -9,9 +9,10 @@ import pytest
 from nebula_mcp.executors import (
     execute_create_entity,
     execute_create_job,
-    execute_create_knowledge,
+    execute_create_context,
     execute_create_relationship,
     execute_update_entity,
+    execute_update_job_status,
 )
 
 pytestmark = pytest.mark.integration
@@ -87,8 +88,8 @@ class TestCreateEntity:
                 },
             )
 
-    async def test_vault_file_path_dedup_raises(self, db_pool, enums):
-        """Inserting two entities with the same vault_file_path should raise."""
+    async def test_source_path_allows_duplicates(self, db_pool, enums):
+        """Entities may share source_path values in neutral mode."""
 
         await execute_create_entity(
             db_pool,
@@ -98,22 +99,22 @@ class TestCreateEntity:
                 "type": "project",
                 "status": "active",
                 "scopes": ["public"],
-                "vault_file_path": "00-Vault/unique-path.md",
+                "source_path": "00-Vault/unique-path.md",
             },
         )
 
-        with pytest.raises(ValueError, match="Entity already exists for vault file"):
-            await execute_create_entity(
-                db_pool,
-                enums,
-                {
-                    "name": "Second",
-                    "type": "project",
-                    "status": "active",
-                    "scopes": ["public"],
-                    "vault_file_path": "00-Vault/unique-path.md",
-                },
-            )
+        second = await execute_create_entity(
+            db_pool,
+            enums,
+            {
+                "name": "Second",
+                "type": "project",
+                "status": "active",
+                "scopes": ["public"],
+                "source_path": "00-Vault/unique-path.md",
+            },
+        )
+        assert second["id"] != ""
 
     async def test_name_type_scope_dedup_raises(self, db_pool, enums):
         """Inserting two entities with the same name+type+scopes should raise."""
@@ -237,16 +238,16 @@ class TestCreateEntity:
         assert "id" in result
 
 
-# --- TestCreateKnowledge ---
+# --- TestCreateContext ---
 
 
-class TestCreateKnowledge:
-    """Tests for execute_create_knowledge."""
+class TestCreateContext:
+    """Tests for execute_create_context."""
 
     async def test_success(self, db_pool, enums):
-        """Creating a valid knowledge item should return a row with an id."""
+        """Creating a valid context item should return a row with an id."""
 
-        result = await execute_create_knowledge(
+        result = await execute_create_context(
             db_pool,
             enums,
             {
@@ -260,9 +261,9 @@ class TestCreateKnowledge:
         assert "id" in result
 
     async def test_url_dedup_raises(self, db_pool, enums):
-        """Inserting two knowledge items with the same URL should raise."""
+        """Inserting two context items with the same URL should raise."""
 
-        await execute_create_knowledge(
+        await execute_create_context(
             db_pool,
             enums,
             {
@@ -273,8 +274,8 @@ class TestCreateKnowledge:
             },
         )
 
-        with pytest.raises(ValueError, match="Knowledge item already exists for URL"):
-            await execute_create_knowledge(
+        with pytest.raises(ValueError, match="Context item already exists for URL"):
+            await execute_create_context(
                 db_pool,
                 enums,
                 {
@@ -286,9 +287,9 @@ class TestCreateKnowledge:
             )
 
     async def test_no_url_no_dedup(self, db_pool, enums):
-        """Two knowledge items with the same title but no URL should both succeed."""
+        """Two context items with the same title but no URL should both succeed."""
 
-        r1 = await execute_create_knowledge(
+        r1 = await execute_create_context(
             db_pool,
             enums,
             {
@@ -298,7 +299,7 @@ class TestCreateKnowledge:
             },
         )
 
-        r2 = await execute_create_knowledge(
+        r2 = await execute_create_context(
             db_pool,
             enums,
             {
@@ -404,6 +405,49 @@ class TestCreateJob:
         )
 
         assert re.match(r"^\d{4}Q[1-4]-[A-Z0-9]{4}$", result["id"])
+
+    async def test_due_at_iso_string_is_parsed(self, db_pool, enums):
+        """ISO due_at strings from approval payloads should execute cleanly."""
+
+        result = await execute_create_job(
+            db_pool,
+            enums,
+            {
+                "title": "Due At Parse Job",
+                "priority": "high",
+                "due_at": "2026-02-18T18:00:00Z",
+            },
+        )
+
+        assert result["due_at"] is not None
+
+
+class TestUpdateJobStatus:
+    """Tests for execute_update_job_status."""
+
+    async def test_completed_at_iso_string_is_parsed(self, db_pool, enums):
+        """ISO completed_at strings should execute cleanly."""
+
+        created = await execute_create_job(
+            db_pool,
+            enums,
+            {
+                "title": "Status Date Parse Job",
+                "priority": "medium",
+            },
+        )
+
+        updated = await execute_update_job_status(
+            db_pool,
+            enums,
+            {
+                "job_id": created["id"],
+                "status": "completed",
+                "completed_at": "2026-02-18T18:00:00Z",
+            },
+        )
+
+        assert updated["completed_at"] is not None
 
 
 # --- TestUpdateEntity ---

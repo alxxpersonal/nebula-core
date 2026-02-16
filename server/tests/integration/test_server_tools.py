@@ -3,6 +3,7 @@
 # Standard Library
 
 import pytest
+from pydantic import ValidationError
 
 from nebula_mcp.models import (
     AttachFileInput,
@@ -10,7 +11,7 @@ from nebula_mcp.models import (
     CreateEntityInput,
     CreateFileInput,
     CreateJobInput,
-    CreateKnowledgeInput,
+    CreateContextInput,
     CreateRelationshipInput,
     CreateSubtaskInput,
     GetAgentInfoInput,
@@ -20,12 +21,12 @@ from nebula_mcp.models import (
     GetRelationshipsInput,
     GraphNeighborsInput,
     GraphShortestPathInput,
-    LinkKnowledgeInput,
+    LinkContextInput,
     ListAgentsInput,
     QueryEntitiesInput,
     QueryFilesInput,
     QueryJobsInput,
-    QueryKnowledgeInput,
+    QueryContextInput,
     QueryRelationshipsInput,
     SearchEntitiesByMetadataInput,
     UpdateEntityInput,
@@ -33,11 +34,12 @@ from nebula_mcp.models import (
 )
 from nebula_mcp.server import (
     attach_file_to_entity,
+    attach_file_to_job,
     bulk_import_entities,
     create_entity,
     create_file,
     create_job,
-    create_knowledge,
+    create_context,
     create_relationship,
     create_subtask,
     get_agent_info,
@@ -48,13 +50,13 @@ from nebula_mcp.server import (
     get_relationships,
     graph_neighbors,
     graph_shortest_path,
-    link_knowledge_to_entity,
+    link_context_to_entity,
     list_active_protocols,
     list_agents,
     list_files,
     query_entities,
     query_jobs,
-    query_knowledge,
+    query_context,
     query_relationships,
     reload_enums,
     search_entities_by_metadata,
@@ -230,51 +232,51 @@ async def test_bulk_import_entities(mock_mcp_context, test_agent):
     assert result["created"] == 1
 
 
-# --- Knowledge Tools ---
+# --- Context Tools ---
 
 
-async def test_create_knowledge(mock_mcp_context, test_agent):
-    """Creating a knowledge item via the server tool should succeed."""
+async def test_create_context(mock_mcp_context, test_agent):
+    """Creating a context item via the server tool should succeed."""
 
-    payload = CreateKnowledgeInput(
-        title="Server Knowledge",
+    payload = CreateContextInput(
+        title="Server Context",
         source_type="article",
         scopes=["public"],
     )
 
-    result = await create_knowledge(payload, mock_mcp_context)
+    result = await create_context(payload, mock_mcp_context)
     assert "id" in result
 
 
-async def test_query_knowledge(mock_mcp_context, test_agent):
-    """Querying knowledge items should return a list."""
+async def test_query_context(mock_mcp_context, test_agent):
+    """Querying context items should return a list."""
 
-    payload = QueryKnowledgeInput()
+    payload = QueryContextInput()
 
-    result = await query_knowledge(payload, mock_mcp_context)
+    result = await query_context(payload, mock_mcp_context)
     assert isinstance(result, list)
 
 
-async def test_link_knowledge_to_entity(
+async def test_link_context_to_entity(
     mock_mcp_context, test_agent, test_entity, enums, db_pool
 ):
-    """Linking knowledge to an entity should create a relationship."""
+    """Linking context to an entity should create a relationship."""
 
-    # Create a knowledge item first
-    ki_payload = CreateKnowledgeInput(
-        title="Linkable Knowledge",
+    # Create a context item first
+    ki_payload = CreateContextInput(
+        title="Linkable Context",
         source_type="note",
         scopes=["public"],
     )
-    ki = await create_knowledge(ki_payload, mock_mcp_context)
+    ki = await create_context(ki_payload, mock_mcp_context)
 
-    payload = LinkKnowledgeInput(
-        knowledge_id=str(ki["id"]),
+    payload = LinkContextInput(
+        context_id=str(ki["id"]),
         entity_id=str(test_entity["id"]),
         relationship_type="about",
     )
 
-    result = await link_knowledge_to_entity(payload, mock_mcp_context)
+    result = await link_context_to_entity(payload, mock_mcp_context)
     assert "id" in result
 
 
@@ -317,6 +319,33 @@ async def test_create_relationship(
     assert "id" in result
 
 
+async def test_create_relationship_accepts_job_target_id(
+    mock_mcp_context, test_agent, test_entity
+):
+    """Relationship creation should accept canonical job IDs on job nodes."""
+
+    job = await create_job(
+        CreateJobInput(
+            title="Relationship Job Target",
+            priority="medium",
+        ),
+        mock_mcp_context,
+    )
+
+    result = await create_relationship(
+        CreateRelationshipInput(
+            source_type="entity",
+            source_id=str(test_entity["id"]),
+            target_type="job",
+            target_id=job["id"],
+            relationship_type="related-to",
+        ),
+        mock_mcp_context,
+    )
+    assert result["target_type"] == "job"
+    assert result["target_id"] == job["id"]
+
+
 async def test_get_relationships(mock_mcp_context, test_agent, test_entity):
     """Getting relationships for an entity should return a list."""
 
@@ -353,6 +382,33 @@ async def test_create_job(mock_mcp_context, test_agent):
     assert "id" in result
 
 
+async def test_create_job_accepts_iso_due_at(mock_mcp_context, test_agent):
+    """MCP create_job should accept ISO due_at strings."""
+
+    payload = CreateJobInput(
+        title="Server Timed Job",
+        priority="medium",
+        due_at="2026-02-18T18:00:00Z",
+    )
+
+    result = await create_job(payload, mock_mcp_context)
+    assert "id" in result
+    assert result["due_at"] is not None
+
+
+def test_create_job_rejects_unknown_status_field():
+    """Unsupported create_job status input should be rejected at validation."""
+
+    with pytest.raises(ValidationError):
+        CreateJobInput.model_validate(
+            {
+                "title": "Unknown Status Probe",
+                "priority": "medium",
+                "status": "todo",
+            }
+        )
+
+
 async def test_get_job(mock_mcp_context, test_agent):
     """Getting a job by ID should return the job row."""
 
@@ -379,6 +435,14 @@ async def test_query_jobs(mock_mcp_context, test_agent):
     assert isinstance(result, list)
 
 
+async def test_query_jobs_accepts_iso_due_filters(mock_mcp_context, test_agent):
+    """MCP query_jobs should parse ISO due filters."""
+
+    payload = QueryJobsInput(due_before="2026-12-31T00:00:00Z")
+    result = await query_jobs(payload, mock_mcp_context)
+    assert isinstance(result, list)
+
+
 async def test_update_job_status(mock_mcp_context, test_agent, enums):
     """Updating job status should return the updated row."""
 
@@ -395,6 +459,28 @@ async def test_update_job_status(mock_mcp_context, test_agent, enums):
 
     result = await update_job_status(payload, mock_mcp_context)
     assert "id" in result
+
+
+async def test_update_job_status_accepts_iso_completed_at(
+    mock_mcp_context, test_agent, enums
+):
+    """MCP update_job_status should accept ISO completed_at values."""
+
+    job_payload = CreateJobInput(
+        title="Status Date Job",
+        priority="high",
+    )
+    job = await create_job(job_payload, mock_mcp_context)
+
+    payload = UpdateJobStatusInput(
+        job_id=job["id"],
+        status="completed",
+        completed_at="2026-02-18T18:00:00Z",
+    )
+
+    result = await update_job_status(payload, mock_mcp_context)
+    assert "id" in result
+    assert result["completed_at"] is not None
 
 
 async def test_create_subtask(mock_mcp_context, test_agent):
@@ -477,6 +563,37 @@ async def test_attach_file_to_entity(mock_mcp_context, test_agent):
 
     assert rel["source_id"] == str(file_row["id"])
     assert rel["target_id"] == str(entity["id"])
+
+
+async def test_attach_file_to_job_accepts_job_target_id(mock_mcp_context, test_agent):
+    """File attachment should accept canonical job IDs for job targets."""
+
+    job = await create_job(
+        CreateJobInput(
+            title="File Attachment Job",
+            priority="medium",
+        ),
+        mock_mcp_context,
+    )
+    file_row = await create_file(
+        CreateFileInput(
+            filename="job-attachment.txt",
+            file_path="/vault/attachments/job-attachment.txt",
+            mime_type="text/plain",
+        ),
+        mock_mcp_context,
+    )
+
+    rel = await attach_file_to_job(
+        AttachFileInput(
+            file_id=str(file_row["id"]),
+            target_id=job["id"],
+            relationship_type="has-file",
+        ),
+        mock_mcp_context,
+    )
+    assert rel["target_type"] == "job"
+    assert rel["target_id"] == job["id"]
 
 
 # --- Graph Tools ---
@@ -572,6 +689,60 @@ async def test_graph_neighbors_and_shortest_path(mock_mcp_context, test_agent):
     assert path["depth"] == 2
     assert path["path"][0]["id"] == str(node_a["id"])
     assert path["path"][-1]["id"] == str(node_c["id"])
+
+
+async def test_graph_tools_accept_job_node_ids(mock_mcp_context, test_agent):
+    """Graph tools should accept canonical job IDs as source/target IDs."""
+
+    job = await create_job(
+        CreateJobInput(
+            title="Graph Job Node",
+            priority="medium",
+        ),
+        mock_mcp_context,
+    )
+    entity = await create_entity(
+        CreateEntityInput(
+            name="Graph Job Entity",
+            type="project",
+            status="active",
+            scopes=["public"],
+        ),
+        mock_mcp_context,
+    )
+    await create_relationship(
+        CreateRelationshipInput(
+            source_type="job",
+            source_id=job["id"],
+            target_type="entity",
+            target_id=str(entity["id"]),
+            relationship_type="related-to",
+        ),
+        mock_mcp_context,
+    )
+
+    neighbors = await graph_neighbors(
+        GraphNeighborsInput(
+            source_type="job",
+            source_id=job["id"],
+            max_hops=2,
+            limit=10,
+        ),
+        mock_mcp_context,
+    )
+    assert any(row["node_id"] == str(entity["id"]) for row in neighbors)
+
+    path = await graph_shortest_path(
+        GraphShortestPathInput(
+            source_type="entity",
+            source_id=str(entity["id"]),
+            target_type="job",
+            target_id=job["id"],
+            max_hops=3,
+        ),
+        mock_mcp_context,
+    )
+    assert path["path"][-1]["id"] == job["id"]
 
 
 # --- Protocol Tools ---

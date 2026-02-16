@@ -8,7 +8,7 @@ from pathlib import Path
 from uuid import UUID
 
 # Third-Party
-from asyncpg import Pool
+from asyncpg import Pool, UniqueViolationError
 
 # Local
 from .enums import (
@@ -81,26 +81,14 @@ async def execute_create_entity(
         scope_key = ",".join(sorted(str(scope_id) for scope_id in scope_ids))
 
         lock_parts = [payload.name, type_id, scope_key]
-        if payload.vault_file_path:
-            lock_parts.append(payload.vault_file_path)
+        if payload.source_path:
+            lock_parts.append(payload.source_path)
 
         await conn.execute(
             "SELECT pg_advisory_xact_lock($1)", _advisory_lock_key(*lock_parts)
         )
 
-        # LAYER 1: Vault file path dedup (hard block)
-        if payload.vault_file_path:
-            existing = await conn.fetchrow(
-                QUERIES["entities/check_vault_file"], payload.vault_file_path
-            )
-            if existing:
-                raise ValueError(
-                    "Entity already exists for vault file "
-                    f"'{payload.vault_file_path}': "
-                    f"{existing['name']} (id: {existing['id']})"
-                )
-
-        # LAYER 2: Name + Type + Scopes dedup (likely duplicate)
+        # LAYER 1: Name + Type + Scopes dedup (likely duplicate)
         existing = await conn.fetchrow(
             QUERIES["entities/check_duplicate"], payload.name, type_id, scope_ids
         )
@@ -127,7 +115,7 @@ async def execute_create_entity(
                     if scope_name not in allowed_scopes:
                         raise ValueError("Context segment scope not in entity scopes")
 
-        # LAYER 3: Insert entity
+        # LAYER 2: Insert entity
         row = await conn.fetchrow(
             QUERIES["entities/create"],
             scope_ids,
@@ -136,7 +124,7 @@ async def execute_create_entity(
             status_id,
             payload.tags,
             json.dumps(metadata) if metadata else None,
-            payload.vault_file_path,
+            payload.source_path,
         )
 
         return dict(row) if row else {}
@@ -153,10 +141,10 @@ async def execute_create_entity(
         return await _run(pool)
 
 
-async def execute_create_knowledge(
+async def execute_create_context(
     pool: Pool, enums: EnumRegistry, change_details: dict
 ) -> dict:
-    """Execute knowledge item creation from approved request.
+    """Execute context item creation from approved request.
 
     Args:
         pool: Database connection pool.
@@ -164,33 +152,33 @@ async def execute_create_knowledge(
         change_details: Payload dict from approval request.
 
     Returns:
-        Created knowledge item row as dict.
+        Created context item row as dict.
 
     Raises:
         ValueError: If duplicate URL exists.
     """
 
-    from .models import CreateKnowledgeInput
+    from .models import CreateContextInput
 
     if isinstance(change_details, str):
         change_details = json.loads(change_details)
 
-    payload = CreateKnowledgeInput(**change_details)
+    payload = CreateContextInput(**change_details)
 
     scope_ids = require_scopes(payload.scopes, enums)
     status_id = require_status("active", enums)
 
     # URL dedup
     if payload.url:
-        existing = await pool.fetchrow(QUERIES["knowledge/check_url"], payload.url)
+        existing = await pool.fetchrow(QUERIES["context/check_url"], payload.url)
         if existing:
             raise ValueError(
-                f"Knowledge item already exists for URL '{payload.url}': "
+                f"Context item already exists for URL '{payload.url}': "
                 f"id={existing['id']}, title={existing['title']}"
             )
 
     row = await pool.fetchrow(
-        QUERIES["knowledge/create"],
+        QUERIES["context/create"],
         payload.title,
         payload.url,
         payload.source_type,
@@ -204,10 +192,10 @@ async def execute_create_knowledge(
     return dict(row) if row else {}
 
 
-async def execute_update_knowledge(
+async def execute_update_context(
     pool: Pool, enums: EnumRegistry, change_details: dict
 ) -> dict:
-    """Execute knowledge item update from approved request.
+    """Execute context item update from approved request.
 
     Args:
         pool: Database connection pool.
@@ -215,15 +203,15 @@ async def execute_update_knowledge(
         change_details: Payload dict from approval request.
 
     Returns:
-        Updated knowledge row as dict.
+        Updated context row as dict.
     """
 
-    from .models import UpdateKnowledgeInput
+    from .models import UpdateContextInput
 
     if isinstance(change_details, str):
         change_details = json.loads(change_details)
 
-    payload = UpdateKnowledgeInput(**change_details)
+    payload = UpdateContextInput(**change_details)
 
     status_id = None
     if payload.status:
@@ -234,8 +222,8 @@ async def execute_update_knowledge(
         scope_ids = require_scopes(payload.scopes, enums)
 
     row = await pool.fetchrow(
-        QUERIES["knowledge/update"],
-        payload.knowledge_id,
+        QUERIES["context/update"],
+        payload.context_id,
         payload.title,
         payload.url,
         payload.source_type,
@@ -247,7 +235,7 @@ async def execute_update_knowledge(
     )
 
     if not row:
-        raise ValueError("Knowledge not found")
+        raise ValueError("Context not found")
     return dict(row)
 
 
@@ -294,16 +282,23 @@ async def execute_create_relationship(
         if cycle:
             raise ValueError("Relationship would create a cycle")
 
-    row = await pool.fetchrow(
-        QUERIES["relationships/create"],
-        payload.source_type,
-        payload.source_id,
-        payload.target_type,
-        payload.target_id,
-        type_id,
-        status_id,
-        json.dumps(payload.properties) if payload.properties else "{}",
-    )
+    try:
+        row = await pool.fetchrow(
+            QUERIES["relationships/create"],
+            payload.source_type,
+            payload.source_id,
+            payload.target_type,
+            payload.target_id,
+            type_id,
+            status_id,
+            json.dumps(payload.properties) if payload.properties else "{}",
+        )
+    except UniqueViolationError as exc:
+        if exc.constraint_name == (
+            "relationships_source_type_source_id_target_type_target_id_t_key"
+        ):
+            raise ValueError("Relationship already exists")
+        raise
 
     return dict(row) if row else {}
 
@@ -322,7 +317,7 @@ async def execute_create_job(
         Created job row as dict.
     """
 
-    from .models import CreateJobInput
+    from .models import CreateJobInput, parse_optional_datetime
 
     if isinstance(change_details, str):
         change_details = json.loads(change_details)
@@ -342,7 +337,7 @@ async def execute_create_job(
         status_id,
         payload.priority,
         payload.parent_job_id,
-        payload.due_at,
+        parse_optional_datetime(payload.due_at, "due_at"),
         json.dumps(payload.metadata) if payload.metadata else "{}",
         scope_ids,
     )
@@ -439,7 +434,7 @@ async def execute_update_job_status(
         Updated job row as dict.
     """
 
-    from .models import UpdateJobStatusInput
+    from .models import UpdateJobStatusInput, parse_optional_datetime
 
     if isinstance(change_details, str):
         change_details = json.loads(change_details)
@@ -452,7 +447,7 @@ async def execute_update_job_status(
         payload.job_id,
         status_id,
         payload.status_reason,
-        payload.completed_at,
+        parse_optional_datetime(payload.completed_at, "completed_at"),
     )
 
     if not row:
@@ -487,6 +482,7 @@ async def execute_create_file(
     row = await pool.fetchrow(
         QUERIES["files/create"],
         payload.filename,
+        payload.uri,
         payload.file_path,
         payload.mime_type,
         payload.size_bytes,
@@ -519,6 +515,7 @@ async def execute_update_file(
         QUERIES["files/update"],
         payload.file_id,
         payload.filename,
+        payload.uri,
         payload.file_path,
         payload.mime_type,
         payload.size_bytes,
@@ -556,7 +553,7 @@ async def execute_create_protocol(
         payload.tags,
         payload.trusted,
         json.dumps(payload.metadata) if payload.metadata else "{}",
-        payload.vault_file_path,
+        payload.source_path,
     )
 
     return dict(row) if row else {}
@@ -589,7 +586,7 @@ async def execute_update_protocol(
         payload.tags,
         payload.trusted,
         json.dumps(payload.metadata) if payload.metadata else None,
-        payload.vault_file_path,
+        payload.source_path,
     )
 
     return dict(row) if row else {}
@@ -842,12 +839,12 @@ async def execute_bulk_import_entities(
     return await execute_create_entity(pool, enums, change_details)
 
 
-async def execute_bulk_import_knowledge(
+async def execute_bulk_import_context(
     pool: Pool, enums: EnumRegistry, change_details: dict
 ) -> dict:
-    """Execute a single knowledge import row created via bulk import approvals."""
+    """Execute a single context import row created via bulk import approvals."""
 
-    return await execute_create_knowledge(pool, enums, change_details)
+    return await execute_create_context(pool, enums, change_details)
 
 
 async def execute_bulk_import_relationships(
@@ -869,8 +866,8 @@ async def execute_bulk_import_jobs(
 # --- Executor Registry ---
 EXECUTORS = {
     "create_entity": execute_create_entity,
-    "create_knowledge": execute_create_knowledge,
-    "update_knowledge": execute_update_knowledge,
+    "create_context": execute_create_context,
+    "update_context": execute_update_context,
     "create_relationship": execute_create_relationship,
     "create_job": execute_create_job,
     "update_job": execute_update_job,
@@ -886,7 +883,7 @@ EXECUTORS = {
     "bulk_update_entity_tags": execute_bulk_update_entity_tags,
     "bulk_update_entity_scopes": execute_bulk_update_entity_scopes,
     "bulk_import_entities": execute_bulk_import_entities,
-    "bulk_import_knowledge": execute_bulk_import_knowledge,
+    "bulk_import_context": execute_bulk_import_context,
     "bulk_import_relationships": execute_bulk_import_relationships,
     "bulk_import_jobs": execute_bulk_import_jobs,
     "register_agent": execute_register_agent,
