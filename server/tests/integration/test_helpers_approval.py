@@ -246,6 +246,82 @@ async def test_approve_with_bad_data_marks_failed(
     assert row["status"] == "approved-failed"
 
 
+async def test_approve_bulk_scope_update_does_not_require_single_entity_id(
+    db_pool, enums, untrusted_agent, test_entity
+):
+    """Bulk approve path should not crash when executor returns no top-level id."""
+
+    approval = await create_approval_request(
+        db_pool,
+        str(untrusted_agent["id"]),
+        "bulk_update_entity_scopes",
+        {
+            "entity_ids": [str(test_entity["id"])],
+            "scopes": ["admin"],
+            "op": "add",
+        },
+    )
+
+    result = await approve_request(
+        db_pool,
+        enums,
+        str(approval["id"]),
+        str(test_entity["id"]),
+    )
+
+    assert result["approval"]["status"] == "approved"
+    assert result["entity"]["updated"] == 1
+    assert result["entity"]["entity_ids"] == [str(test_entity["id"])]
+
+
+async def test_approve_revert_entity_executes(db_pool, enums, untrusted_agent, test_entity):
+    """revert_entity approvals should execute via executor registry."""
+
+    await db_pool.execute(
+        "UPDATE entities SET name = $2 WHERE id = $1::uuid",
+        str(test_entity["id"]),
+        "Mid Name",
+    )
+    audit_id = await db_pool.fetchval(
+        """
+        SELECT id
+        FROM audit_log
+        WHERE table_name = 'entities' AND record_id = $1::text
+        ORDER BY changed_at DESC
+        LIMIT 1
+        """,
+        str(test_entity["id"]),
+    )
+    assert audit_id is not None
+
+    await db_pool.execute(
+        "UPDATE entities SET name = $2 WHERE id = $1::uuid",
+        str(test_entity["id"]),
+        "Current Name",
+    )
+
+    approval = await create_approval_request(
+        db_pool,
+        str(untrusted_agent["id"]),
+        "revert_entity",
+        {
+            "entity_id": str(test_entity["id"]),
+            "audit_id": str(audit_id),
+        },
+    )
+
+    result = await approve_request(
+        db_pool,
+        enums,
+        str(approval["id"]),
+        str(test_entity["id"]),
+    )
+
+    assert result["approval"]["status"] == "approved"
+    assert str(result["entity"]["id"]) == str(test_entity["id"])
+    assert result["entity"]["name"] == "Mid Name"
+
+
 # --- reject_request ---
 
 

@@ -69,7 +69,13 @@ def require_status(name: str, enums: EnumRegistry) -> UUID:
 
     if not name:
         raise ValueError("Status required")
-    return _require(name, enums.statuses.name_to_id, "status")
+    key = name.strip().lower()
+    if key == "archived":
+        for candidate in ("inactive", "completed", "abandoned", "deleted", "replaced"):
+            if candidate in enums.statuses.name_to_id:
+                key = candidate
+                break
+    return _require(key, enums.statuses.name_to_id, "status")
 
 
 def require_entity_type(name: str, enums: EnumRegistry) -> UUID:

@@ -866,6 +866,24 @@ async def execute_bulk_import_jobs(
     return await execute_create_job(pool, enums, change_details)
 
 
+async def execute_revert_entity(
+    pool: Pool, _: EnumRegistry, change_details: dict
+) -> dict:
+    """Execute an entity revert from an approved request."""
+
+    from .helpers import revert_entity as do_revert_entity
+
+    if isinstance(change_details, str):
+        change_details = json.loads(change_details)
+
+    entity_id = str(change_details.get("entity_id", "")).strip()
+    audit_id = str(change_details.get("audit_id", "")).strip()
+    if not entity_id or not audit_id:
+        raise ValueError("entity_id and audit_id are required for revert_entity")
+
+    return await do_revert_entity(pool, entity_id, audit_id)
+
+
 # --- Executor Registry ---
 EXECUTORS = {
     "create_entity": execute_create_entity,
@@ -889,5 +907,6 @@ EXECUTORS = {
     "bulk_import_context": execute_bulk_import_context,
     "bulk_import_relationships": execute_bulk_import_relationships,
     "bulk_import_jobs": execute_bulk_import_jobs,
+    "revert_entity": execute_revert_entity,
     "register_agent": execute_register_agent,
 }

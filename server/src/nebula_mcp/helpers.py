@@ -479,9 +479,17 @@ async def approve_request(
         else:
             result = await executor(pool, enums, approval["change_details"])
 
-        await pool.execute(
-            QUERIES["approvals/link_audit"], str(approval_id), str(result["id"])
-        )
+        linked_id = None
+        if isinstance(result, dict):
+            candidate = result.get("id")
+            if candidate is not None:
+                linked_id = str(candidate)
+        if linked_id:
+            await pool.execute(
+                QUERIES["approvals/link_audit"],
+                str(approval_id),
+                linked_id,
+            )
 
         return {"approval": dict(approval), "entity": result}
 
