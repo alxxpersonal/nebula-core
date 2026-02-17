@@ -5,7 +5,7 @@ import copy
 
 import pytest
 
-from nebula_mcp.helpers import filter_context_segments
+from nebula_mcp.helpers import _pending_approval_limit, filter_context_segments
 
 pytestmark = pytest.mark.unit
 
@@ -98,3 +98,31 @@ class TestFilterContextSegments:
         original = copy.deepcopy(meta)
         filter_context_segments(meta, ["public"])
         assert meta == original
+
+
+class TestPendingApprovalLimit:
+    """Tests for pending queue cap normalization."""
+
+    def test_default_limit_when_env_missing(self, monkeypatch):
+        """Fallback to default when env is absent."""
+
+        monkeypatch.delenv("NEBULA_MAX_PENDING_APPROVALS", raising=False)
+        assert _pending_approval_limit() == 500
+
+    def test_invalid_env_uses_default(self, monkeypatch):
+        """Invalid values should not break queue cap parsing."""
+
+        monkeypatch.setenv("NEBULA_MAX_PENDING_APPROVALS", "not-a-number")
+        assert _pending_approval_limit() == 500
+
+    def test_limit_is_clamped_to_max(self, monkeypatch):
+        """Large values should be capped to hard max."""
+
+        monkeypatch.setenv("NEBULA_MAX_PENDING_APPROVALS", "999999")
+        assert _pending_approval_limit() == 5000
+
+    def test_limit_is_clamped_to_min(self, monkeypatch):
+        """Zero or negative values should be lifted to 1."""
+
+        monkeypatch.setenv("NEBULA_MAX_PENDING_APPROVALS", "0")
+        assert _pending_approval_limit() == 1
