@@ -140,7 +140,7 @@ func NewApp(client *api.Client, cfg *config.Config) App {
 		client:          client,
 		config:          cfg,
 		tab:             tabInbox,
-		tabNav:          true,
+		tabNav:          false,
 		recoveryCommand: "nebula login",
 		onboarding:      onboarding,
 		quickstartOpen:  quickstartPending,
@@ -539,18 +539,23 @@ func (a App) View() string {
 	} else if a.toast != nil {
 		feedback = centerBlockUniform(a.renderToast(), a.width)
 	}
-	if feedback != "" {
-		content = content + "\n\n" + feedback
-	}
 	top := fmt.Sprintf("%s\n%s%s", banner, tabs, startupPanel)
 	body := content
 	if a.height > 0 && !a.helpOpen && !a.quitConfirm && !a.paletteOpen && !a.importExportOpen {
+		reservedFeedbackLines := 0
+		if feedback != "" {
+			// Keep feedback boxes intact by reserving viewport budget up front.
+			reservedFeedbackLines = countViewLines(feedback) + 2
+		}
 		body = clampBodyForViewport(
 			body,
 			a.height,
 			countViewLines(top),
-			countViewLines(hints),
+			countViewLines(hints)+reservedFeedbackLines,
 		)
+	}
+	if feedback != "" {
+		body = body + "\n\n" + feedback
 	}
 
 	return fmt.Sprintf("%s\n\n%s\n\n%s", top, body, hints)
@@ -1672,7 +1677,7 @@ func (a App) handlePaletteKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (a *App) runPaletteAction(action paletteAction) (tea.Model, tea.Cmd) {
-	a.tabNav = true
+	a.tabNav = false
 	switch action.ID {
 	default:
 		if strings.HasPrefix(action.ID, "entity:") {

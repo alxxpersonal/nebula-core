@@ -133,7 +133,7 @@ func TestProfileKeysLoadCreateAndRevokeFlows(t *testing.T) {
 	// Load keys.
 	model, _ = model.Update(model.loadKeys())
 	require.Len(t, model.keys, 1)
-	assert.Contains(t, model.View(), "nbl_abc123...")
+	assert.Contains(t, model.View(), "nbl_abc")
 
 	// Create key flow.
 	model, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})

@@ -69,6 +69,15 @@ func TestRunPaletteActionProfileSections(t *testing.T) {
 	assert.Equal(t, 2, updated.profile.section)
 }
 
+func TestRenderTabsUsesInactiveStyleWhenTabNavDisabled(t *testing.T) {
+	app := NewApp(nil, &config.Config{})
+	app.tab = tabEntities
+	app.tabNav = false
+
+	out := app.renderTabs()
+	assert.Contains(t, out, TabInactiveStyle.Render("Entities"))
+}
+
 func TestTabNavAllowsActionKeys(t *testing.T) {
 	app := NewApp(nil, &config.Config{})
 	app.tab = tabRelations
