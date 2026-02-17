@@ -17,7 +17,10 @@ type contextSavedMsg struct{}
 type contextLinkResultsMsg struct{ items []api.Entity }
 type contextListLoadedMsg struct{ items []api.Context }
 type contextScopesLoadedMsg struct{ names map[string]string }
-type contextDetailLoadedMsg struct{ item api.Context }
+type contextDetailLoadedMsg struct {
+	item          api.Context
+	relationships []api.Relationship
+}
 type contextUpdatedMsg struct{ item api.Context }
 
 // --- Constants ---
@@ -72,52 +75,53 @@ const (
 
 // ContextModel handles adding context items manually.
 type ContextModel struct {
-	client             *api.Client
-	fields             []formField
-	typeIdx            int
-	typeSelecting      bool
-	scopeOptions       []string
-	scopeIdx           int
-	scopeSelecting     bool
-	focus              int
-	modeFocus          bool
-	saved              bool
-	saving             bool
-	view               contextView
-	errText            string
-	tags               []string
-	tagBuf             string
-	scopes             []string
-	scopeBuf           string
-	linkSearching      bool
-	linkLoading        bool
-	linkQuery          string
-	linkResults        []api.Entity
-	linkList           *components.List
-	linkEntities       []api.Entity
-	list               *components.List
-	items              []api.Context
-	loadingList        bool
-	detail             *api.Context
-	contextEditFields  []formField
-	editFocus          int
-	editTypeIdx        int
-	editTypeSelecting  bool
-	editScopeSelecting bool
-	editStatusIdx      int
-	editTags           []string
-	editTagBuf         string
-	editScopes         []string
-	editScopeBuf       string
-	editMeta           MetadataEditor
-	editSaving         bool
-	metaEditor         MetadataEditor
-	metaExpanded       bool
-	contentExpanded    bool
-	sourcePathExpanded bool
-	scopeNames         map[string]string
-	width              int
-	height             int
+	client              *api.Client
+	fields              []formField
+	typeIdx             int
+	typeSelecting       bool
+	scopeOptions        []string
+	scopeIdx            int
+	scopeSelecting      bool
+	focus               int
+	modeFocus           bool
+	saved               bool
+	saving              bool
+	view                contextView
+	errText             string
+	tags                []string
+	tagBuf              string
+	scopes              []string
+	scopeBuf            string
+	linkSearching       bool
+	linkLoading         bool
+	linkQuery           string
+	linkResults         []api.Entity
+	linkList            *components.List
+	linkEntities        []api.Entity
+	list                *components.List
+	items               []api.Context
+	loadingList         bool
+	detail              *api.Context
+	detailRelationships []api.Relationship
+	contextEditFields   []formField
+	editFocus           int
+	editTypeIdx         int
+	editTypeSelecting   bool
+	editScopeSelecting  bool
+	editStatusIdx       int
+	editTags            []string
+	editTagBuf          string
+	editScopes          []string
+	editScopeBuf        string
+	editMeta            MetadataEditor
+	editSaving          bool
+	metaEditor          MetadataEditor
+	metaExpanded        bool
+	contentExpanded     bool
+	sourcePathExpanded  bool
+	scopeNames          map[string]string
+	width               int
+	height              int
 }
 
 type formField struct {
@@ -253,6 +257,7 @@ func (m ContextModel) Update(msg tea.Msg) (ContextModel, tea.Cmd) {
 		return m, nil
 	case contextDetailLoadedMsg:
 		m.detail = &msg.item
+		m.detailRelationships = msg.relationships
 		return m, nil
 	case contextUpdatedMsg:
 		m.editSaving = false
@@ -742,6 +747,7 @@ func (m ContextModel) handleDetailKeys(msg tea.KeyMsg) (ContextModel, tea.Cmd) {
 		m.modeFocus = true
 	case isBack(msg):
 		m.detail = nil
+		m.detailRelationships = nil
 		m.metaExpanded = false
 		m.contentExpanded = false
 		m.sourcePathExpanded = false
@@ -1053,6 +1059,31 @@ func (m ContextModel) renderDetail() string {
 		metaTable := renderMetadataBlock(map[string]any(k.Metadata), m.width, m.metaExpanded)
 		sections = append(sections, metaTable)
 	}
+	if len(m.detailRelationships) > 0 {
+		relRows := make([]components.TableRow, 0, 7)
+		maxRows := 6
+		for i, rel := range m.detailRelationships {
+			if i >= maxRows {
+				break
+			}
+			relType := strings.TrimSpace(components.SanitizeOneLine(rel.Type))
+			if relType == "" {
+				relType = "-"
+			}
+			direction, endpoint := contextRelationshipDirectionAndEndpoint(k.ID, rel)
+			relRows = append(relRows, components.TableRow{
+				Label: fmt.Sprintf("%s %d", relType, i+1),
+				Value: fmt.Sprintf("%s %s", direction, endpoint),
+			})
+		}
+		if extra := len(m.detailRelationships) - maxRows; extra > 0 {
+			relRows = append(relRows, components.TableRow{
+				Label: "More",
+				Value: fmt.Sprintf("+%d relationships", extra),
+			})
+		}
+		sections = append(sections, components.Table("Relationships", relRows, m.width))
+	}
 
 	return strings.Join(sections, "\n\n")
 }
@@ -1096,6 +1127,12 @@ func (m ContextModel) renderContextPreview(k api.Context, width int) string {
 	if len(k.Tags) > 0 {
 		lines = append(lines, renderPreviewRow("Tags", strings.Join(k.Tags, ", "), width))
 	}
+	if m.detail != nil && m.detail.ID == k.ID && len(m.detailRelationships) > 0 {
+		lines = append(
+			lines,
+			renderPreviewRow("Links", fmt.Sprintf("%d", len(m.detailRelationships)), width),
+		)
+	}
 
 	snippet := ""
 	if metaPreview := metadataPreview(map[string]any(k.Metadata), 80); metaPreview != "" {
@@ -1110,6 +1147,39 @@ func (m ContextModel) renderContextPreview(k api.Context, width int) string {
 	}
 
 	return padPreviewLines(lines, width)
+}
+
+func contextRelationshipDirectionAndEndpoint(contextID string, rel api.Relationship) (string, string) {
+	sourceID := strings.TrimSpace(rel.SourceID)
+	targetID := strings.TrimSpace(rel.TargetID)
+	sourceType := strings.TrimSpace(strings.ToLower(rel.SourceType))
+	targetType := strings.TrimSpace(strings.ToLower(rel.TargetType))
+
+	sourceLabel := displayContextRelationshipNode(rel.SourceName, sourceType, sourceID)
+	targetLabel := displayContextRelationshipNode(rel.TargetName, targetType, targetID)
+
+	if sourceType == "context" && sourceID == contextID {
+		return "->", targetLabel
+	}
+	if targetType == "context" && targetID == contextID {
+		return "<-", sourceLabel
+	}
+	return "<>", fmt.Sprintf("%s <-> %s", sourceLabel, targetLabel)
+}
+
+func displayContextRelationshipNode(name, nodeType, nodeID string) string {
+	label := strings.TrimSpace(components.SanitizeOneLine(name))
+	if label != "" {
+		return label
+	}
+	if id := strings.TrimSpace(nodeID); id != "" {
+		return shortID(id)
+	}
+	nodeType = strings.TrimSpace(nodeType)
+	if nodeType != "" {
+		return nodeType
+	}
+	return "-"
 }
 
 func (m *ContextModel) startEdit() {
@@ -1199,7 +1269,11 @@ func (m ContextModel) loadContextDetail(id string) tea.Cmd {
 		if err != nil {
 			return errMsg{err}
 		}
-		return contextDetailLoadedMsg{item: *item}
+		rels, relErr := m.client.GetRelationships("context", id)
+		if relErr != nil {
+			rels = nil
+		}
+		return contextDetailLoadedMsg{item: *item, relationships: rels}
 	}
 }
 

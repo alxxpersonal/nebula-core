@@ -16,9 +16,9 @@ var previewBoxStyle = lipgloss.NewStyle().
 	Padding(1, 2)
 
 const (
-	previewWidthPercent       = 20
+	previewWidthPercent       = 28
 	previewMinWidth           = 28
-	previewMaxWidth           = 40
+	previewMaxWidth           = 56
 	minSideBySideContentWidth = 138
 )
 

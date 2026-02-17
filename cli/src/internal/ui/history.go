@@ -916,6 +916,11 @@ func actorDisplayName(actor api.AuditActor) string {
 		}
 	}
 	actorType := normalizeActorType(actor.ActorType)
+	if actorType == "system" {
+		if inferred := inferActorTypeFromID(actor.ActorID); inferred != "" {
+			actorType = inferred
+		}
+	}
 	if actorType == "" || actorType == "system" {
 		return "system"
 	}
@@ -937,11 +942,37 @@ func formatActorRef(actor api.AuditActor) string {
 	if actorType == "" {
 		actorType = "system"
 	}
-	actorID := strings.TrimSpace(actor.ActorID)
+	actorID := strings.TrimSpace(strings.TrimSuffix(actor.ActorID, ":"))
+	if actorType == "system" {
+		if inferred := inferActorTypeFromID(actorID); inferred != "" {
+			actorType = inferred
+		}
+	}
+	if actorID == "" {
+		return actorType
+	}
+	if strings.HasPrefix(actorID, actorType+":") {
+		actorID = strings.TrimSpace(strings.TrimPrefix(actorID, actorType+":"))
+	}
 	if actorID == "" {
 		return actorType
 	}
 	return actorType + ":" + shortID(actorID)
+}
+
+func inferActorTypeFromID(actorID string) string {
+	id := strings.TrimSpace(strings.TrimSuffix(actorID, ":"))
+	if id == "" {
+		return ""
+	}
+	if !strings.Contains(id, ":") {
+		return ""
+	}
+	prefix := strings.TrimSpace(strings.SplitN(id, ":", 2)[0])
+	if prefix == "" {
+		return ""
+	}
+	return normalizeActorType(prefix)
 }
 
 func normalizeActorType(raw string) string {

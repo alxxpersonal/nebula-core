@@ -61,9 +61,6 @@ func boxWidth(width int) int {
 	if w < 40 {
 		w = 40
 	}
-	if w > 220 {
-		w = 220
-	}
 	return w
 }
 

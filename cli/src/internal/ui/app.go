@@ -542,8 +542,18 @@ func (a App) View() string {
 	if feedback != "" {
 		content = content + "\n\n" + feedback
 	}
+	top := fmt.Sprintf("%s\n%s%s", banner, tabs, startupPanel)
+	body := content
+	if a.height > 0 && !a.helpOpen && !a.quitConfirm && !a.paletteOpen && !a.importExportOpen {
+		body = clampBodyForViewport(
+			body,
+			a.height,
+			countViewLines(top),
+			countViewLines(hints),
+		)
+	}
 
-	return fmt.Sprintf("%s\n%s%s\n\n%s\n\n%s", banner, tabs, startupPanel, content, hints)
+	return fmt.Sprintf("%s\n\n%s\n\n%s", top, body, hints)
 }
 
 func (a *App) switchTab(newTab int) (App, tea.Cmd) {
@@ -1135,6 +1145,34 @@ func (a *App) setToast(level, text string) tea.Cmd {
 	return tea.Tick(2500*time.Millisecond, func(time.Time) tea.Msg {
 		return clearToastMsg{}
 	})
+}
+
+func countViewLines(block string) int {
+	if strings.TrimSpace(block) == "" {
+		return 0
+	}
+	return strings.Count(block, "\n") + 1
+}
+
+func clampBodyForViewport(body string, totalHeight, topLines, hintLines int) string {
+	lines := strings.Split(body, "\n")
+	if len(lines) == 0 {
+		return body
+	}
+
+	// Layout is rendered as: top + blank + body + blank + hints.
+	const spacerLines = 2
+	budget := totalHeight - topLines - hintLines - spacerLines
+	if budget < 6 {
+		budget = 6
+	}
+	if len(lines) <= budget {
+		return body
+	}
+
+	trimmed := append([]string{}, lines[:budget-1]...)
+	trimmed = append(trimmed, MutedStyle.Render("..."))
+	return strings.Join(trimmed, "\n")
 }
 
 func (a App) renderToast() string {

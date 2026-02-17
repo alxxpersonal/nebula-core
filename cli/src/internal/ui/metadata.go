@@ -645,6 +645,12 @@ func parseJSONStructuredString(raw string) (any, bool) {
 	if len(trimmed) < 2 {
 		return nil, false
 	}
+	if strings.HasPrefix(trimmed, "\"") && strings.HasSuffix(trimmed, "\"") {
+		var unquoted string
+		if err := json.Unmarshal([]byte(trimmed), &unquoted); err == nil {
+			trimmed = strings.TrimSpace(unquoted)
+		}
+	}
 	if !((strings.HasPrefix(trimmed, "{") && strings.HasSuffix(trimmed, "}")) ||
 		(strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]"))) {
 		return nil, false
