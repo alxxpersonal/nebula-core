@@ -98,6 +98,9 @@ func wrapPreviewText(text string, width int) []string {
 func renderPreviewRow(label, value string, width int) string {
 	label = components.SanitizeOneLine(label)
 	value = components.SanitizeOneLine(value)
+	if strings.EqualFold(label, "scope") || strings.EqualFold(label, "scopes") {
+		return renderPreviewScopeRow(label, value, width)
+	}
 
 	prefixWidth := lipgloss.Width(label) + 2 // ": "
 	maxValue := width - prefixWidth
@@ -106,6 +109,78 @@ func renderPreviewRow(label, value string, width int) string {
 	}
 	value = components.ClampTextWidthEllipsis(value, maxValue)
 	return MetaKeyStyle.Render(label) + MetaPunctStyle.Render(": ") + MetaValueStyle.Render(value)
+}
+
+func renderPreviewScopeRow(label, value string, width int) string {
+	prefixWidth := lipgloss.Width(label) + 2 // ": "
+	maxValue := width - prefixWidth
+	if maxValue < 4 {
+		maxValue = 4
+	}
+	scopes := parseScopePreviewTokens(value)
+	if len(scopes) == 0 {
+		return MetaKeyStyle.Render(label) + MetaPunctStyle.Render(": ") + MetaValueStyle.Render("-")
+	}
+	parts := make([]string, 0, len(scopes))
+	for _, scope := range scopes {
+		badge := renderScopeBadge(scope)
+		if badge == "" {
+			continue
+		}
+		candidate := strings.Join(append(parts, badge), " ")
+		if lipgloss.Width(candidate) <= maxValue {
+			parts = append(parts, badge)
+			continue
+		}
+		if len(parts) == 0 {
+			fallback := components.ClampTextWidthEllipsis("["+scope+"]", maxValue)
+			return MetaKeyStyle.Render(label) + MetaPunctStyle.Render(": ") + MetaValueStyle.Render(fallback)
+		}
+		ellipsis := MutedStyle.Render("...")
+		for len(parts) > 0 {
+			candidate = strings.Join(append(parts, ellipsis), " ")
+			if lipgloss.Width(candidate) <= maxValue {
+				parts = append(parts, ellipsis)
+				break
+			}
+			parts = parts[:len(parts)-1]
+		}
+		if len(parts) == 0 {
+			parts = []string{MetaValueStyle.Render(components.ClampTextWidthEllipsis("...", maxValue))}
+		}
+		break
+	}
+	if len(parts) == 0 {
+		return MetaKeyStyle.Render(label) + MetaPunctStyle.Render(": ") + MetaValueStyle.Render("-")
+	}
+	return MetaKeyStyle.Render(label) + MetaPunctStyle.Render(": ") + strings.Join(parts, " ")
+}
+
+func parseScopePreviewTokens(value string) []string {
+	value = strings.TrimSpace(components.SanitizeOneLine(value))
+	if value == "" || value == "-" {
+		return nil
+	}
+	value = strings.ReplaceAll(value, "[", "")
+	value = strings.ReplaceAll(value, "]", "")
+	raw := strings.FieldsFunc(value, func(r rune) bool {
+		return r == ',' || r == '|' || r == ' '
+	})
+	out := make([]string, 0, len(raw))
+	seen := map[string]struct{}{}
+	for _, token := range raw {
+		token = strings.TrimSpace(token)
+		if token == "" {
+			continue
+		}
+		key := strings.ToLower(token)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, token)
+	}
+	return out
 }
 
 func formatScopePreview(scopes []string) string {

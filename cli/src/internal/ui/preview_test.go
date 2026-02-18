@@ -1,6 +1,11 @@
 package ui
 
-import "testing"
+import (
+	"strings"
+	"testing"
+
+	"github.com/gravitrone/nebula-core/cli/internal/ui/components"
+)
 
 func TestFormatScopePreview(t *testing.T) {
 	got := formatScopePreview([]string{"public", "admin"})
@@ -11,5 +16,22 @@ func TestFormatScopePreview(t *testing.T) {
 
 	if empty := formatScopePreview(nil); empty != "-" {
 		t.Fatalf("expected dash for empty scopes, got %q", empty)
+	}
+}
+
+func TestRenderPreviewRowScopesSupportsCommaAndBracketFormats(t *testing.T) {
+	row := renderPreviewRow("Scopes", "public, admin", 80)
+	clean := components.SanitizeText(row)
+	if !strings.Contains(clean, "Scopes:") {
+		t.Fatalf("expected scopes label, got %q", clean)
+	}
+	if !strings.Contains(clean, "[public] [admin]") {
+		t.Fatalf("expected rendered scope badges, got %q", clean)
+	}
+
+	row = renderPreviewRow("Scopes", "[public] [admin]", 80)
+	clean = components.SanitizeText(row)
+	if !strings.Contains(clean, "[public] [admin]") {
+		t.Fatalf("expected bracket scopes, got %q", clean)
 	}
 }

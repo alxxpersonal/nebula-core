@@ -3,6 +3,8 @@ package ui
 import (
 	"sort"
 	"strings"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 func scopeNameList(names map[string]string) []string {
@@ -62,6 +64,29 @@ func renderScopePills(scopes []string, focused bool) string {
 		b.WriteString(AccentStyle.Render("█"))
 	}
 	return b.String()
+}
+
+func scopeBadgeStyle(scope string) lipgloss.Style {
+	switch strings.ToLower(strings.TrimSpace(scope)) {
+	case "public":
+		return lipgloss.NewStyle().Foreground(ColorSuccess).Bold(true)
+	case "private":
+		return lipgloss.NewStyle().Foreground(ColorWarning).Bold(true)
+	case "sensitive":
+		return lipgloss.NewStyle().Foreground(ColorError).Bold(true)
+	case "admin":
+		return lipgloss.NewStyle().Foreground(ColorPrimary).Bold(true)
+	default:
+		return lipgloss.NewStyle().Foreground(ColorSecondary).Bold(true)
+	}
+}
+
+func renderScopeBadge(scope string) string {
+	scope = strings.TrimSpace(scope)
+	if scope == "" {
+		return ""
+	}
+	return scopeBadgeStyle(scope).Render("[" + scope + "]")
 }
 
 func renderScopeOptions(selected []string, options []string, idx int) string {
