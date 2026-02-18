@@ -9,10 +9,16 @@ import pytest
 
 # Local
 from nebula_api.routes.relationships import (
+    CreateRelationshipBody,
+    UpdateRelationshipBody,
     _has_write_scopes,
     _job_visible,
     _normalize_relationship_lookup,
     _validate_relationship_node,
+    create_relationship,
+    get_relationships,
+    query_relationships,
+    update_relationship,
 )
 
 
@@ -32,6 +38,28 @@ class _DummyPool:
         return self._rows.get(node_id)
 
 
+class _RoutePool:
+    """Route-focused pool stub with queued fetchrow/fetch responses."""
+
+    def __init__(self, *, fetchrows: list[dict | None] | None = None, fetch_rows=None):
+        self._fetchrows = list(fetchrows or [])
+        self._fetch_rows = list(fetch_rows or [])
+        self.fetchrow_calls = []
+        self.fetch_calls = []
+
+    async def fetchrow(self, query, *args):
+        self.fetchrow_calls.append((query, args))
+        if not self._fetchrows:
+            return None
+        return self._fetchrows.pop(0)
+
+    async def fetch(self, query, *args):
+        self.fetch_calls.append((query, args))
+        if not self._fetch_rows:
+            return []
+        return self._fetch_rows.pop(0)
+
+
 @pytest.fixture
 def enums():
     """Build minimal enum registry shape used by route helpers."""
@@ -44,7 +72,13 @@ def enums():
             "sensitive": "scope-sensitive",
         }
     )
-    return SimpleNamespace(scopes=scopes)
+    statuses = SimpleNamespace(name_to_id={"active": "status-active"})
+    relationship_types = SimpleNamespace(name_to_id={"related-to": "rel-related"})
+    return SimpleNamespace(
+        scopes=scopes,
+        statuses=statuses,
+        relationship_types=relationship_types,
+    )
 
 
 def _auth(*, caller_type: str = "agent", scopes: list[str] | None = None) -> dict:
@@ -52,8 +86,22 @@ def _auth(*, caller_type: str = "agent", scopes: list[str] | None = None) -> dic
 
     return {
         "caller_type": caller_type,
+        "agent": {"requires_approval": False},
         "scopes": scopes or [],
     }
+
+
+def _request(pool, enums):
+    """Build a minimal request-like object for direct route invocation."""
+
+    return SimpleNamespace(
+        app=SimpleNamespace(
+            state=SimpleNamespace(
+                pool=pool,
+                enums=enums,
+            )
+        )
+    )
 
 
 def test_has_write_scopes_happy_and_edge_cases():
@@ -197,3 +245,346 @@ async def test_validate_relationship_node_job_visibility(enums):
             pool, enums, _auth(scopes=["scope-public"]), "job", "job-private"
         )
     assert forbidden_job.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_validate_relationship_node_ignores_other_node_types(enums):
+    """Non-guarded node types should pass through validation."""
+
+    pool = _DummyPool({})
+    await _validate_relationship_node(pool, enums, _auth(scopes=["scope-public"]), "file", "x")
+
+
+@pytest.mark.asyncio
+async def test_create_relationship_returns_pending_approval_payload(enums, monkeypatch):
+    """create_relationship should short-circuit when approval response is returned."""
+
+    pool = _RoutePool(
+        fetchrows=[
+            {"privacy_scope_ids": ["scope-public"]},  # source entity
+            {"privacy_scope_ids": ["scope-public"]},  # target entity
+        ]
+    )
+    auth = _auth(scopes=["scope-public"])
+    req = _request(pool, enums)
+    payload = CreateRelationshipBody(
+        source_type="entity",
+        source_id="f7bf1f24-4ebd-4ea7-9b5b-71f4a5229421",
+        target_type="entity",
+        target_id="0c894f8e-a4e8-4012-af2f-0f59d5efc7e8",
+        relationship_type="related-to",
+        properties={"note": "x"},
+    )
+
+    async def _approval(*_args, **_kwargs):
+        return {"requires_approval": True, "approval_id": "appr-1"}
+
+    monkeypatch.setattr("nebula_api.routes.relationships.maybe_check_agent_approval", _approval)
+    result = await create_relationship(payload, req, auth=auth)
+    assert result["requires_approval"] is True
+    assert result["approval_id"] == "appr-1"
+
+
+@pytest.mark.asyncio
+async def test_create_relationship_maps_value_error_to_invalid_input(enums, monkeypatch):
+    """create_relationship should convert executor ValueError to INVALID_INPUT."""
+
+    pool = _RoutePool(
+        fetchrows=[
+            {"privacy_scope_ids": ["scope-public"]},  # source entity
+            {"privacy_scope_ids": ["scope-public"]},  # target entity
+        ]
+    )
+    auth = _auth(scopes=["scope-public"])
+    req = _request(pool, enums)
+    payload = CreateRelationshipBody(
+        source_type="entity",
+        source_id="7eb21153-fb90-4e67-b8af-e8f4f00b1f1c",
+        target_type="entity",
+        target_id="0e5dbf9d-f40e-4813-8131-cc12d9e223f7",
+        relationship_type="related-to",
+    )
+
+    async def _approval(*_args, **_kwargs):
+        return None
+
+    async def _raise(*_args, **_kwargs):
+        raise ValueError("bad relationship payload")
+
+    monkeypatch.setattr("nebula_api.routes.relationships.maybe_check_agent_approval", _approval)
+    monkeypatch.setattr("nebula_api.routes.relationships.execute_create_relationship", _raise)
+
+    with pytest.raises(HTTPException) as exc:
+        await create_relationship(payload, req, auth=auth)
+    assert exc.value.status_code == 400
+    assert exc.value.detail["error"]["code"] == "INVALID_INPUT"
+
+
+@pytest.mark.asyncio
+async def test_create_relationship_success_payload(enums, monkeypatch):
+    """create_relationship should return success payload when executor succeeds."""
+
+    pool = _RoutePool(
+        fetchrows=[
+            {"privacy_scope_ids": ["scope-public"]},
+            {"privacy_scope_ids": ["scope-public"]},
+        ]
+    )
+    auth = _auth(scopes=["scope-public"])
+    req = _request(pool, enums)
+    payload = CreateRelationshipBody(
+        source_type="entity",
+        source_id="7eb21153-fb90-4e67-b8af-e8f4f00b1f1c",
+        target_type="entity",
+        target_id="0e5dbf9d-f40e-4813-8131-cc12d9e223f7",
+        relationship_type="related-to",
+    )
+
+    async def _approval(*_args, **_kwargs):
+        return None
+
+    async def _ok(*_args, **_kwargs):
+        return {"id": "rel-1", "source_type": "entity"}
+
+    monkeypatch.setattr("nebula_api.routes.relationships.maybe_check_agent_approval", _approval)
+    monkeypatch.setattr("nebula_api.routes.relationships.execute_create_relationship", _ok)
+    result = await create_relationship(payload, req, auth=auth)
+    assert result["data"]["id"] == "rel-1"
+
+
+@pytest.mark.asyncio
+async def test_create_relationship_rejects_unknown_relationship_type(enums):
+    """Unknown relationship type should return INVALID_INPUT before approval checks."""
+
+    pool = _RoutePool(
+        fetchrows=[
+            {"privacy_scope_ids": ["scope-public"]},
+            {"privacy_scope_ids": ["scope-public"]},
+        ]
+    )
+    auth = _auth(scopes=["scope-public"])
+    req = _request(pool, enums)
+    payload = CreateRelationshipBody(
+        source_type="entity",
+        source_id="7eb21153-fb90-4e67-b8af-e8f4f00b1f1c",
+        target_type="entity",
+        target_id="0e5dbf9d-f40e-4813-8131-cc12d9e223f7",
+        relationship_type="missing-type",
+    )
+    with pytest.raises(HTTPException) as exc:
+        await create_relationship(payload, req, auth=auth)
+    assert exc.value.status_code == 400
+    assert exc.value.detail["error"]["code"] == "INVALID_INPUT"
+
+
+@pytest.mark.asyncio
+async def test_update_relationship_not_found_paths(enums):
+    """update_relationship should return NOT_FOUND for missing relationships."""
+
+    # Missing on initial lookup.
+    req = _request(_RoutePool(fetchrows=[None]), enums)
+    with pytest.raises(HTTPException) as missing_initial:
+        await update_relationship(
+            "d3964596-2b5f-4f1c-9f47-c66dc4fd1856",
+            UpdateRelationshipBody(properties={"a": 1}),
+            req,
+            auth=_auth(scopes=["scope-public"]),
+        )
+    assert missing_initial.value.status_code == 404
+
+    # Missing on update result.
+    req2 = _request(
+        _RoutePool(
+            fetchrows=[
+                {
+                    "source_type": "entity",
+                    "source_id": "3a6f69b8-f6ff-47c6-8f95-212c1f1f8338",
+                    "target_type": "entity",
+                    "target_id": "85b3f4e8-cf08-48dc-9ef9-663f6d71da53",
+                },
+                {"privacy_scope_ids": ["scope-public"]},
+                {"privacy_scope_ids": ["scope-public"]},
+                None,  # update query returns no row
+            ]
+        ),
+        enums,
+    )
+    with pytest.raises(HTTPException) as missing_update:
+        await update_relationship(
+            "6d822f58-94a0-4ab2-9f8c-eb1b7e8c8f77",
+            UpdateRelationshipBody(properties={"a": 1}, status="active"),
+            req2,
+            auth=_auth(scopes=["scope-public"]),
+        )
+    assert missing_update.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_update_relationship_returns_pending_approval_payload(enums, monkeypatch):
+    """update_relationship should short-circuit when approval is required."""
+
+    pool = _RoutePool(
+        fetchrows=[
+            {
+                "source_type": "entity",
+                "source_id": "3a6f69b8-f6ff-47c6-8f95-212c1f1f8338",
+                "target_type": "entity",
+                "target_id": "85b3f4e8-cf08-48dc-9ef9-663f6d71da53",
+            },
+            {"privacy_scope_ids": ["scope-public"]},
+            {"privacy_scope_ids": ["scope-public"]},
+        ]
+    )
+    req = _request(pool, enums)
+
+    async def _approval(*_args, **_kwargs):
+        return {"requires_approval": True, "approval_id": "appr-update"}
+
+    monkeypatch.setattr("nebula_api.routes.relationships.maybe_check_agent_approval", _approval)
+    result = await update_relationship(
+        "5a898df8-7f2f-478f-b796-bf013dc5172a",
+        UpdateRelationshipBody(properties={"note": "ok"}, status="active"),
+        req,
+        auth=_auth(scopes=["scope-public"]),
+    )
+    assert result["requires_approval"] is True
+    assert result["approval_id"] == "appr-update"
+
+
+@pytest.mark.asyncio
+async def test_update_relationship_success_payload(enums, monkeypatch):
+    """update_relationship should return updated row payload on success."""
+
+    pool = _RoutePool(
+        fetchrows=[
+            {
+                "source_type": "entity",
+                "source_id": "3a6f69b8-f6ff-47c6-8f95-212c1f1f8338",
+                "target_type": "entity",
+                "target_id": "85b3f4e8-cf08-48dc-9ef9-663f6d71da53",
+            },
+            {"privacy_scope_ids": ["scope-public"]},
+            {"privacy_scope_ids": ["scope-public"]},
+            {"id": "rel-updated", "status": "active"},
+        ]
+    )
+    req = _request(pool, enums)
+
+    async def _approval(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr("nebula_api.routes.relationships.maybe_check_agent_approval", _approval)
+    result = await update_relationship(
+        "5a898df8-7f2f-478f-b796-bf013dc5172a",
+        UpdateRelationshipBody(properties={"note": "ok"}, status="active"),
+        req,
+        auth=_auth(scopes=["scope-public"]),
+    )
+    assert result["data"]["id"] == "rel-updated"
+
+
+@pytest.mark.asyncio
+async def test_update_relationship_rejects_unknown_status(enums):
+    """Unknown relationship status should fail with INVALID_INPUT."""
+
+    pool = _RoutePool(
+        fetchrows=[
+            {
+                "source_type": "entity",
+                "source_id": "3a6f69b8-f6ff-47c6-8f95-212c1f1f8338",
+                "target_type": "entity",
+                "target_id": "85b3f4e8-cf08-48dc-9ef9-663f6d71da53",
+            },
+            {"privacy_scope_ids": ["scope-public"]},
+            {"privacy_scope_ids": ["scope-public"]},
+        ]
+    )
+    req = _request(pool, enums)
+    with pytest.raises(HTTPException) as exc:
+        await update_relationship(
+            "5a898df8-7f2f-478f-b796-bf013dc5172a",
+            UpdateRelationshipBody(status="not-a-status"),
+            req,
+            auth=_auth(scopes=["scope-public"]),
+        )
+    assert exc.value.status_code == 400
+    assert exc.value.detail["error"]["code"] == "INVALID_INPUT"
+
+
+@pytest.mark.asyncio
+async def test_get_and_query_relationships_filter_hidden_jobs_for_agents(enums):
+    """Route list handlers should skip out-of-scope job links for agents."""
+
+    job_hidden = {
+        "id": "rel-hidden",
+        "source_type": "job",
+        "source_id": "job-private",
+        "target_type": "entity",
+        "target_id": "8f6afcf9-bb22-4e79-b129-4328922e4a45",
+    }
+    job_visible = {
+        "id": "rel-visible",
+        "source_type": "entity",
+        "source_id": "8f6afcf9-bb22-4e79-b129-4328922e4a45",
+        "target_type": "job",
+        "target_id": "job-public",
+    }
+    pool = _RoutePool(
+        fetchrows=[
+            {"privacy_scope_ids": ["scope-private"]},  # job-private lookup
+            {"privacy_scope_ids": ["scope-public"]},  # job-public lookup
+            {"privacy_scope_ids": ["scope-private"]},  # query job-private lookup
+            {"privacy_scope_ids": ["scope-public"]},  # query job-public lookup
+        ],
+        fetch_rows=[[job_hidden, job_visible], [job_hidden, job_visible]],
+    )
+    req = _request(pool, enums)
+    auth = _auth(scopes=["scope-public"])
+
+    list_result = await get_relationships(
+        "entity",
+        "8f6afcf9-bb22-4e79-b129-4328922e4a45",
+        req,
+        auth=auth,
+    )
+    query_result = await query_relationships(req, auth=auth)
+
+    assert [row["id"] for row in list_result["data"]] == ["rel-visible"]
+    assert [row["id"] for row in query_result["data"]] == ["rel-visible"]
+
+
+@pytest.mark.asyncio
+async def test_query_relationships_bypasses_filter_for_non_agent(enums):
+    """Non-agent callers should receive rows without job visibility filtering."""
+
+    row = {
+        "id": "rel-admin",
+        "source_type": "job",
+        "source_id": "job-private",
+        "target_type": "entity",
+        "target_id": "8f6afcf9-bb22-4e79-b129-4328922e4a45",
+    }
+    pool = _RoutePool(fetch_rows=[[row]])
+    req = _request(pool, enums)
+    result = await query_relationships(req, auth=_auth(caller_type="user"))
+    assert [item["id"] for item in result["data"]] == ["rel-admin"]
+
+
+@pytest.mark.asyncio
+async def test_query_relationships_filters_hidden_target_job(enums):
+    """Query should skip rows when target job is outside caller scopes."""
+
+    row = {
+        "id": "rel-hidden-target",
+        "source_type": "entity",
+        "source_id": "8f6afcf9-bb22-4e79-b129-4328922e4a45",
+        "target_type": "job",
+        "target_id": "job-private",
+    }
+    pool = _RoutePool(
+        fetchrows=[{"privacy_scope_ids": ["scope-private"]}],
+        fetch_rows=[[row]],
+    )
+    req = _request(pool, enums)
+    result = await query_relationships(req, auth=_auth(scopes=["scope-public"]))
+    assert result["data"] == []

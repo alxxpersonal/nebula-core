@@ -2,6 +2,8 @@
 
 # Third-Party
 import copy
+from datetime import UTC, datetime, timedelta
+import json
 
 import pytest
 
@@ -12,9 +14,14 @@ from nebula_mcp.helpers import (
     _safe_parse_uuid,
     _to_uuid_list,
     create_approval_request,
+    create_enrollment_session,
     enforce_scope_subset,
     ensure_approval_capacity,
     filter_context_segments,
+    get_enrollment_for_wait,
+    maybe_expire_enrollment,
+    redeem_enrollment_key,
+    wait_for_enrollment_status,
     generate_enrollment_token,
     verify_enrollment_token,
 )
@@ -304,6 +311,60 @@ class _DummyPoolWithAcquire:
         return _DummyAcquire(self._conn)
 
 
+class _EnrollmentConn:
+    """Connection stub for enrollment helper lifecycle tests."""
+
+    def __init__(self, fetchrow_results=None):
+        self._fetchrow_results = list(fetchrow_results or [])
+        self.fetchrow_calls = []
+        self.execute_calls = []
+
+    async def fetchrow(self, query, *args):
+        self.fetchrow_calls.append((query, args))
+        if not self._fetchrow_results:
+            return None
+        return self._fetchrow_results.pop(0)
+
+    async def execute(self, query, *args):
+        self.execute_calls.append((query, args))
+
+    def transaction(self):
+        return _DummyTransaction()
+
+
+class _EnrollmentPool:
+    """Pool stub exposing fetchrow/fetch/acquire for enrollment helpers."""
+
+    def __init__(self, conn=None, fetchrow_results=None, fetch_results=None):
+        self._conn = conn
+        self._fetchrow_results = list(fetchrow_results or [])
+        self._fetch_results = list(fetch_results or [])
+        self.fetchrow_calls = []
+        self.fetch_calls = []
+        self.execute_calls = []
+
+    async def fetchrow(self, query, *args):
+        self.fetchrow_calls.append((query, args))
+        if not self._fetchrow_results:
+            return None
+        item = self._fetchrow_results.pop(0)
+        return item() if callable(item) else item
+
+    async def fetch(self, query, *args):
+        self.fetch_calls.append((query, args))
+        if not self._fetch_results:
+            return []
+        return self._fetch_results.pop(0)
+
+    async def execute(self, query, *args):
+        self.execute_calls.append((query, args))
+        if args and isinstance(args[0], (int, float)):
+            await __import__("asyncio").sleep(args[0])
+
+    def acquire(self):
+        return _DummyAcquire(self._conn)
+
+
 class TestApprovalCapacityAndCreation:
     """Async coverage for approval queue helper branches."""
 
@@ -456,3 +517,302 @@ class TestApprovalCapacityAndCreation:
         assert result == {}
         _, args = conn.fetchrow_calls[0]
         assert args[2] == '{"name":"x"}'
+
+
+class TestEnrollmentHelpers:
+    """Coverage for enrollment lifecycle helpers."""
+
+    @pytest.mark.asyncio
+    async def test_create_enrollment_session_success(self):
+        """Session creation should include a one-time raw enrollment token."""
+
+        pool = _EnrollmentPool(
+            fetchrow_results=[
+                {
+                    "id": "sess-1",
+                    "status": "pending_approval",
+                    "agent_id": "agent-1",
+                }
+            ]
+        )
+        result = await create_enrollment_session(
+            pool,
+            agent_id="agent-1",
+            approval_request_id="approval-1",
+            requested_scope_ids=["scope-public"],
+            requested_requires_approval=True,
+        )
+        assert result["id"] == "sess-1"
+        assert result["enrollment_token"].startswith("nbe_")
+
+    @pytest.mark.asyncio
+    async def test_create_enrollment_session_raises_when_missing_row(self):
+        """Session creation should fail when insert returns no row."""
+
+        pool = _EnrollmentPool(fetchrow_results=[None])
+        with pytest.raises(ValueError):
+            await create_enrollment_session(
+                pool,
+                agent_id="agent-1",
+                approval_request_id="approval-1",
+                requested_scope_ids=["scope-public"],
+                requested_requires_approval=True,
+            )
+
+    @pytest.mark.asyncio
+    async def test_get_enrollment_for_wait_happy_path(self):
+        """Wait lookup should validate token and return enrollment row."""
+
+        raw_token, token_hash = generate_enrollment_token()
+        pool = _EnrollmentPool(
+            fetchrow_results=[
+                {
+                    "id": "sess-1",
+                    "status": "pending_approval",
+                    "enrollment_token_hash": token_hash,
+                }
+            ]
+        )
+        result = await get_enrollment_for_wait(
+            pool, registration_id="sess-1", enrollment_token=raw_token
+        )
+        assert result["id"] == "sess-1"
+
+    @pytest.mark.asyncio
+    async def test_get_enrollment_for_wait_rejects_missing_and_bad_token(self):
+        """Wait lookup should reject missing session and invalid tokens."""
+
+        with pytest.raises(ValueError):
+            await get_enrollment_for_wait(
+                _EnrollmentPool(fetchrow_results=[None]),
+                registration_id="sess-404",
+                enrollment_token="bad",
+            )
+
+        raw_token, token_hash = generate_enrollment_token()
+        with pytest.raises(ValueError):
+            await get_enrollment_for_wait(
+                _EnrollmentPool(
+                    fetchrow_results=[
+                        {
+                            "id": "sess-1",
+                            "status": "pending_approval",
+                            "enrollment_token_hash": token_hash,
+                        }
+                    ]
+                ),
+                registration_id="sess-1",
+                enrollment_token=raw_token + "-bad",
+            )
+
+    @pytest.mark.asyncio
+    async def test_maybe_expire_enrollment_variants(self):
+        """Expiration helper should handle no row, live row, and expired row."""
+
+        assert (
+            await maybe_expire_enrollment(
+                _EnrollmentPool(fetchrow_results=[None]), "sess-missing"
+            )
+            is None
+        )
+
+        live_row = {
+            "id": "sess-live",
+            "status": "pending_approval",
+            "expires_at": datetime.now(UTC) + timedelta(hours=1),
+        }
+        live = await maybe_expire_enrollment(
+            _EnrollmentPool(fetchrow_results=[live_row]), "sess-live"
+        )
+        assert live["id"] == "sess-live"
+
+        expired_row = {
+            "id": "sess-expired",
+            "status": "approved",
+            "expires_at": datetime.now(UTC) - timedelta(minutes=1),
+        }
+        updated_row = {**expired_row, "status": "expired"}
+        expired = await maybe_expire_enrollment(
+            _EnrollmentPool(fetchrow_results=[expired_row, updated_row]),
+            "sess-expired",
+        )
+        assert expired["status"] == "expired"
+
+    @pytest.mark.asyncio
+    async def test_wait_for_enrollment_status_terminal_and_timeout(self, monkeypatch):
+        """Wait helper should return terminal state or timeout with retry hint."""
+
+        raw_token, token_hash = generate_enrollment_token()
+        approved_row = {
+            "id": "sess-approved",
+            "status": "approved",
+            "enrollment_token_hash": token_hash,
+            "expires_at": datetime.now(UTC) + timedelta(hours=1),
+        }
+        approved = await wait_for_enrollment_status(
+            _EnrollmentPool(fetchrow_results=[approved_row, approved_row]),
+            registration_id="sess-approved",
+            enrollment_token=raw_token,
+            timeout_seconds=20,
+        )
+        assert approved["status"] == "approved"
+
+        monkeypatch.setattr("nebula_mcp.helpers.ENROLLMENT_WAIT_POLL_SECONDS", 0.2)
+        pending_row = {
+            "id": "sess-pending",
+            "status": "pending_approval",
+            "enrollment_token_hash": token_hash,
+            "expires_at": datetime.now(UTC) + timedelta(hours=1),
+        }
+        timeout_pool = _EnrollmentPool(
+            fetchrow_results=[
+                lambda: dict(pending_row),
+                lambda: dict(pending_row),
+                lambda: dict(pending_row),
+                lambda: dict(pending_row),
+                lambda: dict(pending_row),
+                lambda: dict(pending_row),
+                lambda: dict(pending_row),
+                lambda: dict(pending_row),
+                lambda: dict(pending_row),
+                lambda: dict(pending_row),
+                lambda: dict(pending_row),
+                lambda: dict(pending_row),
+            ]
+        )
+        timed_out = await wait_for_enrollment_status(
+            timeout_pool,
+            registration_id="sess-pending",
+            enrollment_token=raw_token,
+            timeout_seconds=1,
+        )
+        assert timed_out["status"] == "pending_approval"
+        assert timed_out["retry_after_ms"] == 200
+
+    @pytest.mark.asyncio
+    async def test_redeem_enrollment_key_error_paths(self):
+        """Redeem helper should fail cleanly on invalid lifecycle states."""
+
+        raw_token, token_hash = generate_enrollment_token()
+
+        missing = _EnrollmentPool(conn=_EnrollmentConn(fetchrow_results=[None]))
+        with pytest.raises(ValueError):
+            await redeem_enrollment_key(
+                missing,
+                registration_id="sess-missing",
+                enrollment_token=raw_token,
+            )
+
+        invalid_token = _EnrollmentPool(
+            conn=_EnrollmentConn(
+                fetchrow_results=[
+                    {
+                        "status": "approved",
+                        "enrollment_token_hash": token_hash,
+                        "expires_at": datetime.now(UTC) + timedelta(hours=1),
+                    }
+                ]
+            )
+        )
+        with pytest.raises(ValueError):
+            await redeem_enrollment_key(
+                invalid_token,
+                registration_id="sess-invalid",
+                enrollment_token=raw_token + "-bad",
+            )
+
+        expired = _EnrollmentConn(
+            fetchrow_results=[
+                {
+                    "status": "approved",
+                    "enrollment_token_hash": token_hash,
+                    "expires_at": datetime.now(UTC) - timedelta(minutes=1),
+                }
+            ]
+        )
+        with pytest.raises(ValueError):
+            await redeem_enrollment_key(
+                _EnrollmentPool(conn=expired),
+                registration_id="sess-expired",
+                enrollment_token=raw_token,
+            )
+        assert len(expired.execute_calls) == 1
+
+        redeemed = _EnrollmentPool(
+            conn=_EnrollmentConn(
+                fetchrow_results=[
+                    {
+                        "status": "redeemed",
+                        "enrollment_token_hash": token_hash,
+                        "expires_at": datetime.now(UTC) + timedelta(hours=1),
+                    }
+                ]
+            )
+        )
+        with pytest.raises(ValueError):
+            await redeem_enrollment_key(
+                redeemed,
+                registration_id="sess-redeemed",
+                enrollment_token=raw_token,
+            )
+
+    @pytest.mark.asyncio
+    async def test_redeem_enrollment_key_success_and_mark_redeemed_failure(
+        self, monkeypatch
+    ):
+        """Redeem helper should mint key once and fail if mark_redeemed is missing."""
+
+        raw_token, token_hash = generate_enrollment_token()
+        monkeypatch.setattr(
+            "nebula_api.auth.generate_api_key",
+            lambda: ("nebula-key-1", "nbk_1", "hash_1"),
+        )
+
+        ok_conn = _EnrollmentConn(
+            fetchrow_results=[
+                {
+                    "status": "approved",
+                    "agent_id": "agent-1",
+                    "agent_name": "agent-one",
+                    "enrollment_token_hash": token_hash,
+                    "expires_at": datetime.now(UTC) + timedelta(hours=1),
+                    "requested_scope_ids": ["scope-public"],
+                    "granted_scope_ids": None,
+                    "requested_requires_approval": True,
+                    "granted_requires_approval": None,
+                },
+                {"id": "sess-1", "status": "redeemed"},
+            ]
+        )
+        ok = await redeem_enrollment_key(
+            _EnrollmentPool(conn=ok_conn),
+            registration_id="sess-1",
+            enrollment_token=raw_token,
+        )
+        assert ok["api_key"] == "nebula-key-1"
+        assert ok["agent_name"] == "agent-one"
+        assert ok["scope_ids"] == ["scope-public"]
+        assert ok["requires_approval"] is True
+
+        fail_conn = _EnrollmentConn(
+            fetchrow_results=[
+                {
+                    "status": "approved",
+                    "agent_id": "agent-1",
+                    "agent_name": "agent-one",
+                    "enrollment_token_hash": token_hash,
+                    "expires_at": datetime.now(UTC) + timedelta(hours=1),
+                    "requested_scope_ids": ["scope-public"],
+                    "granted_scope_ids": ["scope-private"],
+                    "requested_requires_approval": True,
+                    "granted_requires_approval": False,
+                },
+                None,
+            ]
+        )
+        with pytest.raises(ValueError):
+            await redeem_enrollment_key(
+                _EnrollmentPool(conn=fail_conn),
+                registration_id="sess-fail",
+                enrollment_token=raw_token,
+            )
