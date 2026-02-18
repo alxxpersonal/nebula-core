@@ -60,7 +60,7 @@ func TestEntitiesDetailMetadataCopyCurrentRow(t *testing.T) {
 	copiedMsg, ok := msg.(entityMetadataCopiedMsg)
 	require.True(t, ok)
 	assert.Equal(t, 1, copiedMsg.count)
-	assert.Contains(t, copied, "note: hello")
+	assert.Equal(t, "hello", strings.TrimSpace(copied))
 	assert.Equal(t, entitiesViewDetail, next.view)
 }
 
@@ -101,6 +101,6 @@ func TestEntitiesDetailMetadataMultiSelectCopy(t *testing.T) {
 
 	lines := strings.Split(strings.TrimSpace(copied), "\n")
 	require.Len(t, lines, 2)
-	assert.Contains(t, lines[0], ":")
-	assert.Contains(t, lines[1], ":")
+	assert.NotEmpty(t, strings.TrimSpace(lines[0]))
+	assert.NotEmpty(t, strings.TrimSpace(lines[1]))
 }

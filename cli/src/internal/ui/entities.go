@@ -2656,15 +2656,11 @@ func (m EntitiesModel) copyMetadataRows(indices []int) tea.Cmd {
 			continue
 		}
 		row := m.metaRows[idx]
-		field := strings.TrimSpace(row.field)
 		value := strings.TrimSpace(row.value)
-		if field == "" {
-			continue
-		}
 		if value == "" {
 			value = "None"
 		}
-		lines = append(lines, fmt.Sprintf("%s: %s", field, value))
+		lines = append(lines, value)
 	}
 	if len(lines) == 0 {
 		return nil
