@@ -1,10 +1,32 @@
 """Context route tests."""
 
 # Third-Party
+from httpx import ASGITransport, AsyncClient
 import pytest
 
 # Local
+from nebula_api.app import app
+from nebula_api.auth import require_auth
 from nebula_mcp.models import MAX_TAGS
+
+
+def _agent_auth_override(agent_row: dict, scope_ids: list[int]) -> callable:
+    """Build an auth override that simulates an agent caller."""
+
+    auth_dict = {
+        "key_id": None,
+        "caller_type": "agent",
+        "entity_id": None,
+        "entity": None,
+        "agent_id": agent_row["id"],
+        "agent": agent_row,
+        "scopes": scope_ids,
+    }
+
+    async def mock_auth():
+        return auth_dict
+
+    return mock_auth
 
 
 @pytest.mark.asyncio
@@ -207,3 +229,348 @@ async def test_update_context_agent_scope_subset_enforced(api_agent_auth):
         json={"scopes": ["public", "sensitive"]},
     )
     assert expanded.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_create_context_agent_scope_subset_enforced(api_agent_auth):
+    """Agent creates should reject scopes outside the caller subset."""
+
+    created = await api_agent_auth.post(
+        "/api/context",
+        json={"title": "TooWide", "scopes": ["public", "sensitive"]},
+    )
+    assert created.status_code == 400
+    assert "scope" in created.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_create_context_untrusted_agent_returns_approval_required(
+    db_pool, enums, untrusted_agent_row
+):
+    """Untrusted agents should queue context creates for approval."""
+
+    app.dependency_overrides[require_auth] = _agent_auth_override(
+        {**untrusted_agent_row, "requires_approval": True},
+        [enums.scopes.name_to_id["public"]],
+    )
+    app.state.pool = db_pool
+    app.state.enums = enums
+    transport = ASGITransport(app=app)
+    async with AsyncClient(
+        transport=transport, base_url="http://test", follow_redirects=True
+    ) as client:
+        resp = await client.post(
+            "/api/context",
+            json={"title": "Queued Context", "scopes": ["public"]},
+        )
+    app.dependency_overrides.pop(require_auth, None)
+
+    assert resp.status_code == 202
+    assert resp.json()["status"] == "approval_required"
+
+
+@pytest.mark.asyncio
+async def test_link_context_untrusted_agent_returns_approval_required(
+    db_pool, enums, untrusted_agent_row
+):
+    """Untrusted agents should queue context link requests."""
+
+    context = await db_pool.fetchrow(
+        """
+        INSERT INTO context_items (title, source_type, privacy_scope_ids, status_id, tags, metadata)
+        VALUES ($1, $2, $3::uuid[], $4::uuid, $5, $6::jsonb)
+        RETURNING id
+        """,
+        "Ctx Queue Link",
+        "note",
+        [enums.scopes.name_to_id["public"]],
+        enums.statuses.name_to_id["active"],
+        [],
+        "{}",
+    )
+    entity = await db_pool.fetchrow(
+        """
+        INSERT INTO entities (name, type_id, status_id, privacy_scope_ids, tags, metadata)
+        VALUES ($1, $2::uuid, $3::uuid, $4::uuid[], $5, $6::jsonb)
+        RETURNING id
+        """,
+        "Entity Queue Link",
+        enums.entity_types.name_to_id["person"],
+        enums.statuses.name_to_id["active"],
+        [enums.scopes.name_to_id["public"]],
+        [],
+        "{}",
+    )
+
+    app.dependency_overrides[require_auth] = _agent_auth_override(
+        {**untrusted_agent_row, "requires_approval": True},
+        [enums.scopes.name_to_id["public"]],
+    )
+    app.state.pool = db_pool
+    app.state.enums = enums
+    transport = ASGITransport(app=app)
+    async with AsyncClient(
+        transport=transport, base_url="http://test", follow_redirects=True
+    ) as client:
+        resp = await client.post(
+            f"/api/context/{context['id']}/link",
+            json={"entity_id": str(entity["id"]), "relationship_type": "related-to"},
+        )
+    app.dependency_overrides.pop(require_auth, None)
+
+    assert resp.status_code == 202
+    assert resp.json()["status"] == "approval_required"
+
+
+@pytest.mark.asyncio
+async def test_link_context_entity_scope_forbidden_for_agent(db_pool, enums):
+    """Agent link writes should fail when target entity scopes exceed caller scopes."""
+
+    context = await db_pool.fetchrow(
+        """
+        INSERT INTO context_items (title, source_type, privacy_scope_ids, status_id, tags, metadata)
+        VALUES ($1, $2, $3::uuid[], $4::uuid, $5, $6::jsonb)
+        RETURNING id
+        """,
+        "Ctx Scope Guard",
+        "note",
+        [enums.scopes.name_to_id["public"]],
+        enums.statuses.name_to_id["active"],
+        [],
+        "{}",
+    )
+    entity = await db_pool.fetchrow(
+        """
+        INSERT INTO entities (name, type_id, status_id, privacy_scope_ids, tags, metadata)
+        VALUES ($1, $2::uuid, $3::uuid, $4::uuid[], $5, $6::jsonb)
+        RETURNING id
+        """,
+        "Entity Scope Guard",
+        enums.entity_types.name_to_id["person"],
+        enums.statuses.name_to_id["active"],
+        [enums.scopes.name_to_id["public"], enums.scopes.name_to_id["sensitive"]],
+        [],
+        "{}",
+    )
+
+    status_id = enums.statuses.name_to_id["active"]
+    agent = await db_pool.fetchrow(
+        """
+        INSERT INTO agents (name, description, scopes, requires_approval, status_id)
+        VALUES ($1, $2, $3::uuid[], $4, $5::uuid)
+        RETURNING *
+        """,
+        "context-scope-agent",
+        "scope guard",
+        [enums.scopes.name_to_id["public"]],
+        False,
+        status_id,
+    )
+
+    app.dependency_overrides[require_auth] = _agent_auth_override(
+        dict(agent),
+        [enums.scopes.name_to_id["public"]],
+    )
+    app.state.pool = db_pool
+    app.state.enums = enums
+    transport = ASGITransport(app=app)
+    async with AsyncClient(
+        transport=transport, base_url="http://test", follow_redirects=True
+    ) as client:
+        resp = await client.post(
+            f"/api/context/{context['id']}/link",
+            json={"entity_id": str(entity["id"]), "relationship_type": "related-to"},
+        )
+    app.dependency_overrides.pop(require_auth, None)
+
+    assert resp.status_code == 403
+    assert resp.json()["detail"] == "Forbidden"
+
+
+@pytest.mark.asyncio
+async def test_update_context_admin_agent_can_bypass_scope_guard(db_pool, enums):
+    """Admin agent callers should bypass context scope write restrictions."""
+
+    context = await db_pool.fetchrow(
+        """
+        INSERT INTO context_items (title, source_type, privacy_scope_ids, status_id, tags, metadata)
+        VALUES ($1, $2, $3::uuid[], $4::uuid, $5, $6::jsonb)
+        RETURNING id
+        """,
+        "Ctx Admin Guard",
+        "note",
+        [enums.scopes.name_to_id["sensitive"]],
+        enums.statuses.name_to_id["active"],
+        [],
+        "{}",
+    )
+    admin_scope = enums.scopes.name_to_id.get("admin")
+    if not admin_scope:
+        pytest.skip("admin scope unavailable in taxonomy")
+
+    status_id = enums.statuses.name_to_id["active"]
+    agent = await db_pool.fetchrow(
+        """
+        INSERT INTO agents (name, description, scopes, requires_approval, status_id)
+        VALUES ($1, $2, $3::uuid[], $4, $5::uuid)
+        RETURNING *
+        """,
+        "context-admin-agent",
+        "admin",
+        [admin_scope],
+        False,
+        status_id,
+    )
+
+    app.dependency_overrides[require_auth] = _agent_auth_override(
+        dict(agent),
+        [admin_scope],
+    )
+    app.state.pool = db_pool
+    app.state.enums = enums
+    transport = ASGITransport(app=app)
+    async with AsyncClient(
+        transport=transport, base_url="http://test", follow_redirects=True
+    ) as client:
+        resp = await client.patch(
+            f"/api/context/{context['id']}",
+            json={"title": "Ctx Admin Updated"},
+        )
+    app.dependency_overrides.pop(require_auth, None)
+
+    assert resp.status_code == 200
+    assert resp.json()["data"]["title"] == "Ctx Admin Updated"
+
+
+@pytest.mark.asyncio
+async def test_update_context_untrusted_agent_returns_approval_required(
+    db_pool, enums, untrusted_agent_row
+):
+    """Untrusted agents should queue context updates for approval."""
+
+    context = await db_pool.fetchrow(
+        """
+        INSERT INTO context_items (title, source_type, privacy_scope_ids, status_id, tags, metadata)
+        VALUES ($1, $2, $3::uuid[], $4::uuid, $5, $6::jsonb)
+        RETURNING id
+        """,
+        "Ctx Queue Update",
+        "note",
+        [enums.scopes.name_to_id["public"]],
+        enums.statuses.name_to_id["active"],
+        [],
+        "{}",
+    )
+    app.dependency_overrides[require_auth] = _agent_auth_override(
+        {**untrusted_agent_row, "requires_approval": True},
+        [enums.scopes.name_to_id["public"]],
+    )
+    app.state.pool = db_pool
+    app.state.enums = enums
+    transport = ASGITransport(app=app)
+    async with AsyncClient(
+        transport=transport, base_url="http://test", follow_redirects=True
+    ) as client:
+        resp = await client.patch(
+            f"/api/context/{context['id']}",
+            json={"title": "Queued Updated"},
+        )
+    app.dependency_overrides.pop(require_auth, None)
+
+    assert resp.status_code == 202
+    assert resp.json()["status"] == "approval_required"
+
+
+@pytest.mark.asyncio
+async def test_create_context_blank_url_allowed(api):
+    """Create should allow blank URL values after validator normalization."""
+
+    resp = await api.post(
+        "/api/context",
+        json={"title": "Blank URL", "url": "", "scopes": ["public"]},
+    )
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_update_context_accepts_valid_url_and_null_tags(api):
+    """Update should accept valid URLs and explicit null tags."""
+
+    created = (
+        await api.post(
+            "/api/context",
+            json={"title": "Ctx URL Update", "scopes": ["public"]},
+        )
+    ).json()["data"]
+
+    resp = await api.patch(
+        f"/api/context/{created['id']}",
+        json={"url": "https://example.com/new", "tags": None},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["data"]["url"] == "https://example.com/new"
+
+
+@pytest.mark.asyncio
+async def test_create_context_executor_value_error_returns_400(api, monkeypatch):
+    """Create should convert executor value errors to 400 responses."""
+
+    async def _boom(*_args, **_kwargs):
+        raise ValueError("ctx create failed")
+
+    monkeypatch.setattr("nebula_api.routes.context.execute_create_context", _boom)
+    resp = await api.post(
+        "/api/context",
+        json={"title": "CtxFail", "scopes": ["public"]},
+    )
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "ctx create failed"
+
+
+@pytest.mark.asyncio
+async def test_link_context_executor_value_error_returns_400(api, monkeypatch):
+    """Link should convert executor value errors to 400 responses."""
+
+    context = (
+        await api.post("/api/context", json={"title": "CtxLinkFail", "scopes": ["public"]})
+    ).json()["data"]
+    entity = (
+        await api.post(
+            "/api/entities",
+            json={"name": "EntityLinkFail", "type": "person", "scopes": ["public"]},
+        )
+    ).json()["data"]
+
+    async def _boom(*_args, **_kwargs):
+        raise ValueError("ctx link failed")
+
+    monkeypatch.setattr("nebula_api.routes.context.execute_create_relationship", _boom)
+    resp = await api.post(
+        f"/api/context/{context['id']}/link",
+        json={"entity_id": entity["id"], "relationship_type": "related-to"},
+    )
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "ctx link failed"
+
+
+@pytest.mark.asyncio
+async def test_update_context_executor_value_error_returns_400(api, monkeypatch):
+    """Update should convert executor value errors to 400 responses."""
+
+    context = (
+        await api.post(
+            "/api/context",
+            json={"title": "CtxUpdateFail", "scopes": ["public"]},
+        )
+    ).json()["data"]
+
+    async def _boom(*_args, **_kwargs):
+        raise ValueError("ctx update failed")
+
+    monkeypatch.setattr("nebula_api.routes.context.execute_update_context", _boom)
+    resp = await api.patch(
+        f"/api/context/{context['id']}",
+        json={"title": "new title"},
+    )
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "ctx update failed"

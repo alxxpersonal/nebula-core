@@ -1,7 +1,12 @@
 """Entity route tests."""
 
 # Third-Party
+from httpx import ASGITransport, AsyncClient
 import pytest
+
+# Local
+from nebula_api.app import app
+from nebula_api.auth import require_auth
 
 
 @pytest.mark.asyncio
@@ -42,6 +47,15 @@ async def test_get_entity_not_found(api):
 
 
 @pytest.mark.asyncio
+async def test_get_entity_invalid_id_returns_400(api):
+    """Entity get should reject malformed ids."""
+
+    r = await api.get("/api/entities/not-a-uuid")
+    assert r.status_code == 400
+    assert r.json()["detail"]["error"]["code"] == "INVALID_INPUT"
+
+
+@pytest.mark.asyncio
 async def test_query_entities(api):
     """Test query entities."""
 
@@ -56,6 +70,40 @@ async def test_query_entities(api):
 
 
 @pytest.mark.asyncio
+async def test_create_entity_invalid_status_returns_400(api):
+    """Entity create should reject unknown statuses."""
+
+    r = await api.post(
+        "/api/entities",
+        json={
+            "name": "Bad Status Entity",
+            "type": "person",
+            "status": "todo",
+            "scopes": ["public"],
+        },
+    )
+    assert r.status_code == 400
+    assert r.json()["detail"]["error"]["code"] == "INVALID_INPUT"
+
+
+@pytest.mark.asyncio
+async def test_create_entity_invalid_scope_returns_400(api):
+    """Entity create should reject unknown scope names."""
+
+    r = await api.post(
+        "/api/entities",
+        json={
+            "name": "Bad Scope Entity",
+            "type": "person",
+            "status": "active",
+            "scopes": ["does-not-exist"],
+        },
+    )
+    assert r.status_code == 400
+    assert r.json()["detail"]["error"]["code"] == "INVALID_INPUT"
+
+
+@pytest.mark.asyncio
 async def test_update_entity(api, test_entity):
     """Test update entity."""
 
@@ -67,6 +115,137 @@ async def test_update_entity(api, test_entity):
         },
     )
     assert r.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_update_entity_invalid_id_returns_400(api):
+    """Entity update should reject malformed entity ids."""
+
+    r = await api.patch(
+        "/api/entities/not-a-uuid",
+        json={"status": "active"},
+    )
+    assert r.status_code == 400
+    assert r.json()["detail"]["error"]["code"] == "INVALID_INPUT"
+
+
+@pytest.mark.asyncio
+async def test_update_entity_invalid_status_returns_400(api, test_entity):
+    """Entity update should reject unknown statuses."""
+
+    r = await api.patch(
+        f"/api/entities/{test_entity['id']}",
+        json={"status": "todo"},
+    )
+    assert r.status_code == 400
+    assert r.json()["detail"]["error"]["code"] == "INVALID_INPUT"
+
+
+@pytest.mark.asyncio
+async def test_bulk_update_tags_requires_entity_ids(api):
+    """Bulk tag updates should fail without entity ids."""
+
+    r = await api.post(
+        "/api/entities/bulk/tags",
+        json={"entity_ids": [], "tags": ["x"], "op": "add"},
+    )
+    assert r.status_code == 400
+    assert r.json()["detail"]["error"]["code"] == "VALIDATION_ERROR"
+
+
+@pytest.mark.asyncio
+async def test_bulk_update_tags_requires_tags_for_add(api, test_entity):
+    """Bulk tag add should fail when tag list is empty."""
+
+    r = await api.post(
+        "/api/entities/bulk/tags",
+        json={"entity_ids": [str(test_entity["id"])], "tags": [], "op": "add"},
+    )
+    assert r.status_code == 400
+    assert r.json()["detail"]["error"]["code"] == "VALIDATION_ERROR"
+
+
+@pytest.mark.asyncio
+async def test_bulk_update_scopes_requires_entity_ids(api):
+    """Bulk scope updates should fail without entity ids."""
+
+    r = await api.post(
+        "/api/entities/bulk/scopes",
+        json={"entity_ids": [], "scopes": ["public"], "op": "add"},
+    )
+    assert r.status_code == 400
+    assert r.json()["detail"]["error"]["code"] == "VALIDATION_ERROR"
+
+
+@pytest.mark.asyncio
+async def test_bulk_update_scopes_invalid_scope_returns_400(api, test_entity):
+    """Bulk scope updates should reject invalid scope names."""
+
+    r = await api.post(
+        "/api/entities/bulk/scopes",
+        json={
+            "entity_ids": [str(test_entity["id"])],
+            "scopes": ["does-not-exist"],
+            "op": "add",
+        },
+    )
+    assert r.status_code == 400
+    assert r.json()["detail"]["error"]["code"] == "INVALID_INPUT"
+
+
+@pytest.mark.asyncio
+async def test_entity_history_not_found_returns_404(api):
+    """History endpoint should return 404 for missing entities."""
+
+    r = await api.get("/api/entities/00000000-0000-0000-0000-000000000000/history")
+    assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_revert_entity_forbidden_for_agents(db_pool, enums, test_entity):
+    """Entity revert should be blocked for agent callers."""
+
+    status_id = enums.statuses.name_to_id["active"]
+    public_scope = enums.scopes.name_to_id["public"]
+    agent = await db_pool.fetchrow(
+        """
+        INSERT INTO agents (name, description, scopes, requires_approval, status_id)
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING *
+        """,
+        "revert-agent",
+        "agent",
+        [public_scope],
+        False,
+        status_id,
+    )
+
+    async def mock_auth():
+        return {
+            "key_id": None,
+            "caller_type": "agent",
+            "entity_id": None,
+            "entity": None,
+            "agent_id": agent["id"],
+            "agent": dict(agent),
+            "scopes": [public_scope],
+        }
+
+    app.dependency_overrides[require_auth] = mock_auth
+    app.state.pool = db_pool
+    app.state.enums = enums
+    transport = ASGITransport(app=app)
+    async with AsyncClient(
+        transport=transport, base_url="http://test", follow_redirects=True
+    ) as client:
+        r = await client.post(
+            f"/api/entities/{test_entity['id']}/revert",
+            json={"audit_id": "00000000-0000-0000-0000-000000000000"},
+        )
+    app.dependency_overrides.pop(require_auth, None)
+
+    assert r.status_code == 403
+    assert r.json()["detail"]["error"]["code"] == "FORBIDDEN"
 
 
 @pytest.mark.asyncio
