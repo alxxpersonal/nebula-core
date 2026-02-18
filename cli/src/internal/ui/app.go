@@ -774,10 +774,26 @@ func (a App) statusHintsForTab() []string {
 		}
 		switch a.entities.view {
 		case entitiesViewDetail:
+			if a.entities.metaExpanded {
+				return append(base,
+					components.Hint("↑/↓", "Meta Row"),
+					components.Hint("space", "Select"),
+					components.Hint("b", "Select All"),
+					components.Hint("enter", "Copy Row"),
+					components.Hint("c", "Copy Sel"),
+					components.Hint("m", "Collapse"),
+					components.Hint("e", "Edit"),
+					components.Hint("h", "History"),
+					components.Hint("r", "Relationships"),
+					components.Hint("d", "Archive"),
+					components.Hint("esc", "Back"),
+				)
+			}
 			return append(base,
 				components.Hint("e", "Edit"),
 				components.Hint("h", "History"),
 				components.Hint("r", "Relationships"),
+				components.Hint("m", "Metadata"),
 				components.Hint("d", "Archive"),
 				components.Hint("esc", "Back"),
 			)
@@ -1316,7 +1332,7 @@ func (a App) renderStartupPanel() string {
 
 func (a *App) toastCmdForMsg(msg tea.Msg) tea.Cmd {
 	var level, text string
-	switch msg.(type) {
+	switch typed := msg.(type) {
 	case approvalDoneMsg:
 		level, text = "success", "Approval action completed."
 	case entityCreatedMsg:
@@ -1343,6 +1359,8 @@ func (a *App) toastCmdForMsg(msg tea.Msg) tea.Cmd {
 		level, text = "success", "File saved."
 	case protocolCreatedMsg, protocolUpdatedMsg:
 		level, text = "success", "Protocol saved."
+	case entityMetadataCopiedMsg:
+		level, text = "success", fmt.Sprintf("Copied %d metadata row(s) as YAML.", typed.count)
 	}
 	if text == "" {
 		return nil

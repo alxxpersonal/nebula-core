@@ -587,8 +587,8 @@ func (m InboxModel) renderDetail() string {
 					for _, field := range diffKeys {
 						diff := changesMap[field]
 						if diffObj, ok := diff.(map[string]any); ok {
-							from := formatAny(diffObj["from"])
-							to := formatAny(diffObj["to"])
+							from := approvalDiffValue(a.ChangeDetails, field, diffObj["from"])
+							to := approvalDiffValue(a.ChangeDetails, field, diffObj["to"])
 							if from == to {
 								continue
 							}

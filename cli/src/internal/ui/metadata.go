@@ -446,6 +446,160 @@ type metadataDisplayRow struct {
 	value string
 }
 
+func metadataPanelPageSize(expanded bool) int {
+	if expanded {
+		return 24
+	}
+	return 12
+}
+
+func syncMetadataList(list *components.List, rows []metadataDisplayRow, pageSize int) {
+	if list == nil {
+		return
+	}
+	if pageSize < 1 {
+		pageSize = 1
+	}
+	list.PageSize = pageSize
+
+	items := make([]string, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, row.field)
+	}
+
+	prevCursor := list.Cursor
+	prevOffset := list.Offset
+	list.Items = items
+	if len(items) == 0 {
+		list.Cursor = 0
+		list.Offset = 0
+		return
+	}
+	if prevCursor < 0 {
+		prevCursor = 0
+	}
+	if prevCursor >= len(items) {
+		prevCursor = len(items) - 1
+	}
+	maxOffset := len(items) - list.PageSize
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	if prevOffset < 0 {
+		prevOffset = 0
+	}
+	if prevOffset > maxOffset {
+		prevOffset = maxOffset
+	}
+	if prevCursor < prevOffset {
+		prevOffset = prevCursor
+	}
+	if prevCursor >= prevOffset+list.PageSize {
+		prevOffset = prevCursor - list.PageSize + 1
+		if prevOffset < 0 {
+			prevOffset = 0
+		}
+	}
+	list.Cursor = prevCursor
+	list.Offset = prevOffset
+}
+
+func renderMetadataSelectableBlockWithTitle(
+	title string,
+	rows []metadataDisplayRow,
+	width int,
+	list *components.List,
+	selected map[int]bool,
+) string {
+	if len(rows) == 0 {
+		return components.TitledBox(title, MetaValueStyle.Render("None"), width)
+	}
+	contentWidth := components.BoxContentWidth(width) - 2
+	if contentWidth < 40 {
+		contentWidth = 40
+	}
+
+	if list == nil {
+		fallback := components.NewList(metadataPanelPageSize(false))
+		list = fallback
+		syncMetadataList(list, rows, metadataPanelPageSize(false))
+	}
+	visible := list.Visible()
+	if len(visible) == 0 {
+		return components.TitledBox(title, MetaValueStyle.Render("None"), width)
+	}
+
+	fieldWidth := contentWidth * 35 / 100
+	if fieldWidth < 18 {
+		fieldWidth = 18
+	}
+	if fieldWidth > 44 {
+		fieldWidth = 44
+	}
+	valueWidth := contentWidth - fieldWidth - 6 // marker + separators
+	if valueWidth < 18 {
+		valueWidth = 18
+		fieldWidth = contentWidth - valueWidth - 6
+		if fieldWidth < 14 {
+			fieldWidth = 14
+		}
+	}
+
+	columns := []components.TableColumn{
+		{Header: "Sel", Width: 4, Align: lipgloss.Left},
+		{Header: "Field", Width: fieldWidth, Align: lipgloss.Left},
+		{Header: "Value", Width: valueWidth, Align: lipgloss.Left},
+	}
+
+	gridRows := make([][]string, 0, len(visible))
+	activeVisible := -1
+	for relIdx := range visible {
+		absIdx := list.RelToAbs(relIdx)
+		if absIdx < 0 || absIdx >= len(rows) {
+			continue
+		}
+		row := rows[absIdx]
+		mark := "[ ]"
+		if selected != nil && selected[absIdx] {
+			mark = "[x]"
+		}
+		if list.IsSelected(absIdx) {
+			activeVisible = len(gridRows)
+			mark = ">" + mark
+		} else {
+			mark = " " + mark
+		}
+		gridRows = append(gridRows, []string{
+			mark,
+			row.field,
+			row.value,
+		})
+	}
+	rendered := colorizeScopeBadges(
+		components.TableGridWithActiveRow(columns, gridRows, contentWidth, activeVisible),
+	)
+
+	start := list.Offset + 1
+	end := list.Offset + len(gridRows)
+	if start < 1 {
+		start = 1
+	}
+	selectedCount := 0
+	for _, v := range selected {
+		if v {
+			selectedCount++
+		}
+	}
+	metaLine := fmt.Sprintf("Rows %d-%d of %d", start, end, len(rows))
+	if selectedCount > 0 {
+		metaLine += fmt.Sprintf(" · selected %d", selectedCount)
+	}
+	hintLine := "↑/↓ navigate · space select · b all · enter copy row · c copy selected"
+
+	content := rendered + "\n\n" + MutedStyle.Render(metaLine) + "\n" + MutedStyle.Render(hintLine)
+	return components.TitledBox(title, content, width)
+}
+
 func metadataDisplayRows(data map[string]any) []metadataDisplayRow {
 	rows := make([]metadataDisplayRow, 0, len(data)*2)
 	flattenMetadataMapRows("", data, &rows)

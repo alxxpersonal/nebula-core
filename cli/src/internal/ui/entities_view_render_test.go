@@ -141,3 +141,35 @@ func TestEntitiesDetailViewRendersMetadataWhenExpanded(t *testing.T) {
 	assert.Contains(t, clean, "note")
 	assert.Contains(t, clean, "hello")
 }
+
+func TestEntitiesSelectedPreviewFormatsScopesAndMetadataSnippet(t *testing.T) {
+	model := NewEntitiesModel(nil)
+	model.width = 100
+	model.scopeNames = map[string]string{
+		"scope-public": "public",
+		"scope-admin":  "admin",
+	}
+
+	items := []api.Entity{
+		{
+			ID:              "ent-1",
+			Name:            "Alpha",
+			Type:            "person",
+			Status:          "active",
+			PrivacyScopeIDs: []string{"scope-public", "scope-admin"},
+			Metadata: api.JSONMap{
+				"context_segments": []any{
+					map[string]any{"text": "private note", "scopes": []any{"public"}},
+				},
+			},
+		},
+	}
+	model, _ = model.Update(entitiesLoadedMsg{items: items})
+
+	out := components.SanitizeText(model.View())
+	assert.Contains(t, out, "Selected")
+	assert.Contains(t, out, "Scopes")
+	assert.Contains(t, out, "public")
+	assert.Contains(t, out, "Preview")
+	assert.NotContains(t, out, "map[")
+}

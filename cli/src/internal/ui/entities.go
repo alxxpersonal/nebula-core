@@ -3,6 +3,7 @@ package ui
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -29,6 +30,7 @@ type entityHistoryLoadedMsg struct{ items []api.AuditEntry }
 type entityRevertedMsg struct{ entity api.Entity }
 type entityBulkUpdatedMsg struct{}
 type entityScopesLoadedMsg struct{ names map[string]string }
+type entityMetadataCopiedMsg struct{ count int }
 
 // --- View States ---
 
@@ -75,6 +77,7 @@ const (
 
 var entityStatusOptions = []string{"active", "inactive"}
 var relationshipStatusOptions = []string{"active", "inactive"}
+var copyEntityMetadataClipboard = copyTextToClipboard
 
 type bulkTarget int
 
@@ -108,6 +111,9 @@ type EntitiesModel struct {
 	detailRels   []api.Relationship
 	errText      string
 	metaExpanded bool
+	metaRows     []metadataDisplayRow
+	metaList     *components.List
+	metaSelected map[int]bool
 
 	// add
 	addFields         []formField
@@ -196,9 +202,11 @@ func NewEntitiesModel(client *api.Client) EntitiesModel {
 		relList:      components.NewList(8),
 		relateList:   components.NewList(8),
 		historyList:  components.NewList(8),
+		metaList:     components.NewList(metadataPanelPageSize(false)),
 		view:         entitiesViewList,
 		bulkSelected: map[string]bool{},
 		scopeNames:   map[string]string{},
+		metaSelected: map[int]bool{},
 	}
 }
 
@@ -210,6 +218,12 @@ func (m EntitiesModel) Init() tea.Cmd {
 	m.searchBuf = ""
 	m.searchSuggest = ""
 	m.metaExpanded = false
+	m.metaRows = nil
+	m.metaSelected = map[int]bool{}
+	if m.metaList == nil {
+		m.metaList = components.NewList(metadataPanelPageSize(false))
+	}
+	syncMetadataList(m.metaList, nil, metadataPanelPageSize(false))
 	m.detailRels = nil
 	m.addFocus = 0
 	m.addStatusIdx = statusIndex(entityStatusOptions, "active")
@@ -464,6 +478,7 @@ func (m EntitiesModel) handleListKeys(msg tea.KeyMsg) (EntitiesModel, tea.Cmd) {
 			item := m.items[idx]
 			m.detail = &item
 			m.detailRels = nil
+			m.syncDetailMetadataRows()
 			m.view = entitiesViewDetail
 			return m, m.loadEntityDetailRelationships(item.ID)
 		}
@@ -1304,10 +1319,45 @@ func (m EntitiesModel) handleSearchInput(msg tea.KeyMsg) (EntitiesModel, tea.Cmd
 // --- Detail ---
 
 func (m EntitiesModel) handleDetailKeys(msg tea.KeyMsg) (EntitiesModel, tea.Cmd) {
+	m.syncDetailMetadataRows()
+	if m.metaExpanded && len(m.metaRows) > 0 {
+		switch {
+		case isDown(msg):
+			if m.metaList != nil {
+				m.metaList.Down()
+			}
+			return m, nil
+		case isUp(msg):
+			if m.metaList != nil {
+				m.metaList.Up()
+			}
+			return m, nil
+		case isSpace(msg):
+			if m.metaList != nil {
+				m.toggleMetaSelection(m.metaList.Selected())
+			}
+			return m, nil
+		case isKey(msg, "b"):
+			m.toggleMetaSelectAll()
+			return m, nil
+		case isEnter(msg):
+			return m, m.copyCurrentMetadataRow()
+		case isKey(msg, "c"):
+			return m, m.copySelectedMetadataRows()
+		case isBack(msg):
+			if len(m.metaSelected) > 0 {
+				m.clearMetaSelection()
+				return m, nil
+			}
+		}
+	}
+
 	switch {
 	case isBack(msg):
 		m.detail = nil
 		m.detailRels = nil
+		m.metaRows = nil
+		m.clearMetaSelection()
 		m.view = entitiesViewList
 	case isKey(msg, "e"):
 		m.startEdit()
@@ -1322,6 +1372,10 @@ func (m EntitiesModel) handleDetailKeys(msg tea.KeyMsg) (EntitiesModel, tea.Cmd)
 		return m, m.loadHistory()
 	case isKey(msg, "m"):
 		m.metaExpanded = !m.metaExpanded
+		m.syncDetailMetadataRows()
+		if !m.metaExpanded {
+			m.clearMetaSelection()
+		}
 	case isKey(msg, "d"):
 		m.confirmKind = "entity-archive"
 		m.confirmReturn = entitiesViewDetail
@@ -1335,6 +1389,7 @@ func (m EntitiesModel) renderDetail() string {
 		return m.renderList()
 	}
 
+	m.syncDetailMetadataRows()
 	e := m.detail
 	rows := []components.TableRow{
 		{Label: "ID", Value: e.ID},
@@ -1362,7 +1417,13 @@ func (m EntitiesModel) renderDetail() string {
 
 	sections := []string{components.Table("Entity", rows, m.width)}
 	if len(e.Metadata) > 0 {
-		sections = append(sections, renderMetadataBlock(map[string]any(e.Metadata), m.width, m.metaExpanded))
+		sections = append(sections, renderMetadataSelectableBlockWithTitle(
+			"Metadata",
+			m.metaRows,
+			m.width,
+			m.metaList,
+			m.metaSelected,
+		))
 	}
 	if len(m.detailRels) > 0 {
 		sections = append(sections, components.Table("Relationships", relationshipSummaryRows("entity", e.ID, m.detailRels, 8), m.width))
@@ -2489,12 +2550,132 @@ func (m EntitiesModel) createRelationship(source api.Entity, target api.Entity, 
 
 func (m *EntitiesModel) applyEntityUpdate(updated api.Entity) {
 	m.detail = &updated
+	m.syncDetailMetadataRows()
 	for i := range m.items {
 		if m.items[i].ID == updated.ID {
 			m.items[i] = updated
 			m.list.Items[i] = formatEntityLine(updated)
 			break
 		}
+	}
+}
+
+func (m *EntitiesModel) syncDetailMetadataRows() {
+	if m.metaList == nil {
+		m.metaList = components.NewList(metadataPanelPageSize(false))
+	}
+	if m.metaSelected == nil {
+		m.metaSelected = map[int]bool{}
+	}
+	rows := []metadataDisplayRow{}
+	if m.detail != nil && len(m.detail.Metadata) > 0 {
+		rows = metadataDisplayRows(map[string]any(m.detail.Metadata))
+	}
+	m.metaRows = rows
+	syncMetadataList(m.metaList, rows, metadataPanelPageSize(m.metaExpanded))
+	for idx := range m.metaSelected {
+		if idx < 0 || idx >= len(rows) {
+			delete(m.metaSelected, idx)
+		}
+	}
+}
+
+func (m *EntitiesModel) clearMetaSelection() {
+	m.metaSelected = map[int]bool{}
+}
+
+func (m *EntitiesModel) toggleMetaSelection(idx int) {
+	if idx < 0 || idx >= len(m.metaRows) {
+		return
+	}
+	if m.metaSelected == nil {
+		m.metaSelected = map[int]bool{}
+	}
+	if m.metaSelected[idx] {
+		delete(m.metaSelected, idx)
+		return
+	}
+	m.metaSelected[idx] = true
+}
+
+func (m *EntitiesModel) toggleMetaSelectAll() {
+	if len(m.metaRows) == 0 {
+		return
+	}
+	if len(m.metaSelected) == len(m.metaRows) {
+		m.clearMetaSelection()
+		return
+	}
+	all := make(map[int]bool, len(m.metaRows))
+	for i := range m.metaRows {
+		all[i] = true
+	}
+	m.metaSelected = all
+}
+
+func (m EntitiesModel) selectedMetaIndices() []int {
+	if len(m.metaSelected) == 0 {
+		return nil
+	}
+	out := make([]int, 0, len(m.metaSelected))
+	for idx, selected := range m.metaSelected {
+		if selected {
+			out = append(out, idx)
+		}
+	}
+	sort.Ints(out)
+	return out
+}
+
+func (m EntitiesModel) copyCurrentMetadataRow() tea.Cmd {
+	if len(m.metaRows) == 0 || m.metaList == nil {
+		return nil
+	}
+	idx := m.metaList.Selected()
+	if idx < 0 || idx >= len(m.metaRows) {
+		return nil
+	}
+	return m.copyMetadataRows([]int{idx})
+}
+
+func (m EntitiesModel) copySelectedMetadataRows() tea.Cmd {
+	indices := m.selectedMetaIndices()
+	if len(indices) == 0 {
+		return m.copyCurrentMetadataRow()
+	}
+	return m.copyMetadataRows(indices)
+}
+
+func (m EntitiesModel) copyMetadataRows(indices []int) tea.Cmd {
+	if len(indices) == 0 {
+		return nil
+	}
+	lines := make([]string, 0, len(indices))
+	for _, idx := range indices {
+		if idx < 0 || idx >= len(m.metaRows) {
+			continue
+		}
+		row := m.metaRows[idx]
+		field := strings.TrimSpace(row.field)
+		value := strings.TrimSpace(row.value)
+		if field == "" {
+			continue
+		}
+		if value == "" {
+			value = "None"
+		}
+		lines = append(lines, fmt.Sprintf("%s: %s", field, value))
+	}
+	if len(lines) == 0 {
+		return nil
+	}
+	payload := strings.Join(lines, "\n")
+	count := len(lines)
+	return func() tea.Msg {
+		if err := copyEntityMetadataClipboard(payload); err != nil {
+			return errMsg{err}
+		}
+		return entityMetadataCopiedMsg{count: count}
 	}
 }
 
