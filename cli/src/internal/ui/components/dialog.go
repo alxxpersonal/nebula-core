@@ -25,7 +25,7 @@ func ConfirmDialog(title, message string) string {
 
 	hint := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#9ba0bf")).
-		Render("\ny: confirm | n: cancel")
+		Render("\nenter: confirm | esc: cancel | y/n: alias")
 
 	return dialogStyle.Render(header + "\n\n" + body + hint)
 }

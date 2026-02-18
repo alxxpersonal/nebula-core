@@ -83,7 +83,8 @@ func TestAppHelpAndQuitConfirmViewsRender(t *testing.T) {
 	assert.Contains(t, cleanQuit, "You have unsaved changes.")
 	assert.Contains(t, cleanQuit, "Quit")
 	assert.Contains(t, cleanQuit, "anyway?")
-	assert.Contains(t, cleanQuit, "y: confirm | n: cancel")
+	assert.Contains(t, cleanQuit, "enter: confirm | esc: cancel")
+	assert.Contains(t, cleanQuit, "alias")
 }
 
 func TestAppTabWantsArrowsAndCanExitToTabNav(t *testing.T) {

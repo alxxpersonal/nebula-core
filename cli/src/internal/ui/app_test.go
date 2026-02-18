@@ -12,13 +12,20 @@ import (
 )
 
 func TestBuildEntityPaletteActions(t *testing.T) {
-	items := []api.Entity{{ID: "ent-123456789", Name: "Alpha", Type: "tool"}}
-	actions := buildEntityPaletteActions(items, "")
+	actions, selections := buildSearchPaletteActions(
+		[]api.Entity{{ID: "ent-123456789", Name: "Alpha", Type: "tool"}},
+		nil,
+		nil,
+	)
 
 	require.Len(t, actions, 1)
 	assert.Equal(t, "entity:ent-123456789", actions[0].ID)
 	assert.Equal(t, "Alpha", actions[0].Label)
 	assert.Equal(t, "tool · ent-1234", actions[0].Desc)
+	selection, ok := selections["entity:ent-123456789"]
+	require.True(t, ok)
+	require.NotNil(t, selection.entity)
+	assert.Equal(t, "ent-123456789", selection.entity.ID)
 }
 
 func TestFilterPalette(t *testing.T) {
@@ -34,7 +41,11 @@ func TestFilterPalette(t *testing.T) {
 
 func TestRunPaletteActionEntityJump(t *testing.T) {
 	app := NewApp(nil, &config.Config{})
-	app.paletteEntities = []api.Entity{{ID: "ent-1", Name: "Alpha", Type: "person"}}
+	app.paletteSelections = map[string]paletteSelection{
+		"entity:ent-1": {
+			entity: &api.Entity{ID: "ent-1", Name: "Alpha", Type: "person"},
+		},
+	}
 	action := paletteAction{ID: "entity:ent-1", Label: "Alpha"}
 
 	model, _ := app.runPaletteAction(action)
@@ -91,12 +102,25 @@ func TestTabNavAllowsActionKeys(t *testing.T) {
 	assert.Equal(t, relsViewCreateSourceSearch, updated.rels.view)
 }
 
-func TestBuildEntityPaletteActionsFiltersQuery(t *testing.T) {
-	items := []api.Entity{{ID: "ent-1", Name: "Alpha"}, {ID: "ent-2", Name: "Beta"}}
-	actions := buildEntityPaletteActions(items, "al")
+func TestPaletteModeSwitchesBetweenCommandAndSearch(t *testing.T) {
+	app := NewApp(nil, &config.Config{})
+	app.openPaletteCommand()
 
-	require.Len(t, actions, 1)
-	assert.Equal(t, "entity:ent-1", actions[0].ID)
+	require.True(t, app.paletteCommandMode())
+	assert.Equal(t, "", app.paletteQuery)
+
+	app.paletteQuery = "alpha"
+	require.False(t, app.paletteCommandMode())
+
+	app.paletteSearchQuery = "alpha"
+	model, _ := app.Update(paletteSearchLoadedMsg{
+		query:    "alpha",
+		entities: []api.Entity{{ID: "ent-1", Name: "Alpha"}},
+	})
+	updated := model.(App)
+	require.Len(t, updated.paletteFiltered, 1)
+	assert.Equal(t, "entity:ent-1", updated.paletteFiltered[0].ID)
+	assert.False(t, updated.paletteSearchLoading)
 }
 
 func TestHelpToggle(t *testing.T) {

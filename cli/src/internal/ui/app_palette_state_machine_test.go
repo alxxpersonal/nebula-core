@@ -24,7 +24,7 @@ func TestAppPaletteOpenFilterAndExecuteTab(t *testing.T) {
 	app = model.(App)
 	assert.True(t, app.paletteOpen)
 
-	for _, r := range []rune("job") {
+	for _, r := range []rune("/job") {
 		model, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
 		app = model.(App)
 	}
@@ -57,7 +57,7 @@ func TestAppPaletteArrowKeysMoveSelection(t *testing.T) {
 	assert.Equal(t, 0, app.paletteIndex)
 }
 
-func TestAppPaletteEntitySearchLoadsAndJumpsToDetail(t *testing.T) {
+func TestAppPaletteTextSearchLoadsAndJumpsToDetail(t *testing.T) {
 	var gotQuery string
 	_, client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/entities" {
@@ -69,6 +69,10 @@ func TestAppPaletteEntitySearchLoadsAndJumpsToDetail(t *testing.T) {
 			})
 			return
 		}
+		if r.URL.Path == "/api/context" || r.URL.Path == "/api/jobs" {
+			json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{}})
+			return
+		}
 		w.WriteHeader(http.StatusNotFound)
 	})
 
@@ -77,11 +81,7 @@ func TestAppPaletteEntitySearchLoadsAndJumpsToDetail(t *testing.T) {
 	model, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
 	app = model.(App)
 
-	// Enter entity search mode via ":" prefix.
-	model, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{':'}})
-	app = model.(App)
-
-	// Typing now triggers a QueryEntities call.
+	// Typing plain text switches to search mode and triggers API queries.
 	model, cmd := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
 	app = model.(App)
 	require.NotNil(t, cmd)
@@ -91,7 +91,7 @@ func TestAppPaletteEntitySearchLoadsAndJumpsToDetail(t *testing.T) {
 	app = model.(App)
 
 	assert.Equal(t, "a", gotQuery)
-	assert.False(t, app.paletteEntityLoading)
+	assert.False(t, app.paletteSearchLoading)
 	require.Len(t, app.paletteFiltered, 1)
 	assert.True(t, strings.HasPrefix(app.paletteFiltered[0].ID, "entity:"))
 

@@ -49,15 +49,23 @@ type onboardingLoginDoneMsg struct {
 	resp *api.LoginResponse
 	err  error
 }
-type paletteEntitiesLoadedMsg struct {
-	query string
-	items []api.Entity
+type paletteSearchLoadedMsg struct {
+	query    string
+	entities []api.Entity
+	context  []api.Context
+	jobs     []api.Job
 }
 
 type paletteAction struct {
 	ID    string
 	Label string
 	Desc  string
+}
+
+type paletteSelection struct {
+	entity  *api.Entity
+	context *api.Context
+	job     *api.Job
 }
 
 type startupSummary struct {
@@ -106,9 +114,9 @@ type App struct {
 	paletteIndex         int
 	paletteActions       []paletteAction
 	paletteFiltered      []paletteAction
-	paletteEntityQuery   string
-	paletteEntityLoading bool
-	paletteEntities      []api.Entity
+	paletteSearchQuery   string
+	paletteSearchLoading bool
+	paletteSelections    map[string]paletteSelection
 
 	importExportOpen bool
 
@@ -322,13 +330,12 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return a, cmd
 		}
-	case paletteEntitiesLoadedMsg:
-		if msg.query != a.paletteEntityQuery {
+	case paletteSearchLoadedMsg:
+		if msg.query != a.paletteSearchQuery {
 			return a, nil
 		}
-		a.paletteEntityLoading = false
-		a.paletteEntities = msg.items
-		a.paletteFiltered = buildEntityPaletteActions(msg.items, a.paletteEntityQuery)
+		a.paletteSearchLoading = false
+		a.paletteFiltered, a.paletteSelections = buildSearchPaletteActions(msg.entities, msg.context, msg.jobs)
 		a.paletteIndex = 0
 		return a, nil
 	case searchSelectionMsg:
@@ -400,8 +407,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Command palette
 		if isKey(msg, "/") {
-			a.openPalette()
-			return a, nil
+			a.openPaletteCommand()
+			return a, a.refreshPaletteFiltered()
 		}
 
 		if idx, ok := tabIndexForKey(msg.String()); ok {
@@ -647,8 +654,9 @@ func (a App) initTab(tab int) tea.Cmd {
 func (a App) statusHints() []string {
 	if a.quitConfirm {
 		return []string{
-			components.Hint("y", "Confirm"),
-			components.Hint("n", "Cancel"),
+			components.Hint("enter", "Confirm"),
+			components.Hint("esc", "Cancel"),
+			components.Hint("y/n", "Aliases"),
 		}
 	}
 	if a.helpOpen {
@@ -699,8 +707,9 @@ func (a App) statusHintsForTab() []string {
 	case tabInbox:
 		if a.inbox.confirming || a.inbox.rejectPreview {
 			return append(base,
-				components.Hint("y", "Confirm"),
-				components.Hint("n", "Cancel"),
+				components.Hint("enter", "Confirm"),
+				components.Hint("esc", "Cancel"),
+				components.Hint("y/n", "Aliases"),
 			)
 		}
 		if a.inbox.filtering {
@@ -815,8 +824,9 @@ func (a App) statusHintsForTab() []string {
 			)
 		case entitiesViewConfirm:
 			return append(base,
-				components.Hint("y", "Confirm"),
-				components.Hint("n", "Cancel"),
+				components.Hint("enter", "Confirm"),
+				components.Hint("esc", "Cancel"),
+				components.Hint("y/n", "Aliases"),
 			)
 		default:
 			hints := append(base,
@@ -861,8 +871,9 @@ func (a App) statusHintsForTab() []string {
 			)
 		case relsViewConfirm:
 			return append(base,
-				components.Hint("y", "Confirm"),
-				components.Hint("n", "Cancel"),
+				components.Hint("enter", "Confirm"),
+				components.Hint("esc", "Cancel"),
+				components.Hint("y/n", "Aliases"),
 			)
 		case relsViewCreateSourceSearch, relsViewCreateTargetSearch, relsViewCreateSourceSelect, relsViewCreateTargetSelect:
 			return append(base,
@@ -1533,21 +1544,33 @@ func startupStatusColor(status string) string {
 	}
 }
 
-func (a *App) openPalette() {
+func (a *App) openPaletteCommand() {
 	a.paletteOpen = true
 	a.paletteQuery = ""
 	a.paletteIndex = 0
-	a.paletteEntityQuery = ""
-	a.paletteEntityLoading = false
-	a.paletteEntities = nil
+	a.paletteSearchQuery = ""
+	a.paletteSearchLoading = false
+	a.paletteSelections = nil
 	a.paletteFiltered = filterPalette(a.paletteActions, "")
 }
 
+func (a App) paletteCommandMode() bool {
+	query := strings.TrimSpace(a.paletteQuery)
+	return query == "" || strings.HasPrefix(query, "/")
+}
+
 func (a App) renderPalette() string {
-	title := "Command Palette"
+	commandMode := a.paletteCommandMode()
+	title := "Search"
+	prompt := "Search"
+	if commandMode {
+		title = "Command Palette"
+		prompt = "Command"
+	}
+
 	query := components.SanitizeOneLine(a.paletteQuery)
-	if query == "" {
-		query = ""
+	if commandMode {
+		query = strings.TrimPrefix(query, "/")
 	}
 
 	var b strings.Builder
@@ -1556,15 +1579,21 @@ func (a App) renderPalette() string {
 		queryWidth = 10
 	}
 	query = components.ClampTextWidthEllipsis(query, queryWidth)
-	b.WriteString(MetaKeyStyle.Render("Command") + MetaPunctStyle.Render(": ") + SelectedStyle.Render(query))
+	b.WriteString(MetaKeyStyle.Render(prompt) + MetaPunctStyle.Render(": ") + SelectedStyle.Render(query))
 	b.WriteString(AccentStyle.Render("█"))
 	b.WriteString("\n\n")
 
 	items := a.paletteFiltered
-	if strings.HasPrefix(a.paletteQuery, ":") && a.paletteEntityLoading {
-		b.WriteString(MutedStyle.Render("Searching entities..."))
+	if a.paletteSearchLoading {
+		b.WriteString(MutedStyle.Render("Searching..."))
 	} else if len(items) == 0 {
-		b.WriteString(MutedStyle.Render("No matches."))
+		if commandMode {
+			b.WriteString(MutedStyle.Render("No matching actions."))
+		} else if strings.TrimSpace(a.paletteQuery) == "" {
+			b.WriteString(MutedStyle.Render("Type to search, or prefix with / for commands."))
+		} else {
+			b.WriteString(MutedStyle.Render("No search results."))
+		}
 	} else {
 		contentWidth := components.BoxContentWidth(a.width)
 		sepWidth := 1
@@ -1616,77 +1645,113 @@ func (a App) renderPalette() string {
 }
 
 func (a *App) refreshPaletteFiltered() tea.Cmd {
-	if strings.HasPrefix(a.paletteQuery, ":") {
-		query := strings.TrimSpace(strings.TrimPrefix(a.paletteQuery, ":"))
-		if query == "" {
-			a.paletteEntityQuery = ""
-			a.paletteEntityLoading = false
-			a.paletteEntities = nil
-			a.paletteFiltered = nil
-			a.paletteIndex = 0
-			return nil
-		}
-		if query != a.paletteEntityQuery {
-			a.paletteEntityQuery = query
-			a.paletteEntityLoading = true
-			a.paletteEntities = nil
-			a.paletteFiltered = nil
-			a.paletteIndex = 0
-			return a.loadPaletteEntities(query)
-		}
-		a.paletteFiltered = buildEntityPaletteActions(a.paletteEntities, a.paletteEntityQuery)
+	a.paletteQuery = components.SanitizeOneLine(a.paletteQuery)
+
+	if a.paletteCommandMode() {
+		query := strings.TrimSpace(strings.TrimPrefix(a.paletteQuery, "/"))
+		a.paletteSearchQuery = ""
+		a.paletteSearchLoading = false
+		a.paletteSelections = nil
+		a.paletteFiltered = filterPalette(a.paletteActions, query)
 		if a.paletteIndex >= len(a.paletteFiltered) {
 			a.paletteIndex = 0
 		}
 		return nil
 	}
 
-	a.paletteEntityQuery = ""
-	a.paletteEntityLoading = false
-	a.paletteEntities = nil
-	a.paletteFiltered = filterPalette(a.paletteActions, a.paletteQuery)
+	query := strings.TrimSpace(a.paletteQuery)
+	if query == "" {
+		a.paletteSearchQuery = ""
+		a.paletteSearchLoading = false
+		a.paletteSelections = nil
+		a.paletteFiltered = nil
+		a.paletteIndex = 0
+		return nil
+	}
+
+	if query != a.paletteSearchQuery {
+		a.paletteSearchQuery = query
+		a.paletteSearchLoading = true
+		a.paletteSelections = nil
+		a.paletteFiltered = nil
+		a.paletteIndex = 0
+		return a.loadPaletteSearch(query)
+	}
+
 	if a.paletteIndex >= len(a.paletteFiltered) {
 		a.paletteIndex = 0
 	}
 	return nil
 }
 
-func (a App) loadPaletteEntities(query string) tea.Cmd {
+func (a App) loadPaletteSearch(query string) tea.Cmd {
+	if a.client == nil {
+		return nil
+	}
 	return func() tea.Msg {
-		items, err := a.client.QueryEntities(api.QueryParams{
+		entities, err := a.client.QueryEntities(api.QueryParams{
 			"search_text": query,
-			"limit":       "15",
+			"limit":       "8",
 		})
 		if err != nil {
 			return errMsg{err}
 		}
-		return paletteEntitiesLoadedMsg{query: query, items: items}
+
+		contextItems, err := a.client.QueryContext(api.QueryParams{
+			"search_text": query,
+			"limit":       "8",
+		})
+		if err != nil {
+			return errMsg{err}
+		}
+
+		jobs, err := a.client.QueryJobs(api.QueryParams{
+			"search_text": query,
+			"limit":       "8",
+		})
+		if err != nil {
+			return errMsg{err}
+		}
+
+		return paletteSearchLoadedMsg{
+			query:    query,
+			entities: entities,
+			context:  contextItems,
+			jobs:     jobs,
+		}
 	}
 }
 
-func buildEntityPaletteActions(items []api.Entity, query string) []paletteAction {
-	query = strings.TrimSpace(strings.ToLower(query))
-	actions := make([]paletteAction, 0, len(items))
-	for _, e := range items {
-		if query != "" {
-			name := strings.ToLower(e.Name)
-			id := strings.ToLower(e.ID)
-			if !strings.Contains(name, query) && !strings.Contains(id, query) {
-				continue
-			}
+func buildSearchPaletteActions(
+	entities []api.Entity,
+	context []api.Context,
+	jobs []api.Job,
+) ([]paletteAction, map[string]paletteSelection) {
+	entries := buildSearchEntries("", entities, context, jobs)
+	actions := make([]paletteAction, 0, len(entries))
+	selections := make(map[string]paletteSelection, len(entries))
+	for _, entry := range entries {
+		id := fmt.Sprintf("%s:%s", entry.kind, entry.id)
+		label := strings.TrimSpace(components.SanitizeOneLine(entry.label))
+		if label == "" {
+			label = shortID(entry.id)
 		}
-		kind := e.Type
-		if kind == "" {
-			kind = "entity"
+		desc := strings.TrimSpace(components.SanitizeOneLine(entry.desc))
+		if desc == "" {
+			desc = entry.kind
 		}
-		desc := fmt.Sprintf("%s · %s", kind, shortID(e.ID))
 		actions = append(actions, paletteAction{
-			ID:    "entity:" + e.ID,
-			Label: e.Name,
+			ID:    id,
+			Label: label,
 			Desc:  desc,
 		})
+		selections[id] = paletteSelection{
+			entity:  entry.entity,
+			context: entry.context,
+			job:     entry.job,
+		}
 	}
-	return actions
+	return actions, selections
 }
 
 func (a App) handlePaletteKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -1712,13 +1777,13 @@ func (a App) handlePaletteKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case isKey(msg, "backspace"):
 		if len(a.paletteQuery) > 0 {
-			a.paletteQuery = a.paletteQuery[:len(a.paletteQuery)-1]
+			r := []rune(a.paletteQuery)
+			a.paletteQuery = string(r[:len(r)-1])
 			return a, a.refreshPaletteFiltered()
 		}
 	default:
-		ch := msg.String()
-		if len(ch) == 1 || ch == " " {
-			a.paletteQuery += ch
+		if msg.Type == tea.KeyRunes && len(msg.Runes) > 0 {
+			a.paletteQuery += string(msg.Runes)
 			return a, a.refreshPaletteFiltered()
 		}
 	}
@@ -1727,22 +1792,28 @@ func (a App) handlePaletteKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (a *App) runPaletteAction(action paletteAction) (tea.Model, tea.Cmd) {
 	a.tabNav = false
-	switch action.ID {
-	default:
-		if strings.HasPrefix(action.ID, "entity:") {
-			id := strings.TrimPrefix(action.ID, "entity:")
-			for _, e := range a.paletteEntities {
-				if e.ID == id {
-					entity := e
-					a.tab = tabEntities
-					a.tabNav = false
-					a.entities.detail = &entity
-					a.entities.view = entitiesViewDetail
-					return *a, nil
-				}
-			}
-			return *a, nil
+
+	if selection, ok := a.paletteSelections[action.ID]; ok {
+		switch {
+		case selection.entity != nil:
+			entity := *selection.entity
+			a.tab = tabEntities
+			a.entities.detail = &entity
+			a.entities.view = entitiesViewDetail
+		case selection.context != nil:
+			context := *selection.context
+			a.tab = tabKnow
+			a.know.detail = &context
+			a.know.view = contextViewDetail
+		case selection.job != nil:
+			job := *selection.job
+			a.tab = tabJobs
+			a.jobs.detail = &job
 		}
+		return *a, nil
+	}
+
+	switch action.ID {
 	case "tab:inbox":
 		return a.switchTab(tabInbox)
 	case "tab:entities":
@@ -1763,12 +1834,6 @@ func (a *App) runPaletteAction(action paletteAction) (tea.Model, tea.Cmd) {
 		return *a, nil
 	case "tab:settings", "tab:profile":
 		return a.switchTab(tabProfile)
-	case "entities:search":
-		a.tab = tabEntities
-		a.tabNav = false
-		a.entities.view = entitiesViewSearch
-		a.entities.searchBuf = ""
-		return *a, nil
 	case "profile:keys":
 		a.tab = tabProfile
 		a.profile.section = 0
@@ -1885,7 +1950,6 @@ func defaultPaletteActions() []paletteAction {
 		{ID: "tab:settings", Label: "Settings", Desc: "Config, keys, and agents"},
 		{ID: "ops:import", Label: "Import", Desc: "Bulk import from file"},
 		{ID: "ops:export", Label: "Export", Desc: "Export data to file"},
-		{ID: "entities:search", Label: "Search entities", Desc: "Open entity search"},
 		{ID: "profile:keys", Label: "Settings: API keys", Desc: "Manage keys"},
 		{ID: "profile:agents", Label: "Settings: agents", Desc: "Manage agents"},
 		{ID: "profile:taxonomy", Label: "Settings: taxonomy", Desc: "Manage scopes and types"},

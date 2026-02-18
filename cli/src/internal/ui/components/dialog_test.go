@@ -13,7 +13,8 @@ func TestConfirmDialogIncludesTitleMessageAndHints(t *testing.T) {
 
 	assert.Contains(t, clean, "Confirm")
 	assert.Contains(t, clean, "Are you sure?")
-	assert.Contains(t, clean, "y: confirm | n: cancel")
+	assert.Contains(t, clean, "enter: confirm | esc: cancel")
+	assert.Contains(t, clean, "alias")
 }
 
 func TestInputDialogIncludesTitleInputAndHints(t *testing.T) {
