@@ -912,8 +912,10 @@ func renderApprovalPreview(a api.Approval, picked bool, width int) string {
 		lines = append(lines, renderPreviewRow("In batch", "yes", width))
 	}
 
-	if scopes := previewListValue(a.ChangeDetails, "scopes"); scopes != "" {
-		lines = append(lines, renderPreviewRow("Scopes", scopes, width))
+	if scopes := parseStringList(a.ChangeDetails["scopes"]); len(scopes) > 0 {
+		lines = append(lines, renderPreviewRow("Scopes", formatScopePreview(scopes), width))
+	} else if scope := previewStringValue(a.ChangeDetails, "scope"); scope != "" {
+		lines = append(lines, renderPreviewRow("Scope", formatScopePreview([]string{scope}), width))
 	}
 	if tags := previewListValue(a.ChangeDetails, "tags"); tags != "" {
 		lines = append(lines, renderPreviewRow("Tags", tags, width))

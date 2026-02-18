@@ -108,6 +108,24 @@ func renderPreviewRow(label, value string, width int) string {
 	return MetaKeyStyle.Render(label) + MetaPunctStyle.Render(": ") + MetaValueStyle.Render(value)
 }
 
+func formatScopePreview(scopes []string) string {
+	if len(scopes) == 0 {
+		return "-"
+	}
+	out := make([]string, 0, len(scopes))
+	for _, scope := range scopes {
+		clean := strings.TrimSpace(components.SanitizeOneLine(scope))
+		if clean == "" {
+			continue
+		}
+		out = append(out, "["+clean+"]")
+	}
+	if len(out) == 0 {
+		return "-"
+	}
+	return strings.Join(out, " ")
+}
+
 func previewStringValue(m api.JSONMap, key string) string {
 	if m == nil {
 		return ""

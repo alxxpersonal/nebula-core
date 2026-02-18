@@ -16,6 +16,10 @@ import (
 type protocolsLoadedMsg struct{ items []api.Protocol }
 type protocolCreatedMsg struct{}
 type protocolUpdatedMsg struct{}
+type protocolRelationshipsLoadedMsg struct {
+	id            string
+	relationships []api.Relationship
+}
 
 type protocolsView int
 
@@ -58,17 +62,19 @@ var protocolStatusOptions = []string{"active", "inactive"}
 // --- Protocols Model ---
 
 type ProtocolsModel struct {
-	client    *api.Client
-	list      *components.List
-	items     []api.Protocol
-	allItems  []api.Protocol
-	loading   bool
-	view      protocolsView
-	detail    *api.Protocol
-	modeFocus bool
-	searchBuf string
-	width     int
-	height    int
+	client     *api.Client
+	list       *components.List
+	items      []api.Protocol
+	allItems   []api.Protocol
+	loading    bool
+	view       protocolsView
+	detail     *api.Protocol
+	detailRels []api.Relationship
+	modeFocus  bool
+	filtering  bool
+	searchBuf  string
+	width      int
+	height     int
 
 	// add
 	addFields    []formField
@@ -130,6 +136,8 @@ func (m ProtocolsModel) Init() tea.Cmd {
 	m.loading = true
 	m.view = protocolsViewList
 	m.detail = nil
+	m.detailRels = nil
+	m.filtering = false
 	m.searchBuf = ""
 	m.modeFocus = false
 	m.addFocus = 0
@@ -167,9 +175,15 @@ func (m ProtocolsModel) Update(msg tea.Msg) (ProtocolsModel, tea.Cmd) {
 	case protocolUpdatedMsg:
 		m.editSaving = false
 		m.detail = nil
+		m.detailRels = nil
 		m.view = protocolsViewList
 		m.loading = true
 		return m, m.loadProtocols
+	case protocolRelationshipsLoadedMsg:
+		if m.detail != nil && m.detail.ID == msg.id {
+			m.detailRels = msg.relationships
+		}
+		return m, nil
 	case errMsg:
 		m.loading = false
 		m.addSaving = false
@@ -193,6 +207,9 @@ func (m ProtocolsModel) Update(msg tea.Msg) (ProtocolsModel, tea.Cmd) {
 }
 
 func (m ProtocolsModel) View() string {
+	if m.filtering && m.view == protocolsViewList {
+		return components.Indent(components.InputDialog("Filter Protocols", m.searchBuf), 1)
+	}
 	switch m.view {
 	case protocolsViewAdd:
 		body := m.renderAdd()
@@ -276,6 +293,9 @@ func (m ProtocolsModel) renderModeLine() string {
 // --- List ---
 
 func (m ProtocolsModel) handleListKeys(msg tea.KeyMsg) (ProtocolsModel, tea.Cmd) {
+	if m.filtering {
+		return m.handleFilterInput(msg)
+	}
 	switch {
 	case isDown(msg):
 		m.list.Down()
@@ -290,8 +310,13 @@ func (m ProtocolsModel) handleListKeys(msg tea.KeyMsg) (ProtocolsModel, tea.Cmd)
 	case isEnter(msg):
 		if idx := m.list.Selected(); idx < len(m.items) {
 			m.detail = &m.items[idx]
+			m.detailRels = nil
 			m.view = protocolsViewDetail
+			return m, m.loadDetailRelationships(m.items[idx].ID)
 		}
+	case isKey(msg, "f"):
+		m.filtering = true
+		return m, nil
 	case isKey(msg, "backspace", "delete"):
 		if len(m.searchBuf) > 0 {
 			m.searchBuf = m.searchBuf[:len(m.searchBuf)-1]
@@ -299,6 +324,28 @@ func (m ProtocolsModel) handleListKeys(msg tea.KeyMsg) (ProtocolsModel, tea.Cmd)
 		}
 	default:
 		if len(msg.String()) == 1 {
+			m.searchBuf += msg.String()
+			m.applySearch()
+		}
+	}
+	return m, nil
+}
+
+func (m ProtocolsModel) handleFilterInput(msg tea.KeyMsg) (ProtocolsModel, tea.Cmd) {
+	switch {
+	case isEnter(msg):
+		m.filtering = false
+	case isBack(msg):
+		m.filtering = false
+		m.searchBuf = ""
+		m.applySearch()
+	case isKey(msg, "backspace", "delete"):
+		if len(m.searchBuf) > 0 {
+			m.searchBuf = m.searchBuf[:len(m.searchBuf)-1]
+			m.applySearch()
+		}
+	default:
+		if len(msg.String()) == 1 || msg.String() == " " {
 			m.searchBuf += msg.String()
 			m.applySearch()
 		}
@@ -494,6 +541,7 @@ func (m ProtocolsModel) handleDetailKeys(msg tea.KeyMsg) (ProtocolsModel, tea.Cm
 	case isBack(msg):
 		m.view = protocolsViewList
 		m.detail = nil
+		m.detailRels = nil
 	case isKey(msg, "e"):
 		m.startEdit()
 		m.view = protocolsViewEdit
@@ -543,7 +591,20 @@ func (m ProtocolsModel) renderDetail() string {
 	if len(p.Metadata) > 0 {
 		sections = append(sections, renderMetadataBlock(map[string]any(p.Metadata), m.width, true))
 	}
+	if len(m.detailRels) > 0 {
+		sections = append(sections, components.Table("Relationships", relationshipSummaryRows("protocol", p.ID, m.detailRels, 6), m.width))
+	}
 	return strings.Join(sections, "\n\n")
+}
+
+func (m ProtocolsModel) loadDetailRelationships(protocolID string) tea.Cmd {
+	return func() tea.Msg {
+		rels, err := m.client.GetRelationships("protocol", protocolID)
+		if err != nil {
+			return protocolRelationshipsLoadedMsg{id: protocolID, relationships: nil}
+		}
+		return protocolRelationshipsLoadedMsg{id: protocolID, relationships: rels}
+	}
 }
 
 // --- Add ---

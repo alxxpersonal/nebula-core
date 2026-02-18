@@ -16,6 +16,10 @@ import (
 
 type entitiesLoadedMsg struct{ items []api.Entity }
 type relationshipsLoadedMsg struct{ items []api.Relationship }
+type entityDetailRelationshipsLoadedMsg struct {
+	id    string
+	items []api.Relationship
+}
 type entityUpdatedMsg struct{ entity api.Entity }
 type entityCreatedMsg struct{ entity api.Entity }
 type relationshipUpdatedMsg struct{ rel api.Relationship }
@@ -94,12 +98,14 @@ type EntitiesModel struct {
 	loading       bool
 	view          entitiesView
 	modeFocus     bool
+	filtering     bool
 	searchBuf     string
 	searchSuggest string
 	width         int
 	height        int
 
 	detail       *api.Entity
+	detailRels   []api.Relationship
 	errText      string
 	metaExpanded bool
 
@@ -200,9 +206,11 @@ func (m EntitiesModel) Init() tea.Cmd {
 	m.loading = true
 	m.view = entitiesViewList
 	m.modeFocus = false
+	m.filtering = false
 	m.searchBuf = ""
 	m.searchSuggest = ""
 	m.metaExpanded = false
+	m.detailRels = nil
 	m.addFocus = 0
 	m.addStatusIdx = statusIndex(entityStatusOptions, "active")
 	m.addTags = nil
@@ -247,6 +255,11 @@ func (m EntitiesModel) Update(msg tea.Msg) (EntitiesModel, tea.Cmd) {
 			labels[i] = m.formatRelationshipLine(r)
 		}
 		m.relList.SetItems(labels)
+		return m, nil
+	case entityDetailRelationshipsLoadedMsg:
+		if m.detail != nil && m.detail.ID == msg.id {
+			m.detailRels = msg.items
+		}
 		return m, nil
 
 	case relateResultsMsg:
@@ -368,6 +381,9 @@ func (m EntitiesModel) View() string {
 	if m.view == entitiesViewList && m.bulkPrompt != "" {
 		return components.Indent(components.InputDialog(m.bulkPrompt, m.bulkBuf), 1)
 	}
+	if m.view == entitiesViewList && m.filtering {
+		return components.Indent(components.InputDialog("Filter Entities", m.searchBuf), 1)
+	}
 	if m.view == entitiesViewAdd {
 		if m.addSaving {
 			return "  " + MutedStyle.Render("Saving...")
@@ -420,6 +436,9 @@ func (m EntitiesModel) handleListKeys(msg tea.KeyMsg) (EntitiesModel, tea.Cmd) {
 	if m.bulkPrompt != "" {
 		return m.handleBulkPromptKeys(msg)
 	}
+	if m.filtering {
+		return m.handleFilterInput(msg)
+	}
 	if m.modeFocus {
 		return m.handleModeKeys(msg)
 	}
@@ -444,8 +463,13 @@ func (m EntitiesModel) handleListKeys(msg tea.KeyMsg) (EntitiesModel, tea.Cmd) {
 		if idx := m.list.Selected(); idx < len(m.items) {
 			item := m.items[idx]
 			m.detail = &item
+			m.detailRels = nil
 			m.view = entitiesViewDetail
+			return m, m.loadEntityDetailRelationships(item.ID)
 		}
+	case isKey(msg, "f"):
+		m.filtering = true
+		return m, nil
 	case isKey(msg, "tab"):
 		if m.searchSuggest != "" && strings.TrimSpace(m.searchBuf) != strings.TrimSpace(m.searchSuggest) {
 			m.searchBuf = m.searchSuggest
@@ -490,6 +514,36 @@ func (m EntitiesModel) handleListKeys(msg tea.KeyMsg) (EntitiesModel, tea.Cmd) {
 		if m.bulkCount() > 0 {
 			m.clearBulkSelection()
 			return m, nil
+		}
+	default:
+		ch := msg.String()
+		if len(ch) == 1 || ch == " " {
+			if ch == " " && m.searchBuf == "" {
+				return m, nil
+			}
+			m.searchBuf += ch
+			m.loading = true
+			return m, m.loadEntities(strings.TrimSpace(m.searchBuf))
+		}
+	}
+	return m, nil
+}
+
+func (m EntitiesModel) handleFilterInput(msg tea.KeyMsg) (EntitiesModel, tea.Cmd) {
+	switch {
+	case isEnter(msg):
+		m.filtering = false
+	case isBack(msg):
+		m.filtering = false
+		m.searchBuf = ""
+		m.searchSuggest = ""
+		m.loading = true
+		return m, m.loadEntities("")
+	case isKey(msg, "backspace", "delete"):
+		if len(m.searchBuf) > 0 {
+			m.searchBuf = m.searchBuf[:len(m.searchBuf)-1]
+			m.loading = true
+			return m, m.loadEntities(strings.TrimSpace(m.searchBuf))
 		}
 	default:
 		ch := msg.String()
@@ -1061,7 +1115,10 @@ func (m EntitiesModel) renderEntityPreview(e api.Entity, width int) string {
 		lines = append(lines, renderPreviewRow("Tags", strings.Join(e.Tags, ", "), width))
 	}
 	if metaPreview := metadataPreview(map[string]any(e.Metadata), 80); metaPreview != "" {
-		lines = append(lines, renderPreviewRow("Preview", metaPreview, width))
+		lines = append(lines, renderPreviewRow("Preview", humanizeGoMapString(metaPreview), width))
+	}
+	if m.detail != nil && m.detail.ID == e.ID && len(m.detailRels) > 0 {
+		lines = append(lines, renderPreviewRow("Links", fmt.Sprintf("%d", len(m.detailRels)), width))
 	}
 
 	return padPreviewLines(lines, width)
@@ -1250,6 +1307,7 @@ func (m EntitiesModel) handleDetailKeys(msg tea.KeyMsg) (EntitiesModel, tea.Cmd)
 	switch {
 	case isBack(msg):
 		m.detail = nil
+		m.detailRels = nil
 		m.view = entitiesViewList
 	case isKey(msg, "e"):
 		m.startEdit()
@@ -1305,6 +1363,9 @@ func (m EntitiesModel) renderDetail() string {
 	sections := []string{components.Table("Entity", rows, m.width)}
 	if len(e.Metadata) > 0 {
 		sections = append(sections, renderMetadataBlock(map[string]any(e.Metadata), m.width, m.metaExpanded))
+	}
+	if len(m.detailRels) > 0 {
+		sections = append(sections, components.Table("Relationships", relationshipSummaryRows("entity", e.ID, m.detailRels, 8), m.width))
 	}
 
 	return strings.Join(sections, "\n\n")
@@ -2376,6 +2437,16 @@ func (m EntitiesModel) loadEntities(search string) func() tea.Msg {
 	}
 }
 
+func (m EntitiesModel) loadEntityDetailRelationships(entityID string) tea.Cmd {
+	return func() tea.Msg {
+		items, err := m.client.GetRelationships("entity", entityID)
+		if err != nil {
+			return entityDetailRelationshipsLoadedMsg{id: entityID, items: nil}
+		}
+		return entityDetailRelationshipsLoadedMsg{id: entityID, items: items}
+	}
+}
+
 func (m EntitiesModel) loadRelationships() tea.Cmd {
 	return func() tea.Msg {
 		if m.detail == nil {
@@ -2507,7 +2578,7 @@ func (m EntitiesModel) formatEntityScopes(ids []string) string {
 			names = append(names, shortID(id))
 		}
 	}
-	return strings.Join(names, " · ")
+	return formatScopePreview(names)
 }
 
 func (m EntitiesModel) scopeNamesFromIDs(ids []string) []string {

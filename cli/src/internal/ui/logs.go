@@ -18,6 +18,10 @@ type logsLoadedMsg struct{ items []api.Log }
 type logCreatedMsg struct{}
 type logUpdatedMsg struct{}
 type logsScopesLoadedMsg struct{ options []string }
+type logRelationshipsLoadedMsg struct {
+	id            string
+	relationships []api.Relationship
+}
 
 type logsView int
 
@@ -58,9 +62,11 @@ type LogsModel struct {
 	loading       bool
 	view          logsView
 	modeFocus     bool
+	filtering     bool
 	searchBuf     string
 	searchSuggest string
 	detail        *api.Log
+	detailRels    []api.Relationship
 	errText       string
 	addErr        string
 	valueExpanded bool
@@ -115,9 +121,11 @@ func (m LogsModel) Init() tea.Cmd {
 	m.loading = true
 	m.view = logsViewList
 	m.modeFocus = false
+	m.filtering = false
 	m.searchBuf = ""
 	m.searchSuggest = ""
 	m.detail = nil
+	m.detailRels = nil
 	m.errText = ""
 	m.valueExpanded = false
 	m.metaExpanded = false
@@ -154,6 +162,11 @@ func (m LogsModel) Update(msg tea.Msg) (LogsModel, tea.Cmd) {
 		m.scopeOptions = msg.options
 		m.addMeta.SetScopeOptions(m.scopeOptions)
 		m.editMeta.SetScopeOptions(m.scopeOptions)
+		return m, nil
+	case logRelationshipsLoadedMsg:
+		if m.detail != nil && m.detail.ID == msg.id {
+			m.detailRels = msg.relationships
+		}
 		return m, nil
 	case logCreatedMsg:
 		m.addSaving = false
@@ -218,6 +231,9 @@ func (m LogsModel) View() string {
 	}
 	if m.editMeta.Active {
 		return m.editMeta.Render(m.width)
+	}
+	if m.filtering && m.view == logsViewList {
+		return components.Indent(components.InputDialog("Filter Logs", m.searchBuf), 1)
 	}
 	modeLine := m.renderModeLine()
 	var body string
@@ -456,6 +472,9 @@ func (m LogsModel) renderLogPreview(l api.Log, width int) string {
 }
 
 func (m LogsModel) handleListKeys(msg tea.KeyMsg) (LogsModel, tea.Cmd) {
+	if m.filtering {
+		return m.handleFilterInput(msg)
+	}
 	switch {
 	case isDown(msg):
 		m.list.Down()
@@ -469,8 +488,13 @@ func (m LogsModel) handleListKeys(msg tea.KeyMsg) (LogsModel, tea.Cmd) {
 		if idx := m.list.Selected(); idx < len(m.items) {
 			item := m.items[idx]
 			m.detail = &item
+			m.detailRels = nil
 			m.view = logsViewDetail
+			return m, m.loadDetailRelationships(item.ID)
 		}
+	case isKey(msg, "f"):
+		m.filtering = true
+		return m, nil
 	case isKey(msg, "backspace", "delete"):
 		if len(m.searchBuf) > 0 {
 			m.searchBuf = m.searchBuf[:len(m.searchBuf)-1]
@@ -506,6 +530,33 @@ func (m LogsModel) handleListKeys(msg tea.KeyMsg) (LogsModel, tea.Cmd) {
 	return m, nil
 }
 
+func (m LogsModel) handleFilterInput(msg tea.KeyMsg) (LogsModel, tea.Cmd) {
+	switch {
+	case isEnter(msg):
+		m.filtering = false
+	case isBack(msg):
+		m.filtering = false
+		m.searchBuf = ""
+		m.searchSuggest = ""
+		m.applyLogSearch()
+	case isKey(msg, "backspace", "delete"):
+		if len(m.searchBuf) > 0 {
+			m.searchBuf = m.searchBuf[:len(m.searchBuf)-1]
+			m.applyLogSearch()
+		}
+	default:
+		ch := msg.String()
+		if len(ch) == 1 || ch == " " {
+			if ch == " " && m.searchBuf == "" {
+				return m, nil
+			}
+			m.searchBuf += ch
+			m.applyLogSearch()
+		}
+	}
+	return m, nil
+}
+
 // --- Detail View ---
 
 func (m LogsModel) handleDetailKeys(msg tea.KeyMsg) (LogsModel, tea.Cmd) {
@@ -514,6 +565,7 @@ func (m LogsModel) handleDetailKeys(msg tea.KeyMsg) (LogsModel, tea.Cmd) {
 		m.modeFocus = true
 	case isBack(msg):
 		m.detail = nil
+		m.detailRels = nil
 		m.valueExpanded = false
 		m.metaExpanded = false
 		m.view = logsViewList
@@ -556,7 +608,20 @@ func (m LogsModel) renderDetail() string {
 	if len(l.Metadata) > 0 {
 		sections = append(sections, renderMetadataBlockWithTitle("Metadata", map[string]any(l.Metadata), m.width, m.metaExpanded))
 	}
+	if len(m.detailRels) > 0 {
+		sections = append(sections, components.Table("Relationships", relationshipSummaryRows("log", l.ID, m.detailRels, 6), m.width))
+	}
 	return strings.Join(sections, "\n\n")
+}
+
+func (m LogsModel) loadDetailRelationships(logID string) tea.Cmd {
+	return func() tea.Msg {
+		rels, err := m.client.GetRelationships("log", logID)
+		if err != nil {
+			return logRelationshipsLoadedMsg{id: logID, relationships: nil}
+		}
+		return logRelationshipsLoadedMsg{id: logID, relationships: rels}
+	}
 }
 
 // --- Add View ---

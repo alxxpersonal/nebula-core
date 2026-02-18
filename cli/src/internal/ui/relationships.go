@@ -53,10 +53,13 @@ var relsStatusOptions = []string{"active", "inactive"}
 type RelationshipsModel struct {
 	client    *api.Client
 	items     []api.Relationship
+	allItems  []api.Relationship
 	list      *components.List
 	loading   bool
 	view      relationshipsView
 	modeFocus bool
+	filtering bool
+	filterBuf string
 	width     int
 	height    int
 
@@ -104,6 +107,8 @@ func (m RelationshipsModel) Init() tea.Cmd {
 	m.view = relsViewList
 	m.loading = true
 	m.modeFocus = false
+	m.filtering = false
+	m.filterBuf = ""
 	m.metaExpanded = false
 	m.editMeta.Reset()
 	return tea.Batch(m.loadRelationships(), m.loadScopeOptions(), m.loadEntityCache())
@@ -113,8 +118,8 @@ func (m RelationshipsModel) Update(msg tea.Msg) (RelationshipsModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case relTabLoadedMsg:
 		m.loading = false
-		m.items = msg.items
-		m.list.SetItems(m.buildListLabels())
+		m.allItems = append([]api.Relationship{}, msg.items...)
+		m.applyListFilter()
 		m.typeOptions = uniqueRelationshipTypes(msg.items)
 		return m, m.loadRelationshipNames(msg.items)
 
@@ -125,7 +130,7 @@ func (m RelationshipsModel) Update(msg tea.Msg) (RelationshipsModel, tea.Cmd) {
 		for id, name := range msg.names {
 			m.names[id] = name
 		}
-		m.list.SetItems(m.buildListLabels())
+		m.applyListFilter()
 		return m, nil
 	case relTabScopesLoadedMsg:
 		m.scopeOptions = msg.options
@@ -188,6 +193,9 @@ func (m RelationshipsModel) View() string {
 	if m.editMeta.Active {
 		return m.editMeta.Render(m.width)
 	}
+	if m.filtering && m.view == relsViewList {
+		return components.Indent(components.InputDialog("Filter Relationships", m.filterBuf), 1)
+	}
 
 	modeLine := m.renderModeLine()
 	var body string
@@ -212,6 +220,9 @@ func (m RelationshipsModel) View() string {
 // --- List ---
 
 func (m RelationshipsModel) handleListKeys(msg tea.KeyMsg) (RelationshipsModel, tea.Cmd) {
+	if m.filtering {
+		return m.handleFilterInput(msg)
+	}
 	switch {
 	case isDown(msg):
 		m.list.Down()
@@ -226,9 +237,38 @@ func (m RelationshipsModel) handleListKeys(msg tea.KeyMsg) (RelationshipsModel, 
 			m.detail = rel
 			m.view = relsViewDetail
 		}
+	case isKey(msg, "f"):
+		m.filtering = true
+		return m, nil
 	case isKey(msg, "n"):
 		m.startCreate()
 		m.view = relsViewCreateSourceSearch
+	}
+	return m, nil
+}
+
+func (m RelationshipsModel) handleFilterInput(msg tea.KeyMsg) (RelationshipsModel, tea.Cmd) {
+	switch {
+	case isEnter(msg):
+		m.filtering = false
+	case isBack(msg):
+		m.filtering = false
+		m.filterBuf = ""
+		m.applyListFilter()
+	case isKey(msg, "backspace", "delete"):
+		if len(m.filterBuf) > 0 {
+			m.filterBuf = m.filterBuf[:len(m.filterBuf)-1]
+			m.applyListFilter()
+		}
+	default:
+		ch := msg.String()
+		if len(ch) == 1 || ch == " " {
+			if ch == " " && m.filterBuf == "" {
+				return m, nil
+			}
+			m.filterBuf += ch
+			m.applyListFilter()
+		}
 	}
 	return m, nil
 }
@@ -376,7 +416,11 @@ func (m RelationshipsModel) renderList() string {
 	}
 
 	title := "Relationships"
-	countLine := MutedStyle.Render(fmt.Sprintf("%d total", len(m.items)))
+	count := fmt.Sprintf("%d total", len(m.items))
+	if query := strings.TrimSpace(m.filterBuf); query != "" {
+		count = fmt.Sprintf("%s · filter: %s", count, query)
+	}
+	countLine := MutedStyle.Render(count)
 
 	table := components.TableGridWithActiveRow(cols, tableRows, tableWidth, activeRowRel)
 	preview := ""
@@ -1179,6 +1223,31 @@ func (m RelationshipsModel) buildListLabels() []string {
 		)
 	}
 	return labels
+}
+
+func (m *RelationshipsModel) applyListFilter() {
+	query := strings.ToLower(strings.TrimSpace(m.filterBuf))
+	if query == "" {
+		m.items = append([]api.Relationship{}, m.allItems...)
+	} else {
+		filtered := make([]api.Relationship, 0, len(m.allItems))
+		for _, rel := range m.allItems {
+			relType := strings.ToLower(strings.TrimSpace(rel.Type))
+			status := strings.ToLower(strings.TrimSpace(rel.Status))
+			source := strings.ToLower(m.displayNode(rel.SourceID, rel.SourceType, rel.SourceName))
+			target := strings.ToLower(m.displayNode(rel.TargetID, rel.TargetType, rel.TargetName))
+			if strings.Contains(relType, query) ||
+				strings.Contains(status, query) ||
+				strings.Contains(source, query) ||
+				strings.Contains(target, query) {
+				filtered = append(filtered, rel)
+			}
+		}
+		m.items = filtered
+	}
+	if m.list != nil {
+		m.list.SetItems(m.buildListLabels())
+	}
 }
 
 func (m RelationshipsModel) displayNode(id, typ, name string) string {

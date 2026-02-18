@@ -18,6 +18,10 @@ type filesLoadedMsg struct{ items []api.File }
 type fileCreatedMsg struct{}
 type fileUpdatedMsg struct{}
 type filesScopesLoadedMsg struct{ options []string }
+type fileRelationshipsLoadedMsg struct {
+	id            string
+	relationships []api.Relationship
+}
 
 // --- Views ---
 
@@ -54,9 +58,11 @@ type FilesModel struct {
 	loading       bool
 	view          filesView
 	modeFocus     bool
+	filtering     bool
 	searchBuf     string
 	searchSuggest string
 	detail        *api.File
+	detailRels    []api.Relationship
 	errText       string
 	metaExpanded  bool
 	width         int
@@ -116,9 +122,11 @@ func (m FilesModel) Init() tea.Cmd {
 	m.loading = true
 	m.view = filesViewList
 	m.modeFocus = false
+	m.filtering = false
 	m.searchBuf = ""
 	m.searchSuggest = ""
 	m.detail = nil
+	m.detailRels = nil
 	m.errText = ""
 	m.metaExpanded = false
 	m.addFocus = 0
@@ -159,6 +167,11 @@ func (m FilesModel) Update(msg tea.Msg) (FilesModel, tea.Cmd) {
 		m.scopeOptions = msg.options
 		m.addMeta.SetScopeOptions(m.scopeOptions)
 		m.editMeta.SetScopeOptions(m.scopeOptions)
+		return m, nil
+	case fileRelationshipsLoadedMsg:
+		if m.detail != nil && m.detail.ID == msg.id {
+			m.detailRels = msg.relationships
+		}
 		return m, nil
 	case fileCreatedMsg:
 		m.addSaving = false
@@ -209,6 +222,9 @@ func (m FilesModel) View() string {
 	}
 	if m.editMeta.Active {
 		return m.editMeta.Render(m.width)
+	}
+	if m.filtering && m.view == filesViewList {
+		return components.Indent(components.InputDialog("Filter Files", m.searchBuf), 1)
 	}
 	modeLine := m.renderModeLine()
 	var body string
@@ -443,6 +459,9 @@ func (m FilesModel) renderFilePreview(f api.File, width int) string {
 }
 
 func (m FilesModel) handleListKeys(msg tea.KeyMsg) (FilesModel, tea.Cmd) {
+	if m.filtering {
+		return m.handleFilterInput(msg)
+	}
 	switch {
 	case isDown(msg):
 		m.list.Down()
@@ -456,8 +475,13 @@ func (m FilesModel) handleListKeys(msg tea.KeyMsg) (FilesModel, tea.Cmd) {
 		if idx := m.list.Selected(); idx < len(m.items) {
 			item := m.items[idx]
 			m.detail = &item
+			m.detailRels = nil
 			m.view = filesViewDetail
+			return m, m.loadDetailRelationships(item.ID)
 		}
+	case isKey(msg, "f"):
+		m.filtering = true
+		return m, nil
 	case isKey(msg, "backspace", "delete"):
 		if len(m.searchBuf) > 0 {
 			m.searchBuf = m.searchBuf[:len(m.searchBuf)-1]
@@ -493,6 +517,33 @@ func (m FilesModel) handleListKeys(msg tea.KeyMsg) (FilesModel, tea.Cmd) {
 	return m, nil
 }
 
+func (m FilesModel) handleFilterInput(msg tea.KeyMsg) (FilesModel, tea.Cmd) {
+	switch {
+	case isEnter(msg):
+		m.filtering = false
+	case isBack(msg):
+		m.filtering = false
+		m.searchBuf = ""
+		m.searchSuggest = ""
+		m.applyFileSearch()
+	case isKey(msg, "backspace", "delete"):
+		if len(m.searchBuf) > 0 {
+			m.searchBuf = m.searchBuf[:len(m.searchBuf)-1]
+			m.applyFileSearch()
+		}
+	default:
+		ch := msg.String()
+		if len(ch) == 1 || ch == " " {
+			if ch == " " && m.searchBuf == "" {
+				return m, nil
+			}
+			m.searchBuf += ch
+			m.applyFileSearch()
+		}
+	}
+	return m, nil
+}
+
 // --- Detail View ---
 
 func (m FilesModel) handleDetailKeys(msg tea.KeyMsg) (FilesModel, tea.Cmd) {
@@ -501,6 +552,7 @@ func (m FilesModel) handleDetailKeys(msg tea.KeyMsg) (FilesModel, tea.Cmd) {
 		m.modeFocus = true
 	case isBack(msg):
 		m.detail = nil
+		m.detailRels = nil
 		m.metaExpanded = false
 		m.view = filesViewList
 	case isKey(msg, "e"):
@@ -546,7 +598,20 @@ func (m FilesModel) renderDetail() string {
 	if len(f.Metadata) > 0 {
 		sections = append(sections, renderMetadataBlock(map[string]any(f.Metadata), m.width, m.metaExpanded))
 	}
+	if len(m.detailRels) > 0 {
+		sections = append(sections, components.Table("Relationships", relationshipSummaryRows("file", f.ID, m.detailRels, 6), m.width))
+	}
 	return strings.Join(sections, "\n\n")
+}
+
+func (m FilesModel) loadDetailRelationships(fileID string) tea.Cmd {
+	return func() tea.Msg {
+		rels, err := m.client.GetRelationships("file", fileID)
+		if err != nil {
+			return fileRelationshipsLoadedMsg{id: fileID, relationships: nil}
+		}
+		return fileRelationshipsLoadedMsg{id: fileID, relationships: rels}
+	}
 }
 
 // --- Add View ---

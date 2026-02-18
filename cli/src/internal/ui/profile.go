@@ -795,7 +795,7 @@ func (m ProfileModel) renderAgentPreview(a api.Agent, width int) string {
 	lines = append(lines, renderPreviewRow("Trust", trust, width))
 	lines = append(lines, renderPreviewRow("Status", status, width))
 	if len(a.Scopes) > 0 {
-		lines = append(lines, renderPreviewRow("Scopes", strings.Join(a.Scopes, ", "), width))
+		lines = append(lines, renderPreviewRow("Scopes", formatScopePreview(a.Scopes), width))
 	}
 	if len(a.Capabilities) > 0 {
 		lines = append(lines, renderPreviewRow("Caps", strings.Join(a.Capabilities, ", "), width))

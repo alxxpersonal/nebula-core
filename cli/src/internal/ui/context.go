@@ -99,7 +99,10 @@ type ContextModel struct {
 	linkList            *components.List
 	linkEntities        []api.Entity
 	list                *components.List
+	allItems            []api.Context
 	items               []api.Context
+	filtering           bool
+	filterBuf           string
 	loadingList         bool
 	detail              *api.Context
 	detailRelationships []api.Relationship
@@ -177,6 +180,9 @@ func (m ContextModel) Init() tea.Cmd {
 	m.linkQuery = ""
 	m.linkResults = nil
 	m.linkEntities = nil
+	m.allItems = nil
+	m.filtering = false
+	m.filterBuf = ""
 	m.detail = nil
 	m.loadingList = false
 	m.editFocus = 0
@@ -235,14 +241,8 @@ func (m ContextModel) Update(msg tea.Msg) (ContextModel, tea.Cmd) {
 
 	case contextListLoadedMsg:
 		m.loadingList = false
-		m.items = msg.items
-		labels := make([]string, len(msg.items))
-		for i, k := range msg.items {
-			labels[i] = formatContextLine(k)
-		}
-		if m.list != nil {
-			m.list.SetItems(labels)
-		}
+		m.allItems = append([]api.Context{}, msg.items...)
+		m.applyContextFilter()
 		return m, nil
 	case contextScopesLoadedMsg:
 		if m.scopeNames == nil {
@@ -436,6 +436,9 @@ func (m ContextModel) View() string {
 
 	if m.linkSearching {
 		return m.renderLinkSearch()
+	}
+	if m.filtering && m.view == contextViewList {
+		return components.Indent(components.InputDialog("Filter Context", m.filterBuf), 1)
 	}
 
 	modeLine := m.renderModeLine()
@@ -719,6 +722,9 @@ func (m ContextModel) toggleMode() (ContextModel, tea.Cmd) {
 }
 
 func (m ContextModel) handleListKeys(msg tea.KeyMsg) (ContextModel, tea.Cmd) {
+	if m.filtering {
+		return m.handleFilterInput(msg)
+	}
 	switch {
 	case isDown(msg):
 		m.list.Down()
@@ -735,8 +741,37 @@ func (m ContextModel) handleListKeys(msg tea.KeyMsg) (ContextModel, tea.Cmd) {
 			m.view = contextViewDetail
 			return m, m.loadContextDetail(item.ID)
 		}
+	case isKey(msg, "f"):
+		m.filtering = true
+		return m, nil
 	case isBack(msg):
 		m.view = contextViewAdd
+	}
+	return m, nil
+}
+
+func (m ContextModel) handleFilterInput(msg tea.KeyMsg) (ContextModel, tea.Cmd) {
+	switch {
+	case isEnter(msg):
+		m.filtering = false
+	case isBack(msg):
+		m.filtering = false
+		m.filterBuf = ""
+		m.applyContextFilter()
+	case isKey(msg, "backspace", "delete"):
+		if len(m.filterBuf) > 0 {
+			m.filterBuf = m.filterBuf[:len(m.filterBuf)-1]
+			m.applyContextFilter()
+		}
+	default:
+		ch := msg.String()
+		if len(ch) == 1 || ch == " " {
+			if ch == " " && m.filterBuf == "" {
+				return m, nil
+			}
+			m.filterBuf += ch
+			m.applyContextFilter()
+		}
 	}
 	return m, nil
 }
@@ -990,6 +1025,9 @@ func (m ContextModel) renderList() string {
 	}
 
 	countLine := fmt.Sprintf("%d total", len(m.items))
+	if query := strings.TrimSpace(m.filterBuf); query != "" {
+		countLine = fmt.Sprintf("%s · filter: %s", countLine, query)
+	}
 	countLine = MutedStyle.Render(countLine)
 
 	table := components.TableGridWithActiveRow(cols, tableRows, tableWidth, activeRowRel)
@@ -1136,7 +1174,7 @@ func (m ContextModel) renderContextPreview(k api.Context, width int) string {
 
 	snippet := ""
 	if metaPreview := metadataPreview(map[string]any(k.Metadata), 80); metaPreview != "" {
-		snippet = metaPreview
+		snippet = humanizeGoMapString(metaPreview)
 	} else if k.Content != nil {
 		snippet = truncateString(strings.TrimSpace(components.SanitizeText(*k.Content)), 80)
 	} else if k.URL != nil {
@@ -1263,6 +1301,37 @@ func (m ContextModel) loadContextList() tea.Cmd {
 	}
 }
 
+func (m *ContextModel) applyContextFilter() {
+	query := strings.ToLower(strings.TrimSpace(m.filterBuf))
+	if query == "" {
+		m.items = append([]api.Context{}, m.allItems...)
+	} else {
+		filtered := make([]api.Context, 0, len(m.allItems))
+		for _, item := range m.allItems {
+			title := strings.ToLower(strings.TrimSpace(contextTitle(item)))
+			typ := strings.ToLower(strings.TrimSpace(item.SourceType))
+			status := strings.ToLower(strings.TrimSpace(item.Status))
+			tags := strings.ToLower(strings.Join(item.Tags, " "))
+			preview := strings.ToLower(metadataPreview(map[string]any(item.Metadata), 120))
+			if strings.Contains(title, query) ||
+				strings.Contains(typ, query) ||
+				strings.Contains(status, query) ||
+				strings.Contains(tags, query) ||
+				strings.Contains(preview, query) {
+				filtered = append(filtered, item)
+			}
+		}
+		m.items = filtered
+	}
+	labels := make([]string, len(m.items))
+	for i, item := range m.items {
+		labels[i] = formatContextLine(item)
+	}
+	if m.list != nil {
+		m.list.SetItems(labels)
+	}
+}
+
 func (m ContextModel) loadContextDetail(id string) tea.Cmd {
 	return func() tea.Msg {
 		item, err := m.client.GetContext(id)
@@ -1355,7 +1424,7 @@ func (m ContextModel) formatContextScopes(ids []string) string {
 			names = append(names, id)
 		}
 	}
-	return strings.Join(names, ", ")
+	return formatScopePreview(names)
 }
 
 func (m ContextModel) scopeNamesFromIDs(ids []string) []string {

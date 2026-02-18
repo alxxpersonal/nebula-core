@@ -739,6 +739,12 @@ func (a App) statusHintsForTab() []string {
 				components.Hint("esc", "Cancel"),
 			)
 		}
+		if a.entities.filtering {
+			return append(base,
+				components.Hint("enter", "Apply"),
+				components.Hint("esc", "Clear"),
+			)
+		}
 		switch a.entities.view {
 		case entitiesViewDetail:
 			return append(base,
@@ -817,6 +823,7 @@ func (a App) statusHintsForTab() []string {
 				components.Hint("↑/↓", "Scroll"),
 				components.Hint("tab", "Complete"),
 				components.Hint("enter", "Details"),
+				components.Hint("f", "Filter"),
 			)
 			if strings.TrimSpace(a.entities.searchBuf) == "" {
 				hints = append(hints, components.Hint("space", "Select"))
@@ -831,6 +838,12 @@ func (a App) statusHintsForTab() []string {
 			return hints
 		}
 	case tabRelations:
+		if a.rels.filtering {
+			return append(base,
+				components.Hint("enter", "Apply"),
+				components.Hint("esc", "Clear"),
+			)
+		}
 		switch a.rels.view {
 		case relsViewDetail:
 			return append(base,
@@ -868,9 +881,16 @@ func (a App) statusHintsForTab() []string {
 				components.Hint("↑/↓", "Scroll"),
 				components.Hint("enter", "Details"),
 				components.Hint("n", "New"),
+				components.Hint("f", "Filter"),
 			)
 		}
 	case tabKnow:
+		if a.know.filtering {
+			return append(base,
+				components.Hint("enter", "Apply"),
+				components.Hint("esc", "Clear"),
+			)
+		}
 		if a.know.linkSearching {
 			return append(base,
 				components.Hint("↑/↓", "Scroll"),
@@ -883,6 +903,7 @@ func (a App) statusHintsForTab() []string {
 			return append(base,
 				components.Hint("↑/↓", "Scroll"),
 				components.Hint("enter", "Details"),
+				components.Hint("f", "Filter"),
 				components.Hint("esc", "Back"),
 			)
 		case contextViewDetail:
@@ -902,6 +923,12 @@ func (a App) statusHintsForTab() []string {
 			)
 		}
 	case tabJobs:
+		if a.jobs.filtering {
+			return append(base,
+				components.Hint("enter", "Apply"),
+				components.Hint("esc", "Clear"),
+			)
+		}
 		if a.jobs.view == jobsViewAdd || a.jobs.view == jobsViewEdit {
 			return append(base,
 				components.Hint("↑/↓", "Fields"),
@@ -925,8 +952,15 @@ func (a App) statusHintsForTab() []string {
 			components.Hint("space", "Select"),
 			components.Hint("b", "Select All"),
 			components.Hint("s", "Status"),
+			components.Hint("f", "Filter"),
 		)
 	case tabLogs:
+		if a.logs.filtering {
+			return append(base,
+				components.Hint("enter", "Apply"),
+				components.Hint("esc", "Clear"),
+			)
+		}
 		switch a.logs.view {
 		case logsViewDetail:
 			return append(base,
@@ -948,9 +982,16 @@ func (a App) statusHintsForTab() []string {
 				components.Hint("↑/↓", "Scroll"),
 				components.Hint("tab", "Complete"),
 				components.Hint("enter", "Details"),
+				components.Hint("f", "Filter"),
 			)
 		}
 	case tabFiles:
+		if a.files.filtering {
+			return append(base,
+				components.Hint("enter", "Apply"),
+				components.Hint("esc", "Clear"),
+			)
+		}
 		switch a.files.view {
 		case filesViewDetail:
 			return append(base,
@@ -971,9 +1012,16 @@ func (a App) statusHintsForTab() []string {
 				components.Hint("↑/↓", "Scroll"),
 				components.Hint("tab", "Complete"),
 				components.Hint("enter", "Details"),
+				components.Hint("f", "Filter"),
 			)
 		}
 	case tabProtocols:
+		if a.protocols.filtering {
+			return append(base,
+				components.Hint("enter", "Apply"),
+				components.Hint("esc", "Clear"),
+			)
+		}
 		switch a.protocols.view {
 		case protocolsViewDetail:
 			return append(base,
@@ -992,6 +1040,7 @@ func (a App) statusHintsForTab() []string {
 				components.Hint("↑/↓", "Scroll"),
 				components.Hint("n", "New"),
 				components.Hint("enter", "Details"),
+				components.Hint("f", "Filter"),
 			)
 		}
 	case tabHistory:
@@ -1912,17 +1961,20 @@ func (a App) canExitToTabNav() bool {
 		}
 		return a.inbox.list == nil || a.inbox.list.Selected() == 0
 	case tabEntities:
-		if a.entities.view != entitiesViewList {
+		if a.entities.filtering || a.entities.view != entitiesViewList {
 			return false
 		}
 		return a.entities.list == nil || a.entities.list.Selected() == 0
 	case tabRelations:
-		if a.rels.view != relsViewList {
+		if a.rels.filtering || a.rels.view != relsViewList {
 			return false
 		}
 		return a.rels.list == nil || a.rels.list.Selected() == 0
 	case tabKnow:
 		if a.know.view == contextViewList {
+			if a.know.filtering {
+				return false
+			}
 			return a.know.list == nil || a.know.list.Selected() == 0
 		}
 		if a.know.view != contextViewAdd {
@@ -1930,7 +1982,7 @@ func (a App) canExitToTabNav() bool {
 		}
 		return !a.know.modeFocus && a.know.focus == fieldTitle
 	case tabJobs:
-		if a.jobs.detail != nil || a.jobs.changingSt {
+		if a.jobs.filtering || a.jobs.detail != nil || a.jobs.changingSt {
 			return false
 		}
 		return a.jobs.list == nil || a.jobs.list.Selected() == 0

@@ -18,6 +18,10 @@ type jobStatusUpdatedMsg struct{}
 type subtaskCreatedMsg struct{}
 type jobCreatedMsg struct{}
 type jobsScopesLoadedMsg struct{ options []string }
+type jobRelationshipsLoadedMsg struct {
+	id            string
+	relationships []api.Relationship
+}
 
 type jobsView int
 
@@ -58,6 +62,8 @@ type JobsModel struct {
 	selected        map[string]bool
 	loading         bool
 	detail          *api.Job
+	detailRels      []api.Relationship
+	filtering       bool
 	searchBuf       string
 	searchSuggest   string
 	view            jobsView
@@ -120,10 +126,12 @@ func (m JobsModel) Init() tea.Cmd {
 	m.addSaving = false
 	m.addSaved = false
 	m.addErr = ""
+	m.filtering = false
 	m.searchBuf = ""
 	m.searchSuggest = ""
 	m.selected = map[string]bool{}
 	m.statusTargets = nil
+	m.detailRels = nil
 	return m.loadJobs
 }
 
@@ -138,6 +146,11 @@ func (m JobsModel) Update(msg tea.Msg) (JobsModel, tea.Cmd) {
 		m.scopeOptions = msg.options
 		m.addMeta.SetScopeOptions(m.scopeOptions)
 		m.editMeta.SetScopeOptions(m.scopeOptions)
+		return m, nil
+	case jobRelationshipsLoadedMsg:
+		if m.detail != nil && m.detail.ID == msg.id {
+			m.detailRels = msg.relationships
+		}
 		return m, nil
 
 	case jobStatusUpdatedMsg:
@@ -211,6 +224,9 @@ func (m JobsModel) View() string {
 
 	if m.changingSt {
 		return components.Indent(components.InputDialog("New Status (pending/active/completed/failed)", m.statusBuf), 1)
+	}
+	if m.filtering && m.view == jobsViewList {
+		return components.Indent(components.InputDialog("Filter Jobs", m.searchBuf), 1)
 	}
 	modeLine := m.renderModeLine()
 	var body string
@@ -440,6 +456,9 @@ func (m JobsModel) renderJobPreview(j api.Job, width int) string {
 	lines = append(lines, renderPreviewRow("Status", status, width))
 	lines = append(lines, renderPreviewRow("Priority", priority, width))
 	lines = append(lines, renderPreviewRow("At", formatLocalTimeCompact(at), width))
+	if m.detail != nil && m.detail.ID == j.ID && len(m.detailRels) > 0 {
+		lines = append(lines, renderPreviewRow("Links", fmt.Sprintf("%d", len(m.detailRels)), width))
+	}
 
 	if j.Description != nil && strings.TrimSpace(*j.Description) != "" {
 		desc := truncateString(strings.TrimSpace(components.SanitizeText(*j.Description)), 120)
@@ -453,6 +472,9 @@ func (m JobsModel) renderJobPreview(j api.Job, width int) string {
 }
 
 func (m JobsModel) handleListKeys(msg tea.KeyMsg) (JobsModel, tea.Cmd) {
+	if m.filtering {
+		return m.handleFilterInput(msg)
+	}
 	switch {
 	case isDown(msg):
 		m.list.Down()
@@ -466,12 +488,17 @@ func (m JobsModel) handleListKeys(msg tea.KeyMsg) (JobsModel, tea.Cmd) {
 		if idx := m.list.Selected(); idx < len(m.items) {
 			item := m.items[idx]
 			m.detail = &item
+			m.detailRels = nil
 			m.view = jobsViewDetail
+			return m, m.loadDetailRelationships(item.ID)
 		}
 	case isSpace(msg):
 		m.toggleSelected()
 	case isKey(msg, "b"):
 		m.toggleSelectAll()
+	case isKey(msg, "f"):
+		m.filtering = true
+		return m, nil
 	case isKey(msg, "backspace", "delete"):
 		if len(m.searchBuf) > 0 {
 			m.searchBuf = m.searchBuf[:len(m.searchBuf)-1]
@@ -509,6 +536,33 @@ func (m JobsModel) handleListKeys(msg tea.KeyMsg) (JobsModel, tea.Cmd) {
 			m.changingSt = true
 			m.statusBuf = ""
 			m.statusTargets = []string{item.ID}
+		}
+	default:
+		ch := msg.String()
+		if len(ch) == 1 || ch == " " {
+			if ch == " " && m.searchBuf == "" {
+				return m, nil
+			}
+			m.searchBuf += ch
+			m.applyJobSearch()
+		}
+	}
+	return m, nil
+}
+
+func (m JobsModel) handleFilterInput(msg tea.KeyMsg) (JobsModel, tea.Cmd) {
+	switch {
+	case isEnter(msg):
+		m.filtering = false
+	case isBack(msg):
+		m.filtering = false
+		m.searchBuf = ""
+		m.searchSuggest = ""
+		m.applyJobSearch()
+	case isKey(msg, "backspace", "delete"):
+		if len(m.searchBuf) > 0 {
+			m.searchBuf = m.searchBuf[:len(m.searchBuf)-1]
+			m.applyJobSearch()
 		}
 	default:
 		ch := msg.String()
@@ -1017,6 +1071,7 @@ func (m JobsModel) handleDetailKeys(msg tea.KeyMsg) (JobsModel, tea.Cmd) {
 		m.modeFocus = true
 	case isBack(msg):
 		m.detail = nil
+		m.detailRels = nil
 		m.metaExpanded = false
 		m.view = jobsViewList
 	case isKey(msg, "s"):
@@ -1147,8 +1202,21 @@ func (m JobsModel) renderDetail() string {
 			sections = append(sections, metaTable)
 		}
 	}
+	if len(m.detailRels) > 0 {
+		sections = append(sections, components.Table("Relationships", relationshipSummaryRows("job", j.ID, m.detailRels, 6), m.width))
+	}
 
 	return strings.Join(sections, "\n\n")
+}
+
+func (m JobsModel) loadDetailRelationships(jobID string) tea.Cmd {
+	return func() tea.Msg {
+		rels, err := m.client.GetRelationships("job", jobID)
+		if err != nil {
+			return jobRelationshipsLoadedMsg{id: jobID, relationships: nil}
+		}
+		return jobRelationshipsLoadedMsg{id: jobID, relationships: rels}
+	}
 }
 
 func formatJobLine(j api.Job) string {
