@@ -221,3 +221,86 @@ func TestMaskedAPIKey(t *testing.T) {
 	assert.Equal(t, "*****", maskedAPIKey("abcde"))
 	assert.Equal(t, "abcdef...7890", maskedAPIKey("abcdef1234567890"))
 }
+
+func TestProfileActiveListAndParsePositiveIntHelpers(t *testing.T) {
+	model := NewProfileModel(nil, &config.Config{Username: "alxx"})
+	model.section = 0
+	assert.Same(t, model.keyList, model.activeList())
+	model.section = 1
+	assert.Same(t, model.agentList, model.activeList())
+	model.section = 2
+	assert.Same(t, model.agentList, model.activeList())
+
+	n, err := parsePositiveInt("42")
+	require.NoError(t, err)
+	assert.Equal(t, 42, n)
+
+	_, err = parsePositiveInt("0")
+	require.Error(t, err)
+	_, err = parsePositiveInt("-1")
+	require.Error(t, err)
+	_, err = parsePositiveInt("abc")
+	require.Error(t, err)
+}
+
+func TestProfileHandlePendingLimitInputAndRenderAgentDetail(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	desc := "ops agent"
+	now := time.Now()
+	cfg := &config.Config{Username: "alxx", APIKey: "nbl_key", PendingLimit: 25}
+	model := NewProfileModel(nil, cfg)
+
+	model.editPendingLimit = true
+	model.pendingLimitBuf = ""
+	_, cmd := model.handlePendingLimitInput(tea.KeyMsg{Type: tea.KeyEnter})
+	require.NotNil(t, cmd)
+	msg := cmd()
+	_, ok := msg.(errMsg)
+	assert.True(t, ok)
+
+	model.pendingLimitBuf = "6001"
+	_, cmd = model.handlePendingLimitInput(tea.KeyMsg{Type: tea.KeyEnter})
+	require.NotNil(t, cmd)
+	msg = cmd()
+	saved, ok := msg.(pendingLimitSavedMsg)
+	require.True(t, ok)
+	assert.Equal(t, 5000, saved.limit)
+
+	model.agentDetail = &api.Agent{
+		ID:               "agent-1",
+		Name:             "Alpha",
+		Status:           "active",
+		RequiresApproval: false,
+		Scopes:           []string{"public", "admin"},
+		Capabilities:     []string{"read", "write"},
+		Description:      &desc,
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	}
+	detail := stripANSI(model.renderAgentDetail())
+	assert.Contains(t, detail, "Agent Details")
+	assert.Contains(t, detail, "Scopes")
+	assert.Contains(t, detail, "public,")
+	assert.Contains(t, detail, "Descriptio")
+}
+
+func TestProfileSectionFocusArrowNavigation(t *testing.T) {
+	model := NewProfileModel(nil, &config.Config{Username: "alxx"})
+	model.sectionFocus = true
+
+	model, _ = model.Update(tea.KeyMsg{Type: tea.KeyRight})
+	assert.Equal(t, 1, model.section)
+	assert.True(t, model.sectionFocus)
+
+	model, _ = model.Update(tea.KeyMsg{Type: tea.KeyRight})
+	assert.Equal(t, 2, model.section)
+	assert.True(t, model.sectionFocus)
+
+	model, _ = model.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	assert.Equal(t, 1, model.section)
+	assert.True(t, model.sectionFocus)
+
+	model, _ = model.Update(tea.KeyMsg{Type: tea.KeyDown})
+	assert.False(t, model.sectionFocus)
+}
