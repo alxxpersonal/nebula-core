@@ -39,8 +39,8 @@ var (
 			Padding(0, 1)
 
 	TabFocusStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#10131a")).
-			Background(lipgloss.Color("#ffcf66")).
+			Foreground(ColorBackground).
+			Background(lipgloss.Color("#9972cf")).
 			Bold(true).
 			Padding(0, 1)
 
@@ -63,7 +63,7 @@ var (
 			PaddingTop(1)
 
 	SelectedStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#ffcf66")).
+			Foreground(lipgloss.Color("#c79bff")).
 			Bold(true)
 
 	NormalStyle = lipgloss.NewStyle().
