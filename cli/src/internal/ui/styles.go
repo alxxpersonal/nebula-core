@@ -63,7 +63,7 @@ var (
 			PaddingTop(1)
 
 	SelectedStyle = lipgloss.NewStyle().
-			Foreground(ColorPrimary).
+			Foreground(lipgloss.Color("#c79bff")).
 			Bold(true)
 
 	NormalStyle = lipgloss.NewStyle().
