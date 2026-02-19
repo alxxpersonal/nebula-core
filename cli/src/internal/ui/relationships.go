@@ -283,11 +283,14 @@ func (m RelationshipsModel) renderModeLine() string {
 	} else {
 		list = TabActiveStyle.Render("Library")
 	}
-	line := add + " " + list
 	if m.modeFocus {
-		return SelectedStyle.Render("› " + line)
+		if m.isAddView() {
+			add = TabFocusStyle.Render("Add")
+		} else {
+			list = TabFocusStyle.Render("Library")
+		}
 	}
-	return line
+	return add + " " + list
 }
 
 func (m RelationshipsModel) handleModeKeys(msg tea.KeyMsg) (RelationshipsModel, tea.Cmd) {
@@ -413,6 +416,9 @@ func (m RelationshipsModel) renderList() string {
 			components.ClampTextWidthEllipsis(status, statusWidth),
 			when,
 		})
+	}
+	if m.modeFocus {
+		activeRowRel = -1
 	}
 
 	title := "Relationships"

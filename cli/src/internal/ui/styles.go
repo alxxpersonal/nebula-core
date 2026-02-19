@@ -38,6 +38,12 @@ var (
 			Bold(true).
 			Padding(0, 1)
 
+	TabFocusStyle = lipgloss.NewStyle().
+			Foreground(ColorBackground).
+			Background(lipgloss.Color("#9972cf")).
+			Bold(true).
+			Padding(0, 1)
+
 	TabInactiveStyle = lipgloss.NewStyle().
 				Foreground(ColorMuted).
 				Padding(0, 1)

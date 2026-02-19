@@ -192,6 +192,9 @@ func (m ProtocolsModel) Update(msg tea.Msg) (ProtocolsModel, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		if m.modeFocus {
+			return m.handleModeKeys(msg)
+		}
 		switch m.view {
 		case protocolsViewAdd:
 			return m.handleAddKeys(msg)
@@ -287,7 +290,38 @@ func (m ProtocolsModel) renderModeLine() string {
 	} else {
 		list = TabActiveStyle.Render("Library")
 	}
+	if m.modeFocus {
+		if m.view == protocolsViewAdd {
+			add = TabFocusStyle.Render("Add")
+		} else {
+			list = TabFocusStyle.Render("Library")
+		}
+	}
 	return add + " " + list
+}
+
+func (m ProtocolsModel) handleModeKeys(msg tea.KeyMsg) (ProtocolsModel, tea.Cmd) {
+	switch {
+	case isDown(msg):
+		m.modeFocus = false
+	case isUp(msg):
+		m.modeFocus = false
+	case isKey(msg, "left"), isKey(msg, "right"), isSpace(msg), isEnter(msg):
+		return m.toggleMode()
+	case isBack(msg):
+		m.modeFocus = false
+	}
+	return m, nil
+}
+
+func (m ProtocolsModel) toggleMode() (ProtocolsModel, tea.Cmd) {
+	m.modeFocus = false
+	if m.view == protocolsViewAdd {
+		m.view = protocolsViewList
+		return m, nil
+	}
+	m.view = protocolsViewAdd
+	return m, nil
 }
 
 // --- List ---
@@ -300,7 +334,11 @@ func (m ProtocolsModel) handleListKeys(msg tea.KeyMsg) (ProtocolsModel, tea.Cmd)
 	case isDown(msg):
 		m.list.Down()
 	case isUp(msg):
-		m.list.Up()
+		if m.list.Selected() == 0 {
+			m.modeFocus = true
+		} else {
+			m.list.Up()
+		}
 	case isKey(msg, "n"):
 		m.view = protocolsViewAdd
 		return m, nil
@@ -452,6 +490,9 @@ func (m ProtocolsModel) renderList() string {
 			components.ClampTextWidthEllipsis(status, statusWidth),
 			formatLocalTimeCompact(at),
 		})
+	}
+	if m.modeFocus {
+		activeRowRel = -1
 	}
 
 	title := "Protocols"

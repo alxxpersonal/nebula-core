@@ -679,6 +679,19 @@ func metadataGroupAndField(path string) (string, string) {
 	if trimmed == "" {
 		return "-", "-"
 	}
+	if strings.HasPrefix(trimmed, "context_segments.") {
+		rest := strings.TrimPrefix(trimmed, "context_segments.")
+		parts := strings.SplitN(rest, ".", 2)
+		if len(parts) > 0 {
+			if idx, err := strconv.Atoi(parts[0]); err == nil {
+				field := fmt.Sprintf("segment %d", idx+1)
+				if len(parts) == 2 && strings.TrimSpace(parts[1]) != "" {
+					field += "." + strings.TrimSpace(parts[1])
+				}
+				return "context", field
+			}
+		}
+	}
 	if !strings.HasPrefix(trimmed, "context_segments[") {
 		parts := strings.Split(trimmed, ".")
 		if len(parts) == 1 {

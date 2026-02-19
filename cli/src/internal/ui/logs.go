@@ -263,11 +263,14 @@ func (m LogsModel) renderModeLine() string {
 	} else {
 		list = TabActiveStyle.Render("Library")
 	}
-	line := add + " " + list
 	if m.modeFocus {
-		return SelectedStyle.Render("› " + line)
+		if m.view == logsViewAdd {
+			add = TabFocusStyle.Render("Add")
+		} else {
+			list = TabFocusStyle.Render("Library")
+		}
 	}
-	return line
+	return add + " " + list
 }
 
 func (m LogsModel) handleModeKeys(msg tea.KeyMsg) (LogsModel, tea.Cmd) {
@@ -399,6 +402,9 @@ func (m LogsModel) renderList() string {
 			components.ClampTextWidthEllipsis(status, statusWidth),
 			formatLocalTimeCompact(at),
 		})
+	}
+	if m.modeFocus {
+		activeRowRel = -1
 	}
 
 	countLine := fmt.Sprintf("%d total", len(m.items))

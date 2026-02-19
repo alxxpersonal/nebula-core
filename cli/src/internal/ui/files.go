@@ -254,11 +254,14 @@ func (m FilesModel) renderModeLine() string {
 	} else {
 		list = TabActiveStyle.Render("Library")
 	}
-	line := add + " " + list
 	if m.modeFocus {
-		return SelectedStyle.Render("› " + line)
+		if m.view == filesViewAdd {
+			add = TabFocusStyle.Render("Add")
+		} else {
+			list = TabFocusStyle.Render("Library")
+		}
 	}
-	return line
+	return add + " " + list
 }
 
 func (m FilesModel) handleModeKeys(msg tea.KeyMsg) (FilesModel, tea.Cmd) {
@@ -378,6 +381,9 @@ func (m FilesModel) renderList() string {
 			components.ClampTextWidthEllipsis(size, sizeWidth),
 			formatLocalTimeCompact(at),
 		})
+	}
+	if m.modeFocus {
+		activeRowRel = -1
 	}
 
 	countLine := fmt.Sprintf("%d total", len(m.items))

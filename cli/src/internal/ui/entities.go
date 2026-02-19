@@ -584,11 +584,14 @@ func (m EntitiesModel) renderModeLine() string {
 	} else {
 		list = TabActiveStyle.Render("Library")
 	}
-	line := add + " " + list
 	if m.modeFocus {
-		return SelectedStyle.Render("› " + line)
+		if m.view == entitiesViewAdd {
+			add = TabFocusStyle.Render("Add")
+		} else {
+			list = TabFocusStyle.Render("Library")
+		}
 	}
-	return line
+	return add + " " + list
 }
 
 func (m EntitiesModel) handleModeKeys(msg tea.KeyMsg) (EntitiesModel, tea.Cmd) {
@@ -1057,6 +1060,9 @@ func (m EntitiesModel) renderList() string {
 			components.ClampTextWidthEllipsis(status, statusWidth),
 			formatLocalTimeCompact(at),
 		})
+	}
+	if m.modeFocus {
+		activeRowRel = -1
 	}
 
 	title := "Entities"

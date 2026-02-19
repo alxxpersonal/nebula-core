@@ -256,11 +256,14 @@ func (m JobsModel) renderModeLine() string {
 	} else {
 		list = TabActiveStyle.Render("List")
 	}
-	line := add + " " + list
 	if m.modeFocus {
-		return SelectedStyle.Render("› " + line)
+		if m.view == jobsViewAdd {
+			add = TabFocusStyle.Render("Add")
+		} else {
+			list = TabFocusStyle.Render("List")
+		}
 	}
-	return line
+	return add + " " + list
 }
 
 func (m JobsModel) handleModeKeys(msg tea.KeyMsg) (JobsModel, tea.Cmd) {
@@ -390,6 +393,9 @@ func (m JobsModel) renderList() string {
 			components.ClampTextWidthEllipsis(priority, prioWidth),
 			formatLocalTimeCompact(at),
 		})
+	}
+	if m.modeFocus {
+		activeRowRel = -1
 	}
 	title := "Jobs"
 	countLine := fmt.Sprintf("%d total", len(m.items))

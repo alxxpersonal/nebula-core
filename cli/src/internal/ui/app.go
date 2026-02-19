@@ -147,7 +147,7 @@ func NewApp(client *api.Client, cfg *config.Config) App {
 		client:          client,
 		config:          cfg,
 		tab:             tabInbox,
-		tabNav:          false,
+		tabNav:          true,
 		recoveryCommand: "nebula login",
 		onboarding:      onboarding,
 		quickstartOpen:  quickstartPending,
@@ -440,7 +440,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if isDown(msg) {
 				a.tabNav = false
-				return a, nil
+				if a.focusModeLineForActiveTab() {
+					return a, nil
+				}
 			}
 
 			// Any other key exits tab nav so the active tab can handle it.
@@ -616,11 +618,9 @@ func (a App) renderTabs() string {
 		label := name
 		if i == a.tab {
 			if a.tabNav {
-				segments = append(segments, TabActiveStyle.Render(label))
+				segments = append(segments, TabFocusStyle.Render(label))
 			} else {
-				// Keep active tab readable but do not show focused highlight
-				// unless tab navigation mode is explicitly active.
-				segments = append(segments, TabInactiveStyle.Render(label))
+				segments = append(segments, TabActiveStyle.Render(label))
 			}
 		} else {
 			segments = append(segments, TabInactiveStyle.Render(label))
@@ -1340,7 +1340,7 @@ func (a *App) toastCmdForMsg(msg tea.Msg) tea.Cmd {
 	case protocolCreatedMsg, protocolUpdatedMsg:
 		level, text = "success", "Protocol saved."
 	case entityMetadataCopiedMsg:
-		level, text = "success", fmt.Sprintf("Copied %d metadata row(s) as YAML.", typed.count)
+		level, text = "success", fmt.Sprintf("Copied %d metadata value(s).", typed.count)
 	}
 	if text == "" {
 		return nil
@@ -2089,6 +2089,21 @@ func (a App) canExitToTabNav() bool {
 			return false
 		}
 		return a.jobs.list == nil || a.jobs.list.Selected() == 0
+	case tabLogs:
+		if a.logs.filtering || a.logs.view != logsViewList {
+			return false
+		}
+		return a.logs.list == nil || a.logs.list.Selected() == 0
+	case tabFiles:
+		if a.files.filtering || a.files.view != filesViewList {
+			return false
+		}
+		return a.files.list == nil || a.files.list.Selected() == 0
+	case tabProtocols:
+		if a.protocols.filtering || a.protocols.view != protocolsViewList {
+			return false
+		}
+		return a.protocols.list == nil || a.protocols.list.Selected() == 0
 	case tabHistory:
 		if a.history.filtering || a.history.view != historyViewList {
 			return false
@@ -2102,6 +2117,47 @@ func (a App) canExitToTabNav() bool {
 			return a.profile.keyList == nil || a.profile.keyList.Selected() == 0
 		}
 		return a.profile.agentList == nil || a.profile.agentList.Selected() == 0
+	}
+	return false
+}
+
+func (a *App) focusModeLineForActiveTab() bool {
+	switch a.tab {
+	case tabEntities:
+		if a.entities.view == entitiesViewList || a.entities.view == entitiesViewAdd {
+			a.entities.modeFocus = true
+			return true
+		}
+	case tabRelations:
+		if a.rels.view == relsViewList || a.rels.isAddView() {
+			a.rels.modeFocus = true
+			return true
+		}
+	case tabKnow:
+		if a.know.view == contextViewList || a.know.view == contextViewAdd {
+			a.know.modeFocus = true
+			return true
+		}
+	case tabJobs:
+		if a.jobs.view == jobsViewList || a.jobs.view == jobsViewAdd {
+			a.jobs.modeFocus = true
+			return true
+		}
+	case tabLogs:
+		if a.logs.view == logsViewList || a.logs.view == logsViewAdd {
+			a.logs.modeFocus = true
+			return true
+		}
+	case tabFiles:
+		if a.files.view == filesViewList || a.files.view == filesViewAdd {
+			a.files.modeFocus = true
+			return true
+		}
+	case tabProtocols:
+		if a.protocols.view == protocolsViewList || a.protocols.view == protocolsViewAdd || a.protocols.view == protocolsViewEdit {
+			a.protocols.modeFocus = true
+			return true
+		}
 	}
 	return false
 }

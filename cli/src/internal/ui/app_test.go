@@ -81,13 +81,22 @@ func TestRunPaletteActionProfileSections(t *testing.T) {
 	assert.Equal(t, 2, updated.profile.section)
 }
 
-func TestRenderTabsUsesInactiveStyleWhenTabNavDisabled(t *testing.T) {
+func TestRenderTabsShowsActiveTabWhenTabNavDisabled(t *testing.T) {
 	app := NewApp(nil, &config.Config{})
 	app.tab = tabEntities
 	app.tabNav = false
 
 	out := app.renderTabs()
-	assert.Contains(t, out, TabInactiveStyle.Render("Entities"))
+	assert.Contains(t, out, TabActiveStyle.Render("Entities"))
+}
+
+func TestRenderTabsShowsFocusedStyleWhenTabNavEnabled(t *testing.T) {
+	app := NewApp(nil, &config.Config{})
+	app.tab = tabEntities
+	app.tabNav = true
+
+	out := app.renderTabs()
+	assert.Contains(t, out, TabFocusStyle.Render("Entities"))
 }
 
 func TestTabNavAllowsActionKeys(t *testing.T) {
@@ -101,6 +110,19 @@ func TestTabNavAllowsActionKeys(t *testing.T) {
 
 	assert.False(t, updated.tabNav)
 	assert.Equal(t, relsViewCreateSourceSearch, updated.rels.view)
+}
+
+func TestTabNavDownMovesIntoModeLineFocus(t *testing.T) {
+	app := NewApp(nil, &config.Config{})
+	app.tab = tabEntities
+	app.tabNav = true
+	app.entities.view = entitiesViewList
+
+	model, _ := app.Update(tea.KeyMsg{Type: tea.KeyDown})
+	updated := model.(App)
+
+	assert.False(t, updated.tabNav)
+	assert.True(t, updated.entities.modeFocus)
 }
 
 func TestPaletteModeSwitchesBetweenCommandAndSearch(t *testing.T) {

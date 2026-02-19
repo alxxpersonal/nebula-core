@@ -671,11 +671,14 @@ func (m ContextModel) renderModeLine() string {
 	} else {
 		list = TabActiveStyle.Render("Library")
 	}
-	line := add + " " + list
 	if m.modeFocus {
-		return SelectedStyle.Render("› " + line)
+		if m.view == contextViewAdd {
+			add = TabFocusStyle.Render("Add")
+		} else {
+			list = TabFocusStyle.Render("Library")
+		}
 	}
-	return line
+	return add + " " + list
 }
 
 func (m ContextModel) handleModeKeys(msg tea.KeyMsg) (ContextModel, tea.Cmd) {
@@ -1022,6 +1025,9 @@ func (m ContextModel) renderList() string {
 			components.ClampTextWidthEllipsis(status, statusWidth),
 			when,
 		})
+	}
+	if m.modeFocus {
+		activeRowRel = -1
 	}
 
 	countLine := fmt.Sprintf("%d total", len(m.items))
