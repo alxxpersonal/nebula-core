@@ -25,13 +25,13 @@ var gridLineStyle = lipgloss.NewStyle().
 	Foreground(lipgloss.Color("#273540"))
 
 var gridActiveRowStyle = lipgloss.NewStyle().
-	Foreground(lipgloss.Color("#eef2ff")).
-	Background(lipgloss.Color("#2a3348")).
+	Foreground(lipgloss.Color("#10131a")).
+	Background(lipgloss.Color("#ffd166")).
 	Bold(true)
 
 var gridActiveSepStyle = lipgloss.NewStyle().
-	Foreground(lipgloss.Color("#38506b")).
-	Background(lipgloss.Color("#2a3348"))
+	Foreground(lipgloss.Color("#8a5a14")).
+	Background(lipgloss.Color("#ffd166"))
 
 var gridSelectedMarkStyle = lipgloss.NewStyle().
 	Foreground(lipgloss.Color("#d1606b")).
