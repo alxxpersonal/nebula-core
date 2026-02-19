@@ -122,3 +122,78 @@ func TestInboxFilterInputAppliesAndClears(t *testing.T) {
 	assert.Equal(t, "", model.filterBuf)
 	assert.Len(t, model.filtered, 2)
 }
+
+func TestInboxDetailUsesRelationshipEndpointNames(t *testing.T) {
+	now := time.Now()
+	sourceID := "11111111-1111-1111-1111-111111111111"
+	targetID := "22222222-2222-2222-2222-222222222222"
+
+	model := NewInboxModel(nil)
+	model.width = 100
+	model.loading = false
+	model.detail = &api.Approval{
+		ID:          "ap-rel-1",
+		RequestType: "update_relationship",
+		Status:      "pending",
+		RequestedBy: "agent:alpha",
+		AgentName:   "alpha",
+		CreatedAt:   now,
+		ChangeDetails: api.JSONMap{
+			"relationship_type": "owns",
+			"source_type":       "entity",
+			"source_id":         sourceID,
+			"source_name":       "Alpha Entity",
+			"target_type":       "entity",
+			"target_id":         targetID,
+			"target_name":       "Beta Entity",
+			"changes": map[string]any{
+				"source_id": map[string]any{
+					"from": sourceID,
+					"to":   targetID,
+				},
+				"target_id": map[string]any{
+					"from": targetID,
+					"to":   sourceID,
+				},
+			},
+		},
+	}
+
+	out := components.SanitizeText(model.View())
+	assert.Contains(t, out, "Alpha Entity")
+	assert.Contains(t, out, "Beta Entity")
+	assert.NotContains(t, out, shortID(sourceID))
+	assert.NotContains(t, out, shortID(targetID))
+}
+
+func TestInboxBulkScopePreviewUsesEntityNames(t *testing.T) {
+	now := time.Now()
+	entityID := "33333333-3333-3333-3333-333333333333"
+
+	model := NewInboxModel(nil)
+	model.width = 100
+	model.loading = false
+	model.items = []api.Approval{
+		{
+			ID:              "ap-bulk-1",
+			RequestType:     "bulk_update_entity_scopes",
+			Status:          "pending",
+			RequestedBy:     "44444444-4444-4444-4444-444444444444",
+			RequestedByName: "agent-alpha",
+			AgentName:       "agent-alpha",
+			CreatedAt:       now,
+			ChangeDetails: api.JSONMap{
+				"entity_ids":   []any{entityID},
+				"entity_names": []any{"Bro"},
+				"scopes":       []any{"public", "admin"},
+				"op":           "add",
+			},
+		},
+	}
+	model.applyFilter(true)
+
+	out := components.SanitizeText(model.View())
+	assert.Contains(t, out, "Bulk Update Entity Scopes (Bro)")
+	assert.Contains(t, out, "Bro")
+	assert.NotContains(t, out, shortID(entityID))
+}

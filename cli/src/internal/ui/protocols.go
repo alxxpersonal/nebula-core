@@ -732,16 +732,11 @@ func (m ProtocolsModel) renderAdd() string {
 		case protoFieldApplies:
 			b.WriteString(NormalStyle.Render("  " + m.renderApplies(m.addApplies, m.addApplyBuf)))
 		case protoFieldMetadata:
-			meta := renderMetadataInput(m.addMeta.Buffer)
+			meta := renderMetadataEditorPreview(m.addMeta.Buffer, m.addMeta.Scopes, m.width, 6)
 			if meta == "" {
 				meta = "-"
 			}
 			b.WriteString(NormalStyle.Render("  " + meta))
-			scopes := renderScopePills(m.addMeta.Scopes, true)
-			if strings.TrimSpace(scopes) != "" && strings.TrimSpace(scopes) != "-" {
-				b.WriteString("\n")
-				b.WriteString("  " + MetaKeyStyle.Render("Scopes: ") + scopes)
-			}
 		default:
 			b.WriteString(NormalStyle.Render("  " + f.value))
 		}
@@ -908,16 +903,11 @@ func (m ProtocolsModel) renderEdit() string {
 		case protoEditFieldApplies:
 			b.WriteString(NormalStyle.Render("  " + m.renderApplies(m.editApplies, m.editApplyBuf)))
 		case protoEditFieldMetadata:
-			meta := renderMetadataInput(m.editMeta.Buffer)
+			meta := renderMetadataEditorPreview(m.editMeta.Buffer, m.editMeta.Scopes, m.width, 6)
 			if meta == "" {
 				meta = "-"
 			}
 			b.WriteString(NormalStyle.Render("  " + meta))
-			scopes := renderScopePills(m.editMeta.Scopes, true)
-			if strings.TrimSpace(scopes) != "" && strings.TrimSpace(scopes) != "-" {
-				b.WriteString("\n")
-				b.WriteString("  " + MetaKeyStyle.Render("Scopes: ") + scopes)
-			}
 		default:
 			b.WriteString(NormalStyle.Render("  " + f.value))
 		}

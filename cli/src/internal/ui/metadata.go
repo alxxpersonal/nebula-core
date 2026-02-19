@@ -326,6 +326,54 @@ func renderMetadataInput(input string) string {
 	return strings.Join(lines, "\n")
 }
 
+func renderMetadataEditorPreview(buffer string, scopes []string, width int, maxRows int) string {
+	if maxRows < 1 {
+		maxRows = 1
+	}
+
+	data, err := parseMetadataInput(buffer)
+	if err != nil {
+		return renderMetadataInput(buffer)
+	}
+	data = mergeMetadataScopes(data, scopes)
+	if len(data) == 0 {
+		return "-"
+	}
+
+	rows := metadataDisplayRows(data)
+	if len(rows) == 0 {
+		return "-"
+	}
+	remaining := 0
+	if len(rows) > maxRows {
+		remaining = len(rows) - maxRows
+		rows = rows[:maxRows]
+	}
+
+	contentWidth := components.BoxContentWidth(width) - 8
+	if contentWidth < 36 {
+		contentWidth = 36
+	}
+	groupWidth, fieldWidth, valueWidth := metadataColumnWidths(contentWidth)
+	columns := []components.TableColumn{
+		{Header: "Group", Width: groupWidth, Align: lipgloss.Left},
+		{Header: "Field", Width: fieldWidth, Align: lipgloss.Left},
+		{Header: "Value", Width: valueWidth, Align: lipgloss.Left},
+	}
+
+	gridRows := make([][]string, 0, len(rows))
+	for _, row := range rows {
+		group, field := metadataGroupAndField(row.field)
+		gridRows = append(gridRows, []string{group, field, row.value})
+	}
+
+	rendered := components.TableGrid(columns, gridRows, contentWidth)
+	if remaining > 0 {
+		rendered += "\n" + MutedStyle.Render(fmt.Sprintf("+%d more rows", remaining))
+	}
+	return colorizeScopeBadges(rendered)
+}
+
 func leadingSpaces(s string) int {
 	count := 0
 	for _, r := range s {
@@ -662,7 +710,7 @@ func renderMetadataSelectableBlockWithTitle(
 	if selectedCount > 0 {
 		metaLine += fmt.Sprintf(" · selected %d", selectedCount)
 	}
-	hintLine := "↑/↓ navigate · space select · b all · enter copy row · c copy selected"
+	hintLine := "↑/↓ navigate · space select · b all · enter inspect · c copy selected"
 
 	content := rendered + "\n\n" + MutedStyle.Render(metaLine) + "\n" + MutedStyle.Render(hintLine)
 	return components.TitledBox(title, content, width)

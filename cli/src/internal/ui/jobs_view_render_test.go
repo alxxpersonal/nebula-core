@@ -181,3 +181,38 @@ func TestJobsDetailRendersAndEditSaves(t *testing.T) {
 
 	assert.True(t, updateCalled)
 }
+
+func TestJobsDetailRendersRelationshipsSummary(t *testing.T) {
+	now := time.Now()
+	model := NewJobsModel(nil)
+	model.width = 100
+
+	model.view = jobsViewDetail
+	model.detail = &api.Job{
+		ID:        "job-1",
+		Title:     "Alpha Job",
+		Status:    "active",
+		Metadata:  api.JSONMap{},
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	model.detailRels = []api.Relationship{
+		{
+			ID:         "rel-1",
+			SourceType: "job",
+			SourceID:   "job-1",
+			SourceName: "Alpha Job",
+			TargetType: "entity",
+			TargetID:   "ent-1",
+			TargetName: "Owner",
+			Type:       "assigned-to",
+			Status:     "active",
+			CreatedAt:  now,
+		},
+	}
+
+	out := components.SanitizeText(model.View())
+	assert.Contains(t, out, "Relationships")
+	assert.Contains(t, out, "assigned-to")
+	assert.Contains(t, out, "Owner")
+}

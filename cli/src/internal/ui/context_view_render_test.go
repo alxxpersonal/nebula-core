@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/gravitrone/nebula-core/cli/internal/api"
 	"github.com/gravitrone/nebula-core/cli/internal/ui/components"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -262,4 +263,66 @@ func TestContextLibraryDetailEditAndSave(t *testing.T) {
 
 	assert.True(t, updateCalled)
 	assert.Equal(t, contextViewDetail, model.view)
+}
+
+func TestContextDetailAndPreviewShowRelationshipSummary(t *testing.T) {
+	now := time.Now()
+	model := NewContextModel(nil)
+	model.width = 100
+	model.scopeNames = map[string]string{"scope-1": "public"}
+
+	item := api.Context{
+		ID:              "ctx-1",
+		Name:            "Context Alpha",
+		SourceType:      "note",
+		Status:          "active",
+		PrivacyScopeIDs: []string{"scope-1"},
+		CreatedAt:       now,
+		UpdatedAt:       now,
+		Metadata:        api.JSONMap{"summary": "demo context"},
+	}
+	model.detail = &item
+	model.detailRelationships = []api.Relationship{
+		{
+			ID:         "rel-1",
+			SourceType: "context",
+			SourceID:   "ctx-1",
+			SourceName: "Context Alpha",
+			TargetType: "entity",
+			TargetID:   "ent-1",
+			TargetName: "Bro",
+			Type:       "references",
+			Status:     "active",
+		},
+	}
+
+	detail := components.SanitizeText(model.renderDetail())
+	assert.Contains(t, detail, "Relationships")
+	assert.Contains(t, detail, "references")
+	assert.Contains(t, detail, "Bro")
+
+	preview := components.SanitizeText(model.renderContextPreview(item, 42))
+	assert.Contains(t, preview, "Links")
+	assert.Contains(t, preview, "1")
+}
+
+func TestContextRenderLinkEntityPreviewShowsCoreFields(t *testing.T) {
+	model := NewContextModel(nil)
+	preview := components.SanitizeText(
+		model.renderLinkEntityPreview(
+			api.Entity{
+				ID:     "ent-1",
+				Name:   "Alpha",
+				Type:   "person",
+				Status: "active",
+				Tags:   []string{"core"},
+			},
+			48,
+		),
+	)
+
+	assert.Contains(t, preview, "Selected")
+	assert.Contains(t, preview, "Alpha")
+	assert.Contains(t, preview, "Type")
+	assert.Contains(t, preview, "Status")
 }

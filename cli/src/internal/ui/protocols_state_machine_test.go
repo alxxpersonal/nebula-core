@@ -10,6 +10,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/gravitrone/nebula-core/cli/internal/api"
+	"github.com/gravitrone/nebula-core/cli/internal/ui/components"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -72,6 +73,43 @@ func TestProtocolsAddValidationErrorOnEmpty(t *testing.T) {
 
 	model, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
 	assert.Equal(t, "Name is required", model.addErr)
+}
+
+func TestProtocolsDetailRendersRelationshipsSection(t *testing.T) {
+	now := time.Now()
+	content := "rules"
+	model := NewProtocolsModel(nil)
+	model.width = 100
+	model.view = protocolsViewDetail
+	model.detail = &api.Protocol{
+		ID:        "proto-1",
+		Name:      "policy",
+		Title:     "Policy",
+		Content:   &content,
+		Status:    "active",
+		Metadata:  api.JSONMap{},
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	model.detailRels = []api.Relationship{
+		{
+			ID:         "rel-1",
+			SourceType: "protocol",
+			SourceID:   "proto-1",
+			SourceName: "Policy",
+			TargetType: "job",
+			TargetID:   "2026Q1-ABCD",
+			TargetName: "Sprint Job",
+			Type:       "references",
+			Status:     "active",
+			CreatedAt:  now,
+		},
+	}
+
+	out := components.SanitizeText(model.View())
+	assert.Contains(t, out, "Relationships")
+	assert.Contains(t, out, "references")
+	assert.Contains(t, out, "Sprint Job")
 }
 
 func TestProtocolsAddFlowSubmitsCreateProtocol(t *testing.T) {
@@ -246,4 +284,59 @@ func TestProtocolPtrHelpers(t *testing.T) {
 	assert.Nil(t, slicePtr([]string{}))
 	require.NotNil(t, slicePtr([]string{"a"}))
 	assert.Equal(t, []string{"a"}, *slicePtr([]string{"a"}))
+}
+
+func TestProtocolsRenderHelpersCoverListAddAndEdit(t *testing.T) {
+	now := time.Now()
+	content := "protocol content"
+	version := "v1"
+	typ := "policy"
+
+	model := NewProtocolsModel(nil)
+	model.width = 96
+	model.view = protocolsViewList
+	model.items = []api.Protocol{
+		{
+			ID:           "proto-1",
+			Name:         "alpha",
+			Title:        "Alpha Protocol",
+			Content:      &content,
+			Status:       "active",
+			Version:      &version,
+			ProtocolType: &typ,
+			AppliesTo:    []string{"entity"},
+			Tags:         []string{"core"},
+			Metadata:     api.JSONMap{"scope": "public"},
+			CreatedAt:    now,
+			UpdatedAt:    now,
+		},
+	}
+	model.list.SetItems([]string{"alpha"})
+
+	modeLine := components.SanitizeText(model.renderModeLine())
+	assert.Contains(t, modeLine, "Library")
+
+	listView := components.SanitizeText(model.renderList())
+	assert.Contains(t, listView, "Protocols")
+	assert.Contains(t, listView, "Alpha Protocol")
+
+	preview := components.SanitizeText(model.renderProtocolPreview(model.items[0], 48))
+	assert.Contains(t, preview, "Selected")
+	assert.Contains(t, preview, "Name")
+	assert.Contains(t, preview, "alpha")
+
+	model.view = protocolsViewAdd
+	model.addFocus = protoFieldStatus
+	addView := components.SanitizeText(model.renderAdd())
+	assert.Contains(t, addView, "Add Protocol")
+	assert.Contains(t, addView, "Status")
+
+	model.detail = &model.items[0]
+	model.startEdit()
+	editView := components.SanitizeText(model.renderEdit())
+	assert.Contains(t, editView, "Edit Protocol")
+	assert.Contains(t, editView, "Tags")
+
+	assert.Equal(t, "a, b", model.renderTags([]string{"a"}, "b"))
+	assert.Equal(t, "entity, job", model.renderApplies([]string{"entity"}, "job"))
 }

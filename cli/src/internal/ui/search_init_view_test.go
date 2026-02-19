@@ -17,6 +17,7 @@ func TestSearchViewRendersEmptyAndPopulatedStates(t *testing.T) {
 	model.width = 80
 
 	out := model.View()
+	assert.Contains(t, out, "Query")
 	assert.Contains(t, out, "Type to search.")
 
 	// Inject a results message directly to avoid needing a live client.
@@ -29,5 +30,7 @@ func TestSearchViewRendersEmptyAndPopulatedStates(t *testing.T) {
 	})
 
 	out = model.View()
+	assert.Contains(t, out, "Query")
+	assert.Contains(t, out, "a")
 	assert.Contains(t, out, "Alpha")
 }

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -113,4 +114,83 @@ func TestHistoryViewRendersFilterDialogAndErrorBox(t *testing.T) {
 	out = components.SanitizeText(model.View())
 	assert.Contains(t, out, "Error")
 	assert.Contains(t, out, "boom")
+}
+
+func TestHistoryDetailMetadataDiffRendersStructuredRows(t *testing.T) {
+	now := time.Now()
+	model := NewHistoryModel(nil)
+	model.width = 90
+	model.view = historyViewDetail
+	model.detail = &api.AuditEntry{
+		ID:        "audit-2",
+		TableName: "entities",
+		RecordID:  "ent-1",
+		Action:    "update",
+		OldData: api.JSONMap{
+			"metadata": map[string]any{
+				"context_segments": []any{
+					map[string]any{"text": "public", "scopes": []any{"public"}},
+				},
+			},
+		},
+		NewData: api.JSONMap{
+			"metadata": map[string]any{
+				"context_segments": []any{
+					map[string]any{"text": "public", "scopes": []any{"public"}},
+					map[string]any{"text": "secret", "scopes": []any{"private"}},
+				},
+			},
+		},
+		ChangedAt: now,
+	}
+
+	out := components.SanitizeText(model.View())
+	assert.Contains(t, out, "Changes")
+	assert.Contains(t, out, "Metadata")
+	assert.Contains(t, out, "context_segments")
+	assert.Contains(t, out, "secret")
+	assert.NotContains(t, out, "{\"")
+}
+
+func TestHistoryActorsViewNormalizesUnknownSystemLabels(t *testing.T) {
+	now := time.Now()
+	model := NewHistoryModel(nil)
+	model.width = 90
+	model.view = historyViewActors
+	model, _ = model.Update(historyActorsLoadedMsg{
+		items: []api.AuditActor{
+			{ActorType: "system", ActorID: "system:", ActionCount: 2, LastSeen: now},
+			{ActorType: "agent", ActorID: "agent-1", ActionCount: 1, LastSeen: now},
+		},
+	})
+
+	out := components.SanitizeText(model.View())
+	assert.Contains(t, out, "Actors")
+	assert.Contains(t, out, "system")
+	assert.NotContains(t, strings.ToLower(out), "unknown")
+}
+
+func TestHistoryRenderRevertConfirmAndUnknownLabelHelper(t *testing.T) {
+	now := time.Now()
+	model := NewHistoryModel(nil)
+	model.width = 80
+	entry := api.AuditEntry{
+		ID:        "audit-9f0d",
+		TableName: "entities",
+		RecordID:  "ent-9f0d",
+		Action:    "update",
+		OldData:   api.JSONMap{"status": "inactive"},
+		NewData:   api.JSONMap{"status": "active"},
+		ChangedAt: now,
+	}
+
+	out := components.SanitizeText(model.renderRevertConfirm(entry))
+	assert.Contains(t, out, "Revert Entity")
+	assert.Contains(t, out, "Action")
+	assert.Contains(t, out, "Entity")
+	assert.Contains(t, out, "Audit Entry")
+
+	assert.True(t, isUnknownLabel("unknown"))
+	assert.True(t, isUnknownLabel("None:"))
+	assert.False(t, isUnknownLabel("agent"))
 }

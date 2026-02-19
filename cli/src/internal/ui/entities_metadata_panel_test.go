@@ -31,7 +31,7 @@ func TestEntitiesDetailMetadataPanelShowsSelectionColumns(t *testing.T) {
 	assert.Contains(t, clean, "Sel")
 	assert.Contains(t, clean, "Field")
 	assert.Contains(t, clean, "Value")
-	assert.Contains(t, clean, "enter copy row")
+	assert.Contains(t, clean, "enter inspect")
 }
 
 func TestEntitiesDetailMetadataCopyCurrentRow(t *testing.T) {
@@ -55,6 +55,10 @@ func TestEntitiesDetailMetadataCopyCurrentRow(t *testing.T) {
 	}
 
 	next, cmd := model.handleDetailKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	require.Nil(t, cmd)
+	require.True(t, next.metaInspect)
+
+	next, cmd = next.handleDetailKeys(tea.KeyMsg{Type: tea.KeyEnter})
 	require.NotNil(t, cmd)
 	msg := cmd()
 	copiedMsg, ok := msg.(entityMetadataCopiedMsg)
@@ -62,6 +66,27 @@ func TestEntitiesDetailMetadataCopyCurrentRow(t *testing.T) {
 	assert.Equal(t, 1, copiedMsg.count)
 	assert.Equal(t, "hello", strings.TrimSpace(copied))
 	assert.Equal(t, entitiesViewDetail, next.view)
+}
+
+func TestEntitiesDetailMetadataInspectEscReturnsToTable(t *testing.T) {
+	model := NewEntitiesModel(nil)
+	model.width = 100
+	model.view = entitiesViewDetail
+	model.metaExpanded = true
+	model.detail = &api.Entity{
+		ID:       "ent-1",
+		Name:     "Alpha",
+		Metadata: api.JSONMap{"note": "hello"},
+	}
+	model.syncDetailMetadataRows()
+
+	next, cmd := model.handleDetailKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	require.Nil(t, cmd)
+	require.True(t, next.metaInspect)
+
+	next, cmd = next.handleDetailKeys(tea.KeyMsg{Type: tea.KeyEsc})
+	require.Nil(t, cmd)
+	require.False(t, next.metaInspect)
 }
 
 func TestEntitiesDetailMetadataMultiSelectCopy(t *testing.T) {

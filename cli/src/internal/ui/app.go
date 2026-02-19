@@ -769,7 +769,7 @@ func (a App) statusHintsForTab() []string {
 					components.Hint("↑/↓", "Meta Row"),
 					components.Hint("space", "Select"),
 					components.Hint("b", "Select All"),
-					components.Hint("enter", "Copy Row"),
+					components.Hint("enter", "Inspect"),
 					components.Hint("c", "Copy Sel"),
 					components.Hint("m", "Collapse"),
 					components.Hint("e", "Edit"),

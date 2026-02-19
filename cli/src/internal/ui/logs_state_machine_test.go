@@ -10,6 +10,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/gravitrone/nebula-core/cli/internal/api"
+	"github.com/gravitrone/nebula-core/cli/internal/ui/components"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -150,6 +151,41 @@ func TestLogsListNavigationOpensDetailAndReturnsToList(t *testing.T) {
 	assert.Equal(t, logsViewList, model.view)
 	assert.Nil(t, model.detail)
 	assert.Contains(t, model.View(), "Logs")
+}
+
+func TestLogsDetailRendersRelationshipsSection(t *testing.T) {
+	now := time.Now()
+	model := NewLogsModel(nil)
+	model.width = 90
+	model.view = logsViewDetail
+	model.detail = &api.Log{
+		ID:        "log-1",
+		LogType:   "event",
+		Status:    "active",
+		Value:     api.JSONMap{"note": "x"},
+		Metadata:  api.JSONMap{},
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	model.detailRels = []api.Relationship{
+		{
+			ID:         "rel-1",
+			SourceType: "log",
+			SourceID:   "log-1",
+			SourceName: "event",
+			TargetType: "entity",
+			TargetID:   "ent-1",
+			TargetName: "Bro",
+			Type:       "related-to",
+			Status:     "active",
+			CreatedAt:  now,
+		},
+	}
+
+	out := components.SanitizeText(model.View())
+	assert.Contains(t, out, "Relationships")
+	assert.Contains(t, out, "related-to")
+	assert.Contains(t, out, "Bro")
 }
 
 func TestLogsAddFlowCommitsTagsAndSaves(t *testing.T) {
@@ -340,4 +376,51 @@ func TestParseLogTimestamp(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "timestamp:")
 	})
+}
+
+func TestLogsRenderAddEditAndTagHelpers(t *testing.T) {
+	now := time.Now()
+	model := NewLogsModel(nil)
+	model.width = 96
+
+	model.addFocus = logFieldTags
+	model.addTagBuf = "alpha"
+	model.commitAddTag()
+	addTags := components.SanitizeText(model.renderAddTags(true))
+	assert.Contains(t, addTags, "[alpha]")
+	assert.Contains(t, addTags, "█")
+
+	addView := components.SanitizeText(model.renderAdd())
+	assert.Contains(t, addView, "Type")
+	assert.Contains(t, addView, "Status")
+
+	model.addType = "event"
+	model.addTimestamp = now.Format(time.RFC3339)
+	model.addStatusIdx = 2
+	model.addSaved = true
+	model.resetAddForm()
+	assert.Equal(t, "", model.addType)
+	assert.Equal(t, 0, model.addFocus)
+	assert.False(t, model.addSaved)
+
+	model.detail = &api.Log{
+		ID:        "log-1",
+		LogType:   "event",
+		Status:    "active",
+		Tags:      []string{"core"},
+		Value:     api.JSONMap{"k": "v"},
+		Metadata:  api.JSONMap{"scope": "public"},
+		Timestamp: now,
+	}
+	model.startEdit()
+	model.editFocus = logEditFieldTags
+	model.editTagBuf = "beta"
+	model.commitEditTag()
+
+	editTags := components.SanitizeText(model.renderEditTags(true))
+	assert.Contains(t, editTags, "[beta]")
+
+	editView := components.SanitizeText(model.renderEdit())
+	assert.Contains(t, editView, "Status")
+	assert.Contains(t, editView, "Tags")
 }

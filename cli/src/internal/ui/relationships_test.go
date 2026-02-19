@@ -9,7 +9,9 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/gravitrone/nebula-core/cli/internal/api"
+	"github.com/gravitrone/nebula-core/cli/internal/ui/components"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -334,4 +336,103 @@ func TestRelationshipsCreateFlowSubmitsAndReturnsToList(t *testing.T) {
 
 	assert.Equal(t, "knows", createdType)
 	assert.Equal(t, relsViewList, model.view)
+}
+
+func TestRelationshipsListClampsLongEdgeAndPreviewRows(t *testing.T) {
+	now := time.Now()
+	model := NewRelationshipsModel(nil)
+	model.width = 70
+	model.loading = false
+
+	longName := strings.Repeat("very-long-relationship-endpoint-name-", 6)
+	model, _ = model.Update(relTabLoadedMsg{items: []api.Relationship{
+		{
+			ID:         "rel-1",
+			SourceType: "entity",
+			SourceID:   "ent-1",
+			SourceName: longName,
+			TargetType: "entity",
+			TargetID:   "ent-2",
+			TargetName: longName,
+			Type:       "depends-on",
+			Status:     "active",
+			CreatedAt:  now,
+		},
+	}})
+
+	view := model.renderList()
+	maxWidth := lipgloss.Width(strings.Split(components.Box("x", model.width), "\n")[0])
+	for _, line := range strings.Split(view, "\n") {
+		assert.LessOrEqual(t, lipgloss.Width(line), maxWidth)
+	}
+}
+
+func TestRelationshipsEditAndCreatePreviewHelpers(t *testing.T) {
+	now := time.Now()
+	var patched api.UpdateRelationshipInput
+
+	_, client := relTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api/relationships/") && r.Method == http.MethodPatch {
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&patched))
+			json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{
+				"id":                "rel-1",
+				"source_type":       "entity",
+				"source_id":         "ent-1",
+				"target_type":       "entity",
+				"target_id":         "ent-2",
+				"relationship_type": "related-to",
+				"status":            "active",
+				"properties":        map[string]any{"note": "ok"},
+				"created_at":        now,
+			}})
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	})
+
+	model := NewRelationshipsModel(client)
+	model.width = 96
+	model.detail = &api.Relationship{
+		ID:         "rel-1",
+		SourceType: "entity",
+		SourceID:   "ent-1",
+		SourceName: "Alpha",
+		TargetType: "entity",
+		TargetID:   "ent-2",
+		TargetName: "Beta",
+		Type:       "related-to",
+		Status:     "active",
+		Properties: api.JSONMap{"note": "ok"},
+		CreatedAt:  now,
+	}
+
+	model.startEdit()
+	assert.Equal(t, relsEditFieldStatus, model.editFocus)
+	editOut := components.SanitizeText(model.renderEdit())
+	assert.Contains(t, editOut, "Edit Relationship")
+	assert.Contains(t, editOut, "Status")
+
+	model, _ = model.handleEditKeys(tea.KeyMsg{Type: tea.KeyRight})
+	assert.NotEqual(t, -1, model.editStatusIdx)
+
+	model.editMeta.Load(map[string]any{"note": "updated"})
+	model, cmd := model.saveEdit()
+	require.NotNil(t, cmd)
+	msg := cmd()
+	model, _ = model.Update(msg)
+	require.NotNil(t, patched.Status)
+
+	entityPreview := components.SanitizeText(
+		model.renderCreateEntityPreview(
+			api.Entity{ID: "ent-1", Name: "Alpha", Type: "entity", Tags: []string{"core"}},
+			48,
+		),
+	)
+	assert.Contains(t, entityPreview, "Selected")
+	assert.Contains(t, entityPreview, "Alpha")
+
+	typePreview := components.SanitizeText(model.renderCreateTypePreview("depends-on", 48))
+	assert.Contains(t, typePreview, "depends-on")
+	assert.Contains(t, typePreview, "Source")
+	assert.Contains(t, typePreview, "Target")
 }

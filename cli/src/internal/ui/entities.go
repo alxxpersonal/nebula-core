@@ -114,6 +114,9 @@ type EntitiesModel struct {
 	metaRows     []metadataDisplayRow
 	metaList     *components.List
 	metaSelected map[int]bool
+	metaInspect  bool
+	metaInspectI int
+	metaInspectO int
 
 	// add
 	addFields         []formField
@@ -1326,6 +1329,21 @@ func (m EntitiesModel) handleSearchInput(msg tea.KeyMsg) (EntitiesModel, tea.Cmd
 
 func (m EntitiesModel) handleDetailKeys(msg tea.KeyMsg) (EntitiesModel, tea.Cmd) {
 	m.syncDetailMetadataRows()
+	if m.metaInspect {
+		switch {
+		case isDown(msg):
+			m.moveMetaInspect(1)
+			return m, nil
+		case isUp(msg):
+			m.moveMetaInspect(-1)
+			return m, nil
+		case isEnter(msg):
+			return m, m.copyMetadataRows([]int{m.metaInspectI})
+		case isBack(msg):
+			m.closeMetaInspect()
+			return m, nil
+		}
+	}
 	if m.metaExpanded && len(m.metaRows) > 0 {
 		switch {
 		case isDown(msg):
@@ -1347,7 +1365,10 @@ func (m EntitiesModel) handleDetailKeys(msg tea.KeyMsg) (EntitiesModel, tea.Cmd)
 			m.toggleMetaSelectAll()
 			return m, nil
 		case isEnter(msg):
-			return m, m.copyCurrentMetadataRow()
+			if m.metaList != nil {
+				m.openMetaInspect(m.metaList.Selected())
+			}
+			return m, nil
 		case isKey(msg, "c"):
 			return m, m.copySelectedMetadataRows()
 		case isBack(msg):
@@ -1364,15 +1385,19 @@ func (m EntitiesModel) handleDetailKeys(msg tea.KeyMsg) (EntitiesModel, tea.Cmd)
 		m.detailRels = nil
 		m.metaRows = nil
 		m.clearMetaSelection()
+		m.closeMetaInspect()
 		m.view = entitiesViewList
 	case isKey(msg, "e"):
+		m.closeMetaInspect()
 		m.startEdit()
 		m.view = entitiesViewEdit
 	case isKey(msg, "r"):
+		m.closeMetaInspect()
 		m.view = entitiesViewRelationships
 		m.relLoading = true
 		return m, m.loadRelationships()
 	case isKey(msg, "h"):
+		m.closeMetaInspect()
 		m.view = entitiesViewHistory
 		m.historyLoading = true
 		return m, m.loadHistory()
@@ -1381,8 +1406,10 @@ func (m EntitiesModel) handleDetailKeys(msg tea.KeyMsg) (EntitiesModel, tea.Cmd)
 		m.syncDetailMetadataRows()
 		if !m.metaExpanded {
 			m.clearMetaSelection()
+			m.closeMetaInspect()
 		}
 	case isKey(msg, "d"):
+		m.closeMetaInspect()
 		m.confirmKind = "entity-archive"
 		m.confirmReturn = entitiesViewDetail
 		m.view = entitiesViewConfirm
@@ -1430,6 +1457,9 @@ func (m EntitiesModel) renderDetail() string {
 			m.metaList,
 			m.metaSelected,
 		))
+		if m.metaInspect {
+			sections = append(sections, m.renderMetaInspect())
+		}
 	}
 	if len(m.detailRels) > 0 {
 		sections = append(sections, components.Table("Relationships", relationshipSummaryRows("entity", e.ID, m.detailRels, 8), m.width))
@@ -2579,6 +2609,12 @@ func (m *EntitiesModel) syncDetailMetadataRows() {
 	}
 	m.metaRows = rows
 	syncMetadataList(m.metaList, rows, metadataPanelPageSize(m.metaExpanded))
+	if !m.metaExpanded || len(rows) == 0 {
+		m.closeMetaInspect()
+	}
+	if m.metaInspect && (m.metaInspectI < 0 || m.metaInspectI >= len(rows)) {
+		m.closeMetaInspect()
+	}
 	for idx := range m.metaSelected {
 		if idx < 0 || idx >= len(rows) {
 			delete(m.metaSelected, idx)
@@ -2642,6 +2678,115 @@ func (m EntitiesModel) copyCurrentMetadataRow() tea.Cmd {
 		return nil
 	}
 	return m.copyMetadataRows([]int{idx})
+}
+
+func (m *EntitiesModel) openMetaInspect(idx int) {
+	if idx < 0 || idx >= len(m.metaRows) {
+		return
+	}
+	m.metaInspect = true
+	m.metaInspectI = idx
+	m.metaInspectO = 0
+}
+
+func (m *EntitiesModel) closeMetaInspect() {
+	m.metaInspect = false
+	m.metaInspectI = 0
+	m.metaInspectO = 0
+}
+
+func (m *EntitiesModel) moveMetaInspect(delta int) {
+	if !m.metaInspect {
+		return
+	}
+	lines := m.metaInspectLines()
+	page := m.metaInspectPageSize()
+	maxOffset := len(lines) - page
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	m.metaInspectO += delta
+	if m.metaInspectO < 0 {
+		m.metaInspectO = 0
+	}
+	if m.metaInspectO > maxOffset {
+		m.metaInspectO = maxOffset
+	}
+}
+
+func (m EntitiesModel) metaInspectPageSize() int {
+	page := 10
+	if m.height > 0 {
+		page = m.height / 5
+	}
+	if page < 6 {
+		page = 6
+	}
+	if page > 18 {
+		page = 18
+	}
+	return page
+}
+
+func (m EntitiesModel) metaInspectLines() []string {
+	if !m.metaInspect || m.metaInspectI < 0 || m.metaInspectI >= len(m.metaRows) {
+		return nil
+	}
+	row := m.metaRows[m.metaInspectI]
+	width := components.BoxContentWidth(m.width) - 4
+	if width < 30 {
+		width = 30
+	}
+	group, field := metadataGroupAndField(row.field)
+	lines := []string{
+		renderPreviewRow("Group", group, width),
+		renderPreviewRow("Field", field, width),
+		"",
+	}
+	value := row.value
+	if strings.TrimSpace(value) == "" {
+		value = "None"
+	}
+	raw := strings.Split(value, "\n")
+	for _, line := range raw {
+		wrapped := wrapMetadataDisplayLine(line, width)
+		if len(wrapped) == 0 {
+			lines = append(lines, "")
+			continue
+		}
+		lines = append(lines, wrapped...)
+	}
+	return lines
+}
+
+func (m EntitiesModel) renderMetaInspect() string {
+	lines := m.metaInspectLines()
+	if len(lines) == 0 {
+		return ""
+	}
+	page := m.metaInspectPageSize()
+	start := m.metaInspectO
+	if start < 0 {
+		start = 0
+	}
+	if start > len(lines) {
+		start = len(lines)
+	}
+	end := start + page
+	if end > len(lines) {
+		end = len(lines)
+	}
+	visible := append([]string{}, lines[start:end]...)
+	if start > 0 && len(visible) > 0 {
+		visible[0] = MutedStyle.Render("... ↑ more")
+	}
+	if end < len(lines) && len(visible) > 0 {
+		visible[len(visible)-1] = MutedStyle.Render("... ↓ more")
+	}
+	info := MutedStyle.Render(fmt.Sprintf("Lines %d-%d of %d", start+1, end, len(lines)))
+	hints := MutedStyle.Render("↑/↓ scroll · enter copy value · esc back")
+	content := strings.Join(visible, "\n") + "\n\n" + info + "\n" + hints
+	return components.TitledBox("Metadata Value", colorizeScopeBadges(content), m.width)
 }
 
 func (m EntitiesModel) copySelectedMetadataRows() tea.Cmd {

@@ -13,6 +13,7 @@ import (
 	"github.com/gravitrone/nebula-core/cli/internal/api"
 	"github.com/gravitrone/nebula-core/cli/internal/ui/components"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func testJobsClient(t *testing.T, handler http.HandlerFunc) (*httptest.Server, *api.Client) {
@@ -307,4 +308,80 @@ func TestJobsRenderEditShowsFields(t *testing.T) {
 	assert.Contains(t, out, "Description:")
 	assert.Contains(t, out, "Priority:")
 	assert.Contains(t, out, "Metadata:")
+}
+
+func TestJobsBulkStatusUpdateForSelectedRows(t *testing.T) {
+	var statusCalls []string
+	_, client := testJobsClient(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/jobs" && r.Method == http.MethodGet:
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]any{
+					{"id": "job-1", "status": "pending", "title": "Job 1", "created_at": time.Now()},
+					{"id": "job-2", "status": "pending", "title": "Job 2", "created_at": time.Now()},
+				},
+			})
+		case strings.HasPrefix(r.URL.Path, "/api/jobs/") && strings.HasSuffix(r.URL.Path, "/status") && r.Method == http.MethodPatch:
+			var payload map[string]string
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&payload))
+			statusCalls = append(statusCalls, r.URL.Path+"="+payload["status"])
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"id":     strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/jobs/"), "/status"),
+					"status": payload["status"],
+					"title":  "updated",
+				},
+			})
+		case r.URL.Path == "/api/audit/scopes":
+			json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{}})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+
+	model := NewJobsModel(client)
+	cmd := model.Init()
+	msg := cmd()
+	model, _ = model.Update(msg)
+	model.applyJobSearch()
+
+	// Select both jobs.
+	model, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{' '}})
+	model, _ = model.Update(tea.KeyMsg{Type: tea.KeyDown})
+	model, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{' '}})
+	assert.Equal(t, 2, model.selectedCount())
+
+	// Trigger bulk status update.
+	model, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	assert.True(t, model.changingSt)
+	for _, r := range []rune("active") {
+		model, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	model, cmd = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	require.NotNil(t, cmd)
+	msg = cmd()
+	model, _ = model.Update(msg)
+
+	assert.ElementsMatch(
+		t,
+		[]string{"/api/jobs/job-1/status=active", "/api/jobs/job-2/status=active"},
+		statusCalls,
+	)
+	assert.Equal(t, 0, model.selectedCount())
+}
+
+func TestJobsToggleSelectAllSelectsAndClears(t *testing.T) {
+	model := NewJobsModel(nil)
+	model.items = []api.Job{
+		{ID: "job-1", Title: "Alpha"},
+		{ID: "job-2", Title: "Beta"},
+	}
+
+	model.toggleSelectAll()
+	assert.Len(t, model.selected, 2)
+	assert.True(t, model.selected["job-1"])
+	assert.True(t, model.selected["job-2"])
+
+	model.toggleSelectAll()
+	assert.Empty(t, model.selected)
 }

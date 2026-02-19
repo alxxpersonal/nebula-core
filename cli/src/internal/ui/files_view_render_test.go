@@ -100,6 +100,40 @@ func TestFilesDetailViewRendersMetadataWhenExpanded(t *testing.T) {
 	assert.Contains(t, clean, "hello")
 }
 
+func TestFilesDetailViewRendersRelationshipsSection(t *testing.T) {
+	model := NewFilesModel(nil)
+	model.width = 90
+	model.view = filesViewDetail
+	model.detail = &api.File{
+		ID:        "file-1",
+		Filename:  "Alpha.txt",
+		FilePath:  "/tmp/alpha.txt",
+		Status:    "active",
+		Metadata:  api.JSONMap{},
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	model.detailRels = []api.Relationship{
+		{
+			ID:         "rel-1",
+			SourceType: "entity",
+			SourceID:   "ent-1",
+			SourceName: "Bro",
+			TargetType: "file",
+			TargetID:   "file-1",
+			TargetName: "Alpha.txt",
+			Type:       "has-file",
+			Status:     "active",
+			CreatedAt:  time.Now(),
+		},
+	}
+
+	out := components.SanitizeText(model.View())
+	assert.Contains(t, out, "Relationships")
+	assert.Contains(t, out, "has-file")
+	assert.Contains(t, out, "Bro")
+}
+
 func TestFilesAddFlowRendersAndResetsOnEscAfterSave(t *testing.T) {
 	createCalled := false
 	_, client := testClient(t, func(w http.ResponseWriter, r *http.Request) {

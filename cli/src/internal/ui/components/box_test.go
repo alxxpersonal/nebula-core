@@ -165,3 +165,24 @@ func TestMaxIntReturnsLarger(t *testing.T) {
 	assert.Equal(t, 2, maxInt(1, 2))
 	assert.Equal(t, 2, maxInt(2, 1))
 }
+
+func TestClampTextWidthEllipsisHandlesTightWidths(t *testing.T) {
+	assert.Equal(t, "", ClampTextWidthEllipsis("hello", 0))
+	assert.Equal(t, "he", ClampTextWidthEllipsis("hello", 2))
+	assert.Equal(t, "hel...", ClampTextWidthEllipsis("hello world", 6))
+}
+
+func TestTitledBoxWithHeaderStyleRendersCustomTitle(t *testing.T) {
+	header := lipgloss.NewStyle().Bold(true)
+	out := TitledBoxWithHeaderStyle("Custom Header", "body", 70, header)
+	clean := SanitizeText(out)
+	assert.Contains(t, clean, "Custom Header")
+	assert.Contains(t, clean, "body")
+}
+
+func TestParseMetadataScopesInlineHandlesSupportedShapes(t *testing.T) {
+	assert.Equal(t, "public, private", parseMetadataScopesInline([]string{"public", "private"}))
+	assert.Equal(t, "public, admin", parseMetadataScopesInline([]any{"public", "admin"}))
+	assert.Equal(t, "sensitive", parseMetadataScopesInline(" sensitive "))
+	assert.Equal(t, "", parseMetadataScopesInline(map[string]any{"k": "v"}))
+}

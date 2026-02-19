@@ -467,7 +467,7 @@ func (m ContextModel) renderAdd() string {
 		if i == fieldType {
 			// Type selector
 			if i == m.focus && m.typeSelecting {
-				b.WriteString(SelectedStyle.Render("> " + label + ":"))
+				b.WriteString(SelectedStyle.Render("  " + label + ":"))
 				b.WriteString("\n  ")
 				for j, t := range contextTypes {
 					if j == m.typeIdx {
@@ -480,7 +480,7 @@ func (m ContextModel) renderAdd() string {
 					}
 				}
 			} else if i == m.focus {
-				b.WriteString(SelectedStyle.Render("> " + label + ":"))
+				b.WriteString(SelectedStyle.Render("  " + label + ":"))
 				b.WriteString("\n")
 				b.WriteString(NormalStyle.Render("  " + contextTypes[m.typeIdx]))
 			} else {
@@ -490,7 +490,7 @@ func (m ContextModel) renderAdd() string {
 			}
 		} else if i == fieldTags {
 			if i == m.focus {
-				b.WriteString(SelectedStyle.Render("> " + label + ":"))
+				b.WriteString(SelectedStyle.Render("  " + label + ":"))
 				b.WriteString("\n")
 				b.WriteString(NormalStyle.Render("  " + m.renderTags(true)))
 			} else {
@@ -500,11 +500,11 @@ func (m ContextModel) renderAdd() string {
 			}
 		} else if i == fieldScopes {
 			if i == m.focus && m.scopeSelecting {
-				b.WriteString(SelectedStyle.Render("> " + label + ":"))
+				b.WriteString(SelectedStyle.Render("  " + label + ":"))
 				b.WriteString("\n")
 				b.WriteString(NormalStyle.Render("  " + renderScopeOptions(m.scopes, m.scopeOptions, m.scopeIdx)))
 			} else if i == m.focus {
-				b.WriteString(SelectedStyle.Render("> " + label + ":"))
+				b.WriteString(SelectedStyle.Render("  " + label + ":"))
 				b.WriteString("\n")
 				b.WriteString(NormalStyle.Render("  " + m.renderScopes(true)))
 			} else {
@@ -514,7 +514,7 @@ func (m ContextModel) renderAdd() string {
 			}
 		} else if i == fieldEntities {
 			if i == m.focus {
-				b.WriteString(SelectedStyle.Render("> " + label + ":"))
+				b.WriteString(SelectedStyle.Render("  " + label + ":"))
 				b.WriteString("\n")
 				b.WriteString(NormalStyle.Render("  " + m.renderLinkedEntities(true)))
 			} else {
@@ -524,7 +524,7 @@ func (m ContextModel) renderAdd() string {
 			}
 		} else if i == fieldMeta {
 			if i == m.focus {
-				b.WriteString(SelectedStyle.Render("> " + label + ":"))
+				b.WriteString(SelectedStyle.Render("  " + label + ":"))
 			} else {
 				b.WriteString(MutedStyle.Render("  " + label + ":"))
 			}
@@ -532,7 +532,7 @@ func (m ContextModel) renderAdd() string {
 			meta := renderMetadataInput(m.metaEditor.Buffer)
 			b.WriteString(NormalStyle.Render("  " + meta))
 		} else if i == m.focus {
-			b.WriteString(SelectedStyle.Render("> " + label + ":"))
+			b.WriteString(SelectedStyle.Render("  " + label + ":"))
 			b.WriteString("\n")
 			b.WriteString(NormalStyle.Render("  " + f.value))
 			b.WriteString(AccentStyle.Render("█"))
@@ -566,7 +566,7 @@ func (m ContextModel) renderEdit() string {
 		switch i {
 		case contextEditFieldType:
 			if i == m.editFocus && m.editTypeSelecting {
-				b.WriteString(SelectedStyle.Render("> " + label + ":"))
+				b.WriteString(SelectedStyle.Render("  " + label + ":"))
 				b.WriteString("\n  ")
 				for j, t := range contextTypes {
 					if j == m.editTypeIdx {
@@ -579,7 +579,7 @@ func (m ContextModel) renderEdit() string {
 					}
 				}
 			} else if i == m.editFocus {
-				b.WriteString(SelectedStyle.Render("> " + label + ":"))
+				b.WriteString(SelectedStyle.Render("  " + label + ":"))
 				b.WriteString("\n")
 				b.WriteString(NormalStyle.Render("  " + contextTypes[m.editTypeIdx]))
 			} else {
@@ -589,7 +589,7 @@ func (m ContextModel) renderEdit() string {
 			}
 		case contextEditFieldStatus:
 			if i == m.editFocus {
-				b.WriteString(SelectedStyle.Render("> " + label + ":"))
+				b.WriteString(SelectedStyle.Render("  " + label + ":"))
 			} else {
 				b.WriteString(MutedStyle.Render("  " + label + ":"))
 			}
@@ -598,7 +598,7 @@ func (m ContextModel) renderEdit() string {
 			b.WriteString(NormalStyle.Render("  " + status))
 		case contextEditFieldTags:
 			if i == m.editFocus {
-				b.WriteString(SelectedStyle.Render("> " + label + ":"))
+				b.WriteString(SelectedStyle.Render("  " + label + ":"))
 				b.WriteString("\n")
 				b.WriteString(NormalStyle.Render("  " + m.renderEditTags(true)))
 			} else {
@@ -608,11 +608,11 @@ func (m ContextModel) renderEdit() string {
 			}
 		case contextEditFieldScopes:
 			if i == m.editFocus && m.editScopeSelecting {
-				b.WriteString(SelectedStyle.Render("> " + label + ":"))
+				b.WriteString(SelectedStyle.Render("  " + label + ":"))
 				b.WriteString("\n")
 				b.WriteString(NormalStyle.Render("  " + renderScopeOptions(m.editScopes, m.scopeOptions, m.scopeIdx)))
 			} else if i == m.editFocus {
-				b.WriteString(SelectedStyle.Render("> " + label + ":"))
+				b.WriteString(SelectedStyle.Render("  " + label + ":"))
 				b.WriteString("\n")
 				b.WriteString(NormalStyle.Render("  " + m.renderEditScopes(true)))
 			} else {
@@ -622,7 +622,7 @@ func (m ContextModel) renderEdit() string {
 			}
 		case contextEditFieldMeta:
 			if i == m.editFocus {
-				b.WriteString(SelectedStyle.Render("> " + label + ":"))
+				b.WriteString(SelectedStyle.Render("  " + label + ":"))
 			} else {
 				b.WriteString(MutedStyle.Render("  " + label + ":"))
 			}
@@ -631,7 +631,7 @@ func (m ContextModel) renderEdit() string {
 			b.WriteString(NormalStyle.Render("  " + meta))
 		default:
 			if i == m.editFocus {
-				b.WriteString(SelectedStyle.Render("> " + label + ":"))
+				b.WriteString(SelectedStyle.Render("  " + label + ":"))
 				b.WriteString("\n")
 				b.WriteString(NormalStyle.Render("  " + f.value))
 				b.WriteString(AccentStyle.Render("█"))

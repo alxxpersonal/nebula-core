@@ -746,7 +746,7 @@ func (m FilesModel) renderAdd() string {
 				b.WriteString(NormalStyle.Render("  " + m.renderAddTags(false)))
 			}
 		case fileFieldMeta:
-			meta := renderMetadataInput(m.addMeta.Buffer)
+			meta := renderMetadataEditorPreview(m.addMeta.Buffer, m.addMeta.Scopes, m.width, 6)
 			if meta == "" {
 				meta = "-"
 			}
@@ -763,7 +763,7 @@ func (m FilesModel) renderAdd() string {
 	if m.addSaved {
 		b.WriteString("\n\n" + SuccessStyle.Render("Saved."))
 	}
-	return components.Indent(b.String(), 1)
+	return components.TitledBox("Add File", b.String(), m.width)
 }
 
 func (m FilesModel) saveAdd() (FilesModel, tea.Cmd) {
@@ -1016,7 +1016,7 @@ func (m FilesModel) renderEdit() string {
 				b.WriteString(NormalStyle.Render("  " + m.renderEditTags(false)))
 			}
 		case fileFieldMeta:
-			meta := renderMetadataInput(m.editMeta.Buffer)
+			meta := renderMetadataEditorPreview(m.editMeta.Buffer, m.editMeta.Scopes, m.width, 6)
 			if meta == "" {
 				meta = "-"
 			}
@@ -1026,7 +1026,7 @@ func (m FilesModel) renderEdit() string {
 			b.WriteString("\n\n")
 		}
 	}
-	return components.Indent(b.String(), 1)
+	return components.TitledBox("Edit File", b.String(), m.width)
 }
 
 func (m FilesModel) saveEdit() (FilesModel, tea.Cmd) {
