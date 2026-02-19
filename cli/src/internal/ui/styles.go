@@ -1,6 +1,10 @@
 package ui
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"strings"
+
+	"github.com/charmbracelet/lipgloss"
+)
 
 // --- Theme Colors ---
 
@@ -113,5 +117,8 @@ var (
 
 // Divider returns a horizontal line.
 func Divider(width int) string {
-	return ""
+	if width <= 0 {
+		return ""
+	}
+	return DividerStyle.Render(strings.Repeat("─", width))
 }
