@@ -81,7 +81,11 @@ func TestAppPaletteTextSearchLoadsAndJumpsToDetail(t *testing.T) {
 	model, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
 	app = model.(App)
 
-	// Typing plain text switches to search mode and triggers API queries.
+	// Remove the leading slash to switch from command mode to search mode.
+	model, _ = app.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	app = model.(App)
+
+	// Typing plain text in search mode triggers API queries.
 	model, cmd := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
 	app = model.(App)
 	require.NotNil(t, cmd)

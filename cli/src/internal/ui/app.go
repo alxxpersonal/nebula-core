@@ -1596,7 +1596,8 @@ func startupStatusColor(status string) string {
 
 func (a *App) openPaletteCommand() {
 	a.paletteOpen = true
-	a.paletteQuery = ""
+	// Open in explicit command mode. Users can backspace this to switch to search mode.
+	a.paletteQuery = "/"
 	a.paletteIndex = 0
 	a.paletteSearchQuery = ""
 	a.paletteSearchLoading = false
@@ -1606,7 +1607,7 @@ func (a *App) openPaletteCommand() {
 
 func (a App) paletteCommandMode() bool {
 	query := strings.TrimSpace(a.paletteQuery)
-	return query == "" || strings.HasPrefix(query, "/")
+	return strings.HasPrefix(query, "/")
 }
 
 func (a App) renderPalette() string {
@@ -1620,7 +1621,7 @@ func (a App) renderPalette() string {
 
 	query := components.SanitizeOneLine(a.paletteQuery)
 	if commandMode {
-		query = strings.TrimPrefix(query, "/")
+		query = strings.TrimLeft(query, "/")
 	}
 
 	var b strings.Builder
@@ -1698,7 +1699,7 @@ func (a *App) refreshPaletteFiltered() tea.Cmd {
 	a.paletteQuery = components.SanitizeOneLine(a.paletteQuery)
 
 	if a.paletteCommandMode() {
-		query := strings.TrimSpace(strings.TrimPrefix(a.paletteQuery, "/"))
+		query := strings.TrimSpace(strings.TrimLeft(a.paletteQuery, "/"))
 		a.paletteSearchQuery = ""
 		a.paletteSearchLoading = false
 		a.paletteSelections = nil
