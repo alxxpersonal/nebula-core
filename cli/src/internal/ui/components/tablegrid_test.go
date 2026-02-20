@@ -25,6 +25,21 @@ func TestFitGridColumnsPrefersShrinkingWideColumns(t *testing.T) {
 	assert.Equal(t, 11, fitted[3].Width, "time column should remain readable")
 }
 
+func TestFitGridColumnsPinsWideTimestampColumnsBeforeTitle(t *testing.T) {
+	columns := []TableColumn{
+		{Header: "Title", Width: 48, Align: lipgloss.Left},
+		{Header: "Type", Width: 10, Align: lipgloss.Left},
+		{Header: "Status", Width: 10, Align: lipgloss.Left},
+		{Header: "At", Width: 15, Align: lipgloss.Left},
+	}
+
+	// Force a deficit where either title or timestamp must shrink.
+	fitted := fitGridColumns(columns, "|", 64)
+
+	assert.Less(t, fitted[0].Width, 48, "title should absorb shrink before timestamp")
+	assert.Equal(t, 15, fitted[3].Width, "timestamp column should remain fully readable")
+}
+
 func TestShrinkColumnsStopsAtMinimums(t *testing.T) {
 	columns := []TableColumn{
 		{Header: "A", Width: 4},

@@ -157,6 +157,11 @@ func fitGridColumns(columns []TableColumn, sep string, tableWidth int) []TableCo
 			if fitted[i].Width <= 12 && fitted[i].Width > minWidthStrict[i] {
 				minWidthStrict[i] = fitted[i].Width
 			}
+			// Keep timestamp-like columns readable and shift truncation pressure
+			// to wider descriptive columns first.
+			if isPinnedSystemHeader(fitted[i].Header) && fitted[i].Width > minWidthStrict[i] {
+				minWidthStrict[i] = fitted[i].Width
+			}
 		}
 		deficit = shrinkColumns(fitted, minWidthStrict, deficit)
 		if deficit > 0 {
@@ -164,6 +169,15 @@ func fitGridColumns(columns []TableColumn, sep string, tableWidth int) []TableCo
 		}
 	}
 	return fitted
+}
+
+func isPinnedSystemHeader(header string) bool {
+	switch strings.ToLower(strings.TrimSpace(header)) {
+	case "at", "last", "created", "updated", "timestamp", "when":
+		return true
+	default:
+		return false
+	}
 }
 
 func shrinkColumns(columns []TableColumn, mins []int, deficit int) int {
