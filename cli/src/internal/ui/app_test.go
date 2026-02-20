@@ -34,6 +34,35 @@ func TestBuildEntityPaletteActions(t *testing.T) {
 	assert.Equal(t, "ent-123456789", selection.entity.ID)
 }
 
+func TestBuildSearchPaletteActionsIncludesRelationshipHits(t *testing.T) {
+	actions, selections := buildSearchPaletteActions(
+		"owns",
+		nil,
+		nil,
+		nil,
+		[]api.Relationship{{
+			ID:         "rel-1",
+			Type:       "owns",
+			Status:     "active",
+			SourceName: "alpha",
+			TargetName: "beta",
+			SourceID:   "ent-a",
+			TargetID:   "ent-b",
+		}},
+		nil,
+		nil,
+		nil,
+	)
+
+	require.Len(t, actions, 1)
+	assert.Equal(t, "relationship:rel-1", actions[0].ID)
+	assert.Contains(t, strings.ToLower(actions[0].Label), "owns")
+	selection, ok := selections["relationship:rel-1"]
+	require.True(t, ok)
+	require.NotNil(t, selection.rel)
+	assert.Equal(t, "rel-1", selection.rel.ID)
+}
+
 func TestFilterPalette(t *testing.T) {
 	items := []paletteAction{
 		{ID: "tab:inbox", Label: "Inbox", Desc: "Approvals"},
@@ -61,6 +90,78 @@ func TestRunPaletteActionEntityJump(t *testing.T) {
 	require.NotNil(t, updated.entities.detail)
 	assert.Equal(t, "ent-1", updated.entities.detail.ID)
 	assert.Equal(t, entitiesViewDetail, updated.entities.view)
+}
+
+func TestRunPaletteActionRelationshipJump(t *testing.T) {
+	app := NewApp(nil, &config.Config{})
+	app.paletteSelections = map[string]paletteSelection{
+		"relationship:rel-1": {
+			rel: &api.Relationship{ID: "rel-1", Type: "owns"},
+		},
+	}
+	action := paletteAction{ID: "relationship:rel-1", Label: "owns"}
+
+	model, _ := app.runPaletteAction(action)
+	updated := model.(App)
+
+	assert.Equal(t, tabRelations, updated.tab)
+	assert.Equal(t, relsViewDetail, updated.rels.view)
+	require.NotNil(t, updated.rels.detail)
+	assert.Equal(t, "rel-1", updated.rels.detail.ID)
+}
+
+func TestRunPaletteActionLogJump(t *testing.T) {
+	app := NewApp(nil, &config.Config{})
+	app.paletteSelections = map[string]paletteSelection{
+		"log:log-1": {
+			log: &api.Log{ID: "log-1", LogType: "event"},
+		},
+	}
+	action := paletteAction{ID: "log:log-1", Label: "log"}
+
+	model, _ := app.runPaletteAction(action)
+	updated := model.(App)
+
+	assert.Equal(t, tabLogs, updated.tab)
+	assert.Equal(t, logsViewDetail, updated.logs.view)
+	require.NotNil(t, updated.logs.detail)
+	assert.Equal(t, "log-1", updated.logs.detail.ID)
+}
+
+func TestRunPaletteActionFileJump(t *testing.T) {
+	app := NewApp(nil, &config.Config{})
+	app.paletteSelections = map[string]paletteSelection{
+		"file:file-1": {
+			file: &api.File{ID: "file-1", Filename: "test.txt"},
+		},
+	}
+	action := paletteAction{ID: "file:file-1", Label: "file"}
+
+	model, _ := app.runPaletteAction(action)
+	updated := model.(App)
+
+	assert.Equal(t, tabFiles, updated.tab)
+	assert.Equal(t, filesViewDetail, updated.files.view)
+	require.NotNil(t, updated.files.detail)
+	assert.Equal(t, "file-1", updated.files.detail.ID)
+}
+
+func TestRunPaletteActionProtocolJump(t *testing.T) {
+	app := NewApp(nil, &config.Config{})
+	app.paletteSelections = map[string]paletteSelection{
+		"protocol:proto-1": {
+			proto: &api.Protocol{ID: "proto-1", Name: "test-protocol"},
+		},
+	}
+	action := paletteAction{ID: "protocol:proto-1", Label: "protocol"}
+
+	model, _ := app.runPaletteAction(action)
+	updated := model.(App)
+
+	assert.Equal(t, tabProtocols, updated.tab)
+	assert.Equal(t, protocolsViewDetail, updated.protocols.view)
+	require.NotNil(t, updated.protocols.detail)
+	assert.Equal(t, "proto-1", updated.protocols.detail.ID)
 }
 
 func TestRunPaletteActionProfileSections(t *testing.T) {
