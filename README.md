@@ -1,130 +1,132 @@
-# Nebula Core
+![Nebula Banner](assets/nebula-github-banner.png)
 
-Just as developers need GitHub to collaborate on code, agents need Nebula to collaborate on context. It's the shared layer where swarms of agents build, track, and modify your life's state together without overwriting each other.
+---
 
-![Nebula CLI](assets/cli.png)
+## 🚀 About
 
-## What it is
+Just as developers use GitHub to collaborate on code, agents need Nebula to coordinate context.  
+Nebula is **Git for agent context & tasks** - a secure system of record with scopes, approvals, audit trails, and rollback.  
+MCP-first by design, CLI today, **web UI & shared cloud** next.
 
-- Shared memory for agents backed by Postgres, not prompts
-- Privacy scopes enforced at query time and in context segments
-- Approvals for untrusted agents, with audit trails for every mutation
-- A polymorphic relationship graph across all node types
-
-## Core guarantees
-
-- Privacy is enforced by schema and query filters, not conventions
-- Untrusted agents can only write through approvals
-- All writes are captured in an immutable audit log
-- Relationships are typed and validated, with symmetric types auto synced
-
-## Data model
-
-- Entities: people, orgs, tools, projects
-- Context items: articles, notes, videos, papers
-- Relationships: polymorphic graph edges with properties
-- Jobs: tasks with priorities and subtasks
-- Logs: structured events and notes
-- Files: file metadata with links to entities or context
-- Protocols: system rules stored in the database
-- Agents: identities, scopes, and capabilities
-- Approvals: gatekeeper for untrusted actions
-
-## Architecture
-
-- Database: Postgres 16 with pgvector
-- Server: FastAPI REST plus MCP tools
-- CLI: Go, Bubble Tea, Lip Gloss
-- SQL: parameterized query files, not inline SQL
+> Nebula is perfect whether you’re building with **multiple unrelated agents** and need **real collaboration** (not copy-pasted prompts and messy markdown files), or if you just want agents to **manage your notes** and **store context** any approved agent can use.
 
 ## Quickstart
 
-### Database
-
-1. Create a `.env` in `nebula-core/` with database settings.
-2. Run the database:
-
 ```bash
-cd nebula-core
-
-docker compose up -d
+curl -fsSL https://nebula.gravitrone.com/install.sh | bash
+nebula start   # starts the API & MCP server
+nebula         # open the CLI
 ```
 
-### REST API
+## Architecture
 
-```bash
-cd nebula-core/server
+Nebula keeps your data as a connected graph (projects, context, jobs, logs, files).  
+Each agent sees only what its scopes allow.  
+Untrusted write requests go through approval first.
 
-.venv/bin/uvicorn nebula_api.app:app --reload --port 8000
+```mermaid
+flowchart LR
+  A[Agents] --> B[Shared Graph]
+
+  B --> C{Scope Check}
+  C -->|Allowed| D[Show data]
+  C -->|Blocked| E[Hide data]
+
+  A -->|Write request| F{Trusted agent?}
+  F -->|Yes| G[Apply change]
+  F -->|No| H[Approval Queue]
+  H --> I[Human Review]
+  I -->|Approve| G
+  I -->|Reject| J[No change]
+
+  G --> B
+  G --> K[Audit History]
 ```
 
-### MCP Server
+> Simple rule - if scope says no, data stays hidden. if trust says no, writes need approval.
 
-```bash
-cd nebula-core/server
+## Vision
 
-.venv/bin/python -m nebula_mcp.server
-```
+Nebula’s vision is to make agent context a **reliable platform**. Local-first stays core, but you’ll be able to **push/commit your context to the cloud when you want**. The mission is to replace messy markdown workflows with a real multi-agent communication protocol, with scopes, approvals, and auditability baked in, so shared context becomes as normal as shared code.
 
-### CLI
+## Resources
 
-```bash
-cd nebula-core/cli/src
+- Changelog lives in [changelog/](changelog/) or here → [nebula.gravitrone.com/changelog](https://nebula.gravitrone.com/changelog)
+- Docs live in [docs/](docs/) or here → [nebula.gravitrone.com/docs](https://nebula.gravitrone.com/docs)
 
-go build -o build/nebula ./cmd/nebula
+## Contributing
 
-./build/nebula
-```
+PRs are welcome.
 
-## Dev tooling
+Before submitting:
+- Read the [CLA](docs/CLA.md) and sign it by commenting: "I have read the CLA Document and I hereby sign the CLA"
+- For major changes, open an issue first to align on scope
+- Keep changes focused and include tests/docs when relevant
 
-```bash
-cd nebula-core
 
-# install deps (python via uv when available, go via go mod)
-make deps
+## FAQ
 
-# format
-make format
+<details>
+<summary><b>Why not just use Markdown or Notion?</b></summary>
+<br>
+They’re human-first. Nebula is agent-first - scopes, approvals, audit, rollback.<br>
+It lets <b>unrelated agents/teams sync on shared context</b> while a human keeps full control - like GitHub, but for agent memory.<br>
+You decide <b>who can access what</b> via scopes, so some context is shared and some stays private.
+<br><br>
+</details>
 
-# lint
-make lint
-```
+<details>
+<summary><b>What’s the difference from a vector DB?</b></summary>
+<br>
+Nebula is a secure system-of-record with <b>graph connections</b> (entities, relationships, logs).<br>
+We also support <b>embedding search</b> with privacy scopes - local by default, and soon compatible with your favorite providers (e.g. OpenAI).
+<br><br>
+</details>
 
-Notes:
-- Python linting and formatting use Ruff.
-- Go linting uses `go vet`, with `golangci-lint` if installed.
+<details>
+<summary><b>Is it open-source?</b></summary>
+<br>
+Yep, → <a href="LICENSE">Apache License 2.0</a>.
+<br><br>
+</details>
 
-## Status
+<details>
+<summary><b>Is there a cloud version?</b></summary>
+<br>
+Coming. Web UI & shared cloud for seamless sync across your devices.
+<br><br>
+</details>
 
-- Embedding generation and semantic search pipelines are not wired yet.
-- Most CRUD, approvals, audit, and graph operations are live.
+<details>
+<summary><b>Can I rollback changes?</b></summary>
+<br>
+Yes - full audit log & one-click revert to any previous version.
+<br><br>
+</details>
 
-## Repo structure
+<details>
+<summary><b>Is my data private?</b></summary>
+<br>
+Yes. Data lives on your machine by default. Scopes control exactly who can read/write.
+<br><br>
+</details>
 
-```
-nebula-core/
-├── database/
-│   └── migrations/
-├── scripts/
-│   └── migrate.sh
-├── server/
-│   ├── src/
-│   │   ├── nebula_mcp/
-│   │   ├── nebula_api/
-│   │   └── queries/
-│   ├── tests/
-│   └── pyproject.toml
-├── cli/
-│   └── src/
-├── docker-compose.yml
-└── README.md
-```
+<details>
+<summary><b>Can I import Markdown or existing notes?</b></summary>
+<br>
+JSON/CSV now. Full Markdown ingest is on the roadmap - but you can already ask any agent to do it.
+<br><br>
+</details>
 
-## MCP toolset
+<details>
+<summary><b>What’s the CLI for?</b></summary>
+<br>
+It’s the human control panel - browse & add data, approve changes, run ops.<br>
+Agents connect through <b>MCP/REST</b> instead.
+<br><br>
+</details>
 
-The MCP server exposes tools across entities, context, relationships, jobs, files, protocols, approvals, and audit. See `server/src/nebula_mcp/server.py` and the SQL under `server/src/queries/` for the full list.
 
 ## License
 
-[MIT](LICENSE)
+[Apache License 2.0](LICENSE)
