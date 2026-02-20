@@ -11,13 +11,15 @@ import (
 
 	"github.com/gravitrone/nebula-core/cli/internal/api"
 	"github.com/gravitrone/nebula-core/cli/internal/config"
+	"github.com/gravitrone/nebula-core/cli/internal/ui/components"
 )
 
 // RunInteractiveLogin prompts for username, calls login API, and persists config.
 func RunInteractiveLogin(in io.Reader, out io.Writer) error {
 	reader := bufio.NewReader(in)
 
-	fmt.Fprint(out, "username: ")
+	renderCommandMessage(out, "Nebula Login", "Enter username to create or resume your local session.")
+	fmt.Fprint(out, "\nusername: ")
 	username, _ := reader.ReadString('\n')
 	username = strings.TrimSpace(username)
 
@@ -45,8 +47,12 @@ func RunInteractiveLogin(in io.Reader, out io.Writer) error {
 		return fmt.Errorf("save config: %w", err)
 	}
 
-	fmt.Fprintf(out, "logged in as %s\n", resp.Username)
-	fmt.Fprintf(out, "config saved to %s\n", config.Path())
+	renderCommandPanel(out, "Login Success", []components.TableRow{
+		{Label: "username", Value: resp.Username},
+		{Label: "entity_id", Value: resp.EntityID},
+		{Label: "api_url", Value: api.DefaultBaseURL},
+		{Label: "config", Value: config.Path()},
+	})
 	return nil
 }
 

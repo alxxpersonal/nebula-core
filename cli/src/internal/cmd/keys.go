@@ -7,6 +7,7 @@ import (
 
 	"github.com/gravitrone/nebula-core/cli/internal/api"
 	"github.com/gravitrone/nebula-core/cli/internal/config"
+	"github.com/gravitrone/nebula-core/cli/internal/ui/components"
 )
 
 // KeysCmd returns the `nebula keys` command group.
@@ -26,7 +27,7 @@ func keysListCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List API keys",
-		RunE: func(_ *cobra.Command, _ []string) error {
+		RunE: func(command *cobra.Command, _ []string) error {
 			cfg, err := config.Load()
 			if err != nil {
 				return fmt.Errorf("not logged in: %w", err)
@@ -44,10 +45,11 @@ func keysListCmd() *cobra.Command {
 			}
 
 			if len(keys) == 0 {
-				fmt.Println("no keys found")
+				renderCommandMessage(command.OutOrStdout(), "API Keys", "No keys found.")
 				return nil
 			}
 
+			rows := make([]components.TableRow, 0, len(keys))
 			for _, k := range keys {
 				owner := k.Name
 				if k.OwnerType == "agent" && k.AgentName != nil {
@@ -59,8 +61,12 @@ func keysListCmd() *cobra.Command {
 				if k.LastUsedAt != nil {
 					lastUsed = k.LastUsedAt.Format("2006-01-02 15:04")
 				}
-				fmt.Printf("  %s  %s  (%s)  last used: %s\n", k.KeyPrefix+"...", k.Name, owner, lastUsed)
+				rows = append(rows, components.TableRow{
+					Label: k.KeyPrefix + "...",
+					Value: fmt.Sprintf("%s (%s) · last used %s", k.Name, owner, lastUsed),
+				})
 			}
+			renderCommandPanel(command.OutOrStdout(), "API Keys", rows)
 			return nil
 		},
 	}
@@ -73,7 +79,7 @@ func keysCreateCmd() *cobra.Command {
 		Use:   "create <name>",
 		Short: "Create a new API key",
 		Args:  cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(command *cobra.Command, args []string) error {
 			cfg, err := config.Load()
 			if err != nil {
 				return fmt.Errorf("not logged in: %w", err)
@@ -85,9 +91,11 @@ func keysCreateCmd() *cobra.Command {
 				return fmt.Errorf("create key: %w", err)
 			}
 
-			fmt.Printf("key created: %s\n", resp.Name)
-			fmt.Printf("api key: %s\n", resp.APIKey)
-			fmt.Println("save this key - it won't be shown again")
+			renderCommandPanel(command.OutOrStdout(), "API Key Created", []components.TableRow{
+				{Label: "name", Value: resp.Name},
+				{Label: "api_key", Value: resp.APIKey},
+				{Label: "note", Value: "save this key now, it is not shown again"},
+			})
 			return nil
 		},
 	}
@@ -98,7 +106,7 @@ func keysRevokeCmd() *cobra.Command {
 		Use:   "revoke <key-id>",
 		Short: "Revoke an API key",
 		Args:  cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(command *cobra.Command, args []string) error {
 			cfg, err := config.Load()
 			if err != nil {
 				return fmt.Errorf("not logged in: %w", err)
@@ -109,7 +117,10 @@ func keysRevokeCmd() *cobra.Command {
 				return fmt.Errorf("revoke key: %w", err)
 			}
 
-			fmt.Println("key revoked")
+			renderCommandPanel(command.OutOrStdout(), "API Keys", []components.TableRow{
+				{Label: "status", Value: "revoked"},
+				{Label: "key_id", Value: args[0]},
+			})
 			return nil
 		},
 	}

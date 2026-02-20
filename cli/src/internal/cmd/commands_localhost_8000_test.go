@@ -6,21 +6,25 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"testing"
 	"time"
 
+	"github.com/gravitrone/nebula-core/cli/internal/api"
 	"github.com/gravitrone/nebula-core/cli/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func startLocalhost8000Server(t *testing.T, handler http.Handler) func() {
+func startDefaultAPIBaseServer(t *testing.T, handler http.Handler) func() {
 	t.Helper()
 
-	ln, err := net.Listen("tcp", "127.0.0.1:8000")
+	parsed, err := url.Parse(api.DefaultBaseURL)
+	require.NoError(t, err)
+	ln, err := net.Listen("tcp", parsed.Host)
 	if err != nil {
-		t.Skip("port 8000 busy; skipping localhost happy-path cmd coverage")
+		t.Skip("default api port busy; skipping localhost happy-path cmd coverage")
 	}
 
 	srv := &http.Server{Handler: handler}
@@ -35,10 +39,10 @@ func startLocalhost8000Server(t *testing.T, handler http.Handler) func() {
 	}
 }
 
-func TestLoginCmdSuccessAgainstLocalhost8000(t *testing.T) {
+func TestLoginCmdSuccessAgainstDefaultAPIBaseURL(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
-	shutdown := startLocalhost8000Server(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	shutdown := startDefaultAPIBaseServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/api/keys/login" && r.Method == http.MethodPost:
 			var body map[string]any
@@ -74,12 +78,12 @@ func TestLoginCmdSuccessAgainstLocalhost8000(t *testing.T) {
 	assert.True(t, loaded.QuickstartPending)
 }
 
-func TestKeysAndAgentListHappyPathsAgainstLocalhost8000(t *testing.T) {
+func TestKeysAndAgentListHappyPathsAgainstDefaultAPIBaseURL(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	require.NoError(t, (&config.Config{APIKey: "nbl_test", Username: "alxx"}).Save())
 
 	now := time.Now()
-	shutdown := startLocalhost8000Server(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	shutdown := startDefaultAPIBaseServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/api/keys" && r.Method == http.MethodGet:
 			json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{{

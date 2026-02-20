@@ -29,6 +29,9 @@ func main() {
 	root.AddCommand(cmd.LoginCmd())
 	root.AddCommand(cmd.AgentCmd())
 	root.AddCommand(cmd.KeysCmd())
+	root.AddCommand(cmd.StartCmd())
+	root.AddCommand(cmd.StopCmd())
+	root.AddCommand(cmd.LogsCmd())
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)

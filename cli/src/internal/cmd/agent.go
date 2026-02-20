@@ -7,6 +7,7 @@ import (
 
 	"github.com/gravitrone/nebula-core/cli/internal/api"
 	"github.com/gravitrone/nebula-core/cli/internal/config"
+	"github.com/gravitrone/nebula-core/cli/internal/ui/components"
 )
 
 // AgentCmd returns the `nebula agent` command group.
@@ -26,7 +27,7 @@ func agentRegisterCmd() *cobra.Command {
 		Use:   "register <name>",
 		Short: "Register a new agent (creates approval request)",
 		Args:  cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(command *cobra.Command, args []string) error {
 			cfg, err := config.Load()
 			if err != nil {
 				return fmt.Errorf("not logged in: %w", err)
@@ -44,10 +45,12 @@ func agentRegisterCmd() *cobra.Command {
 				return fmt.Errorf("register agent: %w", err)
 			}
 
-			fmt.Printf("agent registered: %s\n", resp.AgentID)
-			fmt.Printf("status: %s\n", resp.Status)
-			fmt.Printf("approval request: %s\n", resp.ApprovalRequestID)
-			fmt.Println("approve via 'nebula' inbox or API")
+			renderCommandPanel(command.OutOrStdout(), "Agent Registered", []components.TableRow{
+				{Label: "agent_id", Value: resp.AgentID},
+				{Label: "status", Value: resp.Status},
+				{Label: "approval_request", Value: resp.ApprovalRequestID},
+				{Label: "next", Value: "approve in nebula inbox or via api"},
+			})
 			return nil
 		},
 	}
@@ -59,7 +62,7 @@ func agentListCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
 		Short: "List all agents",
-		RunE: func(_ *cobra.Command, _ []string) error {
+		RunE: func(command *cobra.Command, _ []string) error {
 			cfg, err := config.Load()
 			if err != nil {
 				return fmt.Errorf("not logged in: %w", err)
@@ -72,10 +75,11 @@ func agentListCmd() *cobra.Command {
 			}
 
 			if len(agents) == 0 {
-				fmt.Println("no agents found")
+				renderCommandMessage(command.OutOrStdout(), "Agents", "No agents found.")
 				return nil
 			}
 
+			rows := make([]components.TableRow, 0, len(agents))
 			for _, a := range agents {
 				trust := "trusted"
 				if a.RequiresApproval {
@@ -85,8 +89,12 @@ func agentListCmd() *cobra.Command {
 				if a.Description != nil {
 					desc = " - " + *a.Description
 				}
-				fmt.Printf("  %s (%s)%s\n", a.Name, trust, desc)
+				rows = append(rows, components.TableRow{
+					Label: a.Name,
+					Value: fmt.Sprintf("%s%s", trust, desc),
+				})
 			}
+			renderCommandPanel(command.OutOrStdout(), "Agents", rows)
 			return nil
 		},
 	}
