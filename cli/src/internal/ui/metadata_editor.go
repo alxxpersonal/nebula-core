@@ -248,13 +248,27 @@ func (m MetadataEditor) renderTableMode(width int) string {
 		m.list = list
 	}
 	visible := m.list.Visible()
-	groupWidth, fieldWidth, valueWidth := metadataColumnWidths(contentWidth - 5)
-	columns := []components.TableColumn{
-		{Header: "Sel", Width: 4, Align: lipgloss.Left},
-		{Header: "Group", Width: groupWidth, Align: lipgloss.Left},
-		{Header: "Field", Width: fieldWidth, Align: lipgloss.Left},
-		{Header: "Value", Width: valueWidth, Align: lipgloss.Left},
+	selectedCount := 0
+	for _, selected := range m.selected {
+		if selected {
+			selectedCount++
+		}
 	}
+	showSelectionColumn := selectedCount > 0
+	columnBudget := contentWidth
+	if showSelectionColumn {
+		columnBudget -= 5
+	}
+	groupWidth, fieldWidth, valueWidth := metadataColumnWidths(columnBudget)
+	columns := make([]components.TableColumn, 0, 4)
+	if showSelectionColumn {
+		columns = append(columns, components.TableColumn{Header: "Sel", Width: 4, Align: lipgloss.Left})
+	}
+	columns = append(columns,
+		components.TableColumn{Header: "Group", Width: groupWidth, Align: lipgloss.Left},
+		components.TableColumn{Header: "Field", Width: fieldWidth, Align: lipgloss.Left},
+		components.TableColumn{Header: "Value", Width: valueWidth, Align: lipgloss.Left},
+	)
 
 	gridRows := make([][]string, 0, len(visible))
 	activeRow := -1
@@ -265,14 +279,19 @@ func (m MetadataEditor) renderTableMode(width int) string {
 		}
 		row := rows[absIdx]
 		group, field := metadataGroupAndField(row.path)
-		mark := "[ ]"
-		if m.selected != nil && m.selected[absIdx] {
-			mark = "[X]"
-		}
 		if m.list.IsSelected(absIdx) {
 			activeRow = len(gridRows)
 		}
-		gridRows = append(gridRows, []string{mark, group, field, row.value})
+		cells := make([]string, 0, 4)
+		if showSelectionColumn {
+			mark := "[ ]"
+			if m.selected != nil && m.selected[absIdx] {
+				mark = "[X]"
+			}
+			cells = append(cells, mark)
+		}
+		cells = append(cells, group, field, row.value)
+		gridRows = append(gridRows, cells)
 	}
 	table := components.TableGridWithActiveRow(columns, gridRows, contentWidth, activeRow)
 	table = colorizeScopeBadges(table)
@@ -281,12 +300,6 @@ func (m MetadataEditor) renderTableMode(width int) string {
 	end := m.list.Offset + len(gridRows)
 	if start < 1 {
 		start = 1
-	}
-	selectedCount := 0
-	for _, selected := range m.selected {
-		if selected {
-			selectedCount++
-		}
 	}
 	info := fmt.Sprintf("Rows %d-%d of %d", start, end, len(rows))
 	if selectedCount > 0 {

@@ -203,7 +203,7 @@ func TestWrapMetadataDisplayLinesPreservesBlankRows(t *testing.T) {
 	assert.GreaterOrEqual(t, len(lines), 2)
 }
 
-func TestRenderMetadataSelectableBlockOmitsActiveChevronPrefix(t *testing.T) {
+func TestRenderMetadataSelectableBlockHidesSelectionColumnWhenNothingIsSelected(t *testing.T) {
 	rows := []metadataDisplayRow{
 		{field: "note", value: "hello"},
 	}
@@ -213,9 +213,26 @@ func TestRenderMetadataSelectableBlockOmitsActiveChevronPrefix(t *testing.T) {
 	out := renderMetadataSelectableBlockWithTitle("Metadata", rows, 80, list, map[int]bool{})
 	clean := components.SanitizeText(out)
 
-	assert.Contains(t, clean, "[ ]")
+	assert.NotContains(t, clean, "Sel")
+	assert.NotContains(t, clean, "[ ]")
 	assert.NotContains(t, clean, "›[ ]")
 	assert.NotContains(t, clean, ">[ ]")
+}
+
+func TestRenderMetadataSelectableBlockShowsSelectionColumnWhenRowsSelected(t *testing.T) {
+	rows := []metadataDisplayRow{
+		{field: "note", value: "hello"},
+	}
+	list := components.NewList(metadataPanelPageSize(false))
+	syncMetadataList(list, rows, metadataPanelPageSize(false))
+
+	out := renderMetadataSelectableBlockWithTitle("Metadata", rows, 80, list, map[int]bool{0: true})
+	clean := components.SanitizeText(out)
+
+	assert.Contains(t, clean, "Sel")
+	assert.Contains(t, clean, "[X]")
+	assert.NotContains(t, clean, "›[")
+	assert.NotContains(t, clean, ">[")
 }
 
 func TestRenderMetadataSelectableBlockHumanizesContextSegmentField(t *testing.T) {

@@ -660,14 +660,28 @@ func renderMetadataSelectableBlockWithTitle(
 		return components.TitledBox(title, MetaValueStyle.Render("None"), width)
 	}
 
-	groupWidth, fieldWidth, valueWidth := metadataColumnWidths(contentWidth - 5)
-
-	columns := []components.TableColumn{
-		{Header: "Sel", Width: 4, Align: lipgloss.Left},
-		{Header: "Group", Width: groupWidth, Align: lipgloss.Left},
-		{Header: "Field", Width: fieldWidth, Align: lipgloss.Left},
-		{Header: "Value", Width: valueWidth, Align: lipgloss.Left},
+	selectedCount := 0
+	for _, v := range selected {
+		if v {
+			selectedCount++
+		}
 	}
+	showSelectionColumn := selectedCount > 0
+	columnBudget := contentWidth
+	if showSelectionColumn {
+		columnBudget -= 5
+	}
+	groupWidth, fieldWidth, valueWidth := metadataColumnWidths(columnBudget)
+
+	columns := make([]components.TableColumn, 0, 4)
+	if showSelectionColumn {
+		columns = append(columns, components.TableColumn{Header: "Sel", Width: 4, Align: lipgloss.Left})
+	}
+	columns = append(columns,
+		components.TableColumn{Header: "Group", Width: groupWidth, Align: lipgloss.Left},
+		components.TableColumn{Header: "Field", Width: fieldWidth, Align: lipgloss.Left},
+		components.TableColumn{Header: "Value", Width: valueWidth, Align: lipgloss.Left},
+	)
 
 	gridRows := make([][]string, 0, len(visible))
 	activeVisible := -1
@@ -677,20 +691,20 @@ func renderMetadataSelectableBlockWithTitle(
 			continue
 		}
 		row := rows[absIdx]
-		mark := "[ ]"
-		if selected != nil && selected[absIdx] {
-			mark = "[X]"
-		}
 		if list.IsSelected(absIdx) {
 			activeVisible = len(gridRows)
 		}
 		group, field := metadataGroupAndField(row.field)
-		gridRows = append(gridRows, []string{
-			mark,
-			group,
-			field,
-			row.value,
-		})
+		cells := make([]string, 0, 4)
+		if showSelectionColumn {
+			mark := "[ ]"
+			if selected != nil && selected[absIdx] {
+				mark = "[X]"
+			}
+			cells = append(cells, mark)
+		}
+		cells = append(cells, group, field, row.value)
+		gridRows = append(gridRows, cells)
 	}
 	rendered := colorizeScopeBadges(
 		components.TableGridWithActiveRow(columns, gridRows, contentWidth, activeVisible),
@@ -700,12 +714,6 @@ func renderMetadataSelectableBlockWithTitle(
 	end := list.Offset + len(gridRows)
 	if start < 1 {
 		start = 1
-	}
-	selectedCount := 0
-	for _, v := range selected {
-		if v {
-			selectedCount++
-		}
 	}
 	metaLine := fmt.Sprintf("Rows %d-%d of %d", start, end, len(rows))
 	if selectedCount > 0 {

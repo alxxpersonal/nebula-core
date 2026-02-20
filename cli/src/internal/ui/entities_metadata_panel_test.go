@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestEntitiesDetailMetadataPanelShowsSelectionColumns(t *testing.T) {
+func TestEntitiesDetailMetadataPanelHidesSelectionColumnUntilAnyRowSelected(t *testing.T) {
 	model := NewEntitiesModel(nil)
 	model.width = 100
 	model.view = entitiesViewDetail
@@ -34,11 +34,12 @@ func TestEntitiesDetailMetadataPanelShowsSelectionColumns(t *testing.T) {
 	out := model.renderDetail()
 	clean := components.SanitizeText(out)
 	assert.Contains(t, clean, "Metadata")
-	assert.Contains(t, clean, "Sel")
+	assert.NotContains(t, clean, "Sel")
 	assert.Contains(t, clean, "Group")
 	assert.Contains(t, clean, "Field")
 	assert.Contains(t, clean, "Value")
 	assert.Contains(t, strings.ToLower(clean), "segment 1")
+	assert.NotContains(t, clean, "[ ]")
 	assert.NotContains(t, clean, ">[")
 	assert.Contains(t, clean, "enter inspect")
 }

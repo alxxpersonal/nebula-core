@@ -80,6 +80,7 @@ func TestMetadataEditorRenderIsStable(t *testing.T) {
 	out := ed.Render(80)
 	clean := components.SanitizeText(out)
 	assert.Contains(t, clean, "Metadata")
+	assert.NotContains(t, clean, "Sel")
 	assert.Contains(t, clean, "Group")
 	assert.Contains(t, clean, "Field")
 	assert.Contains(t, clean, "Value")
@@ -93,6 +94,23 @@ func TestMetadataEditorRenderIsStable(t *testing.T) {
 	clean = components.SanitizeText(out)
 	assert.Contains(t, clean, "Metadata Value")
 	assert.Contains(t, clean, "enter copy value")
+}
+
+func TestMetadataEditorRenderShowsSelectionColumnOnlyAfterSelectingRows(t *testing.T) {
+	var ed MetadataEditor
+	ed.Open(map[string]any{
+		"name": "alex",
+		"role": "cto",
+	})
+
+	clean := components.SanitizeText(ed.Render(80))
+	assert.NotContains(t, clean, "Sel")
+	assert.NotContains(t, clean, "[ ]")
+
+	ed.HandleKey(tea.KeyMsg{Type: tea.KeySpace})
+	clean = components.SanitizeText(ed.Render(80))
+	assert.Contains(t, clean, "Sel")
+	assert.Contains(t, clean, "[X]")
 }
 
 func TestDropLastRuneHandlesMultibyteRunes(t *testing.T) {
