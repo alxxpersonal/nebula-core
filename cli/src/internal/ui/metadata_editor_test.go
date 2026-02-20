@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/gravitrone/nebula-core/cli/internal/ui/components"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -21,20 +22,21 @@ func TestMetadataEditorOpenLoadsInitialAndActivates(t *testing.T) {
 }
 
 func TestMetadataEditorHandleKeyTypingScopesAndExit(t *testing.T) {
+	prevCopy := copyMetadataEditorClipboard
+	defer func() { copyMetadataEditorClipboard = prevCopy }()
+
+	var copied string
+	copyMetadataEditorClipboard = func(text string) error {
+		copied = text
+		return nil
+	}
+
 	var ed MetadataEditor
 	ed.Open(map[string]any{})
 	ed.SetScopeOptions([]string{"public", "work"})
 
-	// Typing appends to buffer.
-	ed.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
-	assert.Equal(t, "a", ed.Buffer)
-
-	// Backspace drops last rune.
-	ed.HandleKey(tea.KeyMsg{Type: tea.KeyBackspace})
-	assert.Equal(t, "", ed.Buffer)
-
-	// Space on empty buffer opens scope selection.
-	ed.HandleKey(tea.KeyMsg{Type: tea.KeySpace})
+	// Scope selector opens with s.
+	ed.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
 	assert.True(t, ed.scopeSelecting)
 
 	// Move to "work" and toggle it on.
@@ -46,17 +48,27 @@ func TestMetadataEditorHandleKeyTypingScopesAndExit(t *testing.T) {
 	ed.HandleKey(tea.KeyMsg{Type: tea.KeyEnter})
 	assert.False(t, ed.scopeSelecting)
 
-	// Enter adds newline, tab adds spaces.
-	ed.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	// Add row via entry mode.
+	ed.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	require.True(t, ed.entryMode)
+	for _, ch := range []rune("profile | timezone | europe/warsaw") {
+		ed.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{ch}})
+	}
 	ed.HandleKey(tea.KeyMsg{Type: tea.KeyEnter})
-	ed.HandleKey(tea.KeyMsg{Type: tea.KeyTab})
-	assert.Contains(t, ed.Buffer, "x\n  ")
+	assert.False(t, ed.entryMode)
+	assert.Contains(t, ed.Buffer, "profile:")
+	assert.Contains(t, ed.Buffer, "timezone: europe/warsaw")
+	require.Len(t, ed.rows, 1)
 
-	// Ctrl+U clears buffer.
-	ed.HandleKey(tea.KeyMsg{Type: tea.KeyCtrlU})
-	assert.Equal(t, "", ed.Buffer)
+	// Enter on selected row opens inspect and Enter copies only value.
+	ed.HandleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	assert.True(t, ed.inspectMode)
+	ed.HandleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	assert.Equal(t, "europe/warsaw", copied)
 
-	// Esc closes editor and returns true to indicate done.
+	// Esc exits inspect, then Esc closes editor and returns done.
+	ed.HandleKey(tea.KeyMsg{Type: tea.KeyEsc})
+	assert.False(t, ed.inspectMode)
 	done := ed.HandleKey(tea.KeyMsg{Type: tea.KeyEsc})
 	assert.True(t, done)
 	assert.False(t, ed.Active)
@@ -65,16 +77,22 @@ func TestMetadataEditorHandleKeyTypingScopesAndExit(t *testing.T) {
 func TestMetadataEditorRenderIsStable(t *testing.T) {
 	var ed MetadataEditor
 	ed.Open(map[string]any{"name": "alex"})
-	ed.Buffer = "name: alex"
 	out := ed.Render(80)
-	assert.Contains(t, out, "Metadata")
-	assert.Contains(t, out, "name: alex")
+	clean := components.SanitizeText(out)
+	assert.Contains(t, clean, "Metadata")
+	assert.Contains(t, clean, "Group")
+	assert.Contains(t, clean, "Field")
+	assert.Contains(t, clean, "Value")
+	assert.Contains(t, clean, "name")
+	assert.Contains(t, clean, "alex")
+	assert.NotContains(t, clean, ">[")
 
-	// Invalid YAML should render an error hint.
-	ed.Buffer = "name alex"
+	ed.inspectMode = true
+	ed.inspectRowIdx = 0
 	out = ed.Render(80)
-	assert.Contains(t, out, "Metadata")
-	assert.Contains(t, out, "expected 'key: value'")
+	clean = components.SanitizeText(out)
+	assert.Contains(t, clean, "Metadata Value")
+	assert.Contains(t, clean, "enter copy value")
 }
 
 func TestDropLastRuneHandlesMultibyteRunes(t *testing.T) {
