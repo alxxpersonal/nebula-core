@@ -529,7 +529,7 @@ func (m ContextModel) renderAdd() string {
 				b.WriteString(MutedStyle.Render("  " + label + ":"))
 			}
 			b.WriteString("\n")
-			meta := renderMetadataInput(m.metaEditor.Buffer)
+			meta := renderMetadataEditorPreview(m.metaEditor.Buffer, m.metaEditor.Scopes, m.width, 6)
 			b.WriteString(NormalStyle.Render("  " + meta))
 		} else if i == m.focus {
 			b.WriteString(SelectedStyle.Render("  " + label + ":"))
@@ -627,7 +627,7 @@ func (m ContextModel) renderEdit() string {
 				b.WriteString(MutedStyle.Render("  " + label + ":"))
 			}
 			b.WriteString("\n")
-			meta := renderMetadataInput(m.editMeta.Buffer)
+			meta := renderMetadataEditorPreview(m.editMeta.Buffer, m.editMeta.Scopes, m.width, 6)
 			b.WriteString(NormalStyle.Render("  " + meta))
 		default:
 			if i == m.editFocus {

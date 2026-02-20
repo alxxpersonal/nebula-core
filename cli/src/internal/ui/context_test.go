@@ -184,9 +184,16 @@ func TestContextRenderEditShowsTagsAndScopes(t *testing.T) {
 	model.view = contextViewEdit
 	model.editTags = []string{"alpha"}
 	model.editScopes = []string{"public"}
+	model.editMeta.Buffer = "profile | timezone | Europe/Warsaw"
+	model.editMeta.Scopes = []string{"public"}
 
 	out := model.renderEdit()
 	assert.Contains(t, out, "Edit Context")
 	assert.Contains(t, out, "alpha")
 	assert.Contains(t, out, "public")
+	assert.Contains(t, out, "Group")
+	assert.Contains(t, out, "Field")
+	assert.Contains(t, out, "Value")
+	assert.Contains(t, out, "profile")
+	assert.Contains(t, out, "timezone")
 }
