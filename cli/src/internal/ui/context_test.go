@@ -158,6 +158,26 @@ func TestContextListEnterShowsDetail(t *testing.T) {
 	assert.Equal(t, contextViewDetail, model.view)
 }
 
+func TestContextListEnterRejectsMissingID(t *testing.T) {
+	model := NewContextModel(nil)
+	model.view = contextViewList
+	model.items = []api.Context{
+		{Name: "Alpha", SourceType: "note"},
+	}
+	model.list.SetItems([]string{formatContextLine(model.items[0])})
+
+	model, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+	require.NotNil(t, cmd)
+	msg := cmd()
+	err, ok := msg.(errMsg)
+	require.True(t, ok)
+	require.Error(t, err.err)
+	assert.Contains(t, err.err.Error(), "missing id")
+	assert.Nil(t, model.detail)
+	assert.Equal(t, contextViewList, model.view)
+}
+
 func TestContextRenderEditShowsTagsAndScopes(t *testing.T) {
 	model := NewContextModel(nil)
 	model.width = 100

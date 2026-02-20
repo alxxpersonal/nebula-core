@@ -740,9 +740,15 @@ func (m ContextModel) handleListKeys(msg tea.KeyMsg) (ContextModel, tea.Cmd) {
 	case isEnter(msg):
 		if idx := m.list.Selected(); idx < len(m.items) {
 			item := m.items[idx]
+			itemID := strings.TrimSpace(item.ID)
+			if itemID == "" {
+				return m, func() tea.Msg {
+					return errMsg{fmt.Errorf("selected context is missing id")}
+				}
+			}
 			m.detail = &item
 			m.view = contextViewDetail
-			return m, m.loadContextDetail(item.ID)
+			return m, m.loadContextDetail(itemID)
 		}
 	case isKey(msg, "f"):
 		m.filtering = true
@@ -1340,6 +1346,9 @@ func (m *ContextModel) applyContextFilter() {
 
 func (m ContextModel) loadContextDetail(id string) tea.Cmd {
 	return func() tea.Msg {
+		if strings.TrimSpace(id) == "" {
+			return errMsg{fmt.Errorf("context id is required")}
+		}
 		item, err := m.client.GetContext(id)
 		if err != nil {
 			return errMsg{err}
