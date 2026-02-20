@@ -243,6 +243,62 @@ func TestTabNavDownMovesIntoSettingsSectionFocus(t *testing.T) {
 	assert.True(t, updated.profile.sectionFocus)
 }
 
+func TestProfileUpPromotesSectionFocusBeforeExitingToTabNav(t *testing.T) {
+	app := NewApp(nil, &config.Config{})
+	app.tab = tabProfile
+	app.tabNav = false
+	app.profile.section = 0
+	app.profile.sectionFocus = false
+
+	model, _ := app.Update(tea.KeyMsg{Type: tea.KeyUp})
+	updated := model.(App)
+
+	assert.False(t, updated.tabNav)
+	assert.True(t, updated.profile.sectionFocus)
+}
+
+func TestProfileSectionFocusUpCanExitToTopTabNav(t *testing.T) {
+	app := NewApp(nil, &config.Config{})
+	app.tab = tabProfile
+	app.tabNav = false
+	app.profile.sectionFocus = true
+
+	model, _ := app.Update(tea.KeyMsg{Type: tea.KeyUp})
+	updated := model.(App)
+
+	assert.True(t, updated.tabNav)
+}
+
+func TestBodyScrollResetsWhenFilesSubviewChanges(t *testing.T) {
+	app := NewApp(nil, &config.Config{})
+	app.tab = tabFiles
+	app.tabNav = false
+	app.bodyScroll = 24
+	app.files.view = filesViewAdd
+	app.files.modeFocus = true
+
+	model, _ := app.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated := model.(App)
+
+	assert.Equal(t, filesViewList, updated.files.view)
+	assert.Zero(t, updated.bodyScroll)
+}
+
+func TestBodyScrollResetsWhenEnteringModeLineFromTabNav(t *testing.T) {
+	app := NewApp(nil, &config.Config{})
+	app.tab = tabEntities
+	app.tabNav = true
+	app.entities.view = entitiesViewList
+	app.bodyScroll = 16
+
+	model, _ := app.Update(tea.KeyMsg{Type: tea.KeyDown})
+	updated := model.(App)
+
+	assert.False(t, updated.tabNav)
+	assert.True(t, updated.entities.modeFocus)
+	assert.Zero(t, updated.bodyScroll)
+}
+
 func TestPaletteModeSwitchesBetweenCommandAndSearch(t *testing.T) {
 	app := NewApp(nil, &config.Config{})
 	app.openPaletteCommand()

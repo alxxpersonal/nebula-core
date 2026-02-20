@@ -127,6 +127,7 @@ type App struct {
 
 	importExportOpen bool
 	bodyScroll       int
+	bodyViewKey      string
 
 	inbox     InboxModel
 	entities  EntitiesModel
@@ -151,7 +152,7 @@ func NewApp(client *api.Client, cfg *config.Config) App {
 	onboarding := cfg == nil
 	quickstartPending := cfg != nil && cfg.QuickstartPending
 	startupChecking := client != nil && !onboarding
-	return App{
+	app := App{
 		client:          client,
 		config:          cfg,
 		tab:             tabInbox,
@@ -178,6 +179,8 @@ func NewApp(client *api.Client, cfg *config.Config) App {
 		profile:        NewProfileModel(client, cfg),
 		impex:          NewImportExportModel(client),
 	}
+	app.bodyViewKey = app.viewStateKey()
+	return app
 }
 
 func (a App) Init() tea.Cmd {
@@ -192,6 +195,8 @@ func (a App) Init() tea.Cmd {
 }
 
 func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	prevViewKey := a.viewStateKey()
+
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		a.width = msg.Width
@@ -458,6 +463,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if isDown(msg) {
 				a.tabNav = false
 				if a.focusModeLineForActiveTab() {
+					a.resetBodyScrollOnViewChange(prevViewKey)
 					return a, nil
 				}
 			}
@@ -466,8 +472,15 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.tabNav = false
 		} else {
 			if isUp(msg) && a.canExitToTabNav() {
-				a.tabNav = true
-				return a, nil
+				// Let settings consume Up first so it can move focus from list to
+				// section tabs (API Keys/Agents/Taxonomy) before exiting to top nav.
+				if a.tab == tabProfile && !a.profile.sectionFocus {
+					// fall through to active tab update below
+				} else {
+					a.tabNav = true
+					a.resetBodyScrollOnViewChange(prevViewKey)
+					return a, nil
+				}
 			}
 		}
 	}
@@ -497,6 +510,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.profile, cmd = a.profile.Update(msg)
 	}
 	toastCmd := a.toastCmdForMsg(msg)
+	a.resetBodyScrollOnViewChange(prevViewKey)
 	if toastCmd != nil && cmd != nil {
 		return a, tea.Batch(cmd, toastCmd)
 	}
@@ -634,10 +648,89 @@ func (a *App) switchTab(newTab int) (App, tea.Cmd) {
 	oldTab := a.tab
 	a.tab = newTab
 	a.bodyScroll = 0
+	a.bodyViewKey = a.viewStateKey()
 	if oldTab != newTab {
 		return *a, a.initTab(newTab)
 	}
 	return *a, nil
+}
+
+func (a *App) resetBodyScrollOnViewChange(prevViewKey string) {
+	nextViewKey := a.viewStateKey()
+	if prevViewKey != "" && prevViewKey != nextViewKey {
+		a.bodyScroll = 0
+	}
+	a.bodyViewKey = nextViewKey
+}
+
+func (a App) viewStateKey() string {
+	if a.helpOpen {
+		return "help"
+	}
+	if a.quitConfirm {
+		return "quit-confirm"
+	}
+	if a.paletteOpen {
+		return "palette"
+	}
+	if a.importExportOpen {
+		return "import-export"
+	}
+	if a.onboarding {
+		return "onboarding"
+	}
+	if a.quickstartOpen {
+		return "quickstart"
+	}
+
+	base := fmt.Sprintf("tab:%d", a.tab)
+	switch a.tab {
+	case tabInbox:
+		switch {
+		case a.inbox.rejectPreview:
+			return base + ":inbox:reject-preview"
+		case a.inbox.rejecting:
+			return base + ":inbox:reject"
+		case a.inbox.confirming:
+			return base + ":inbox:confirm"
+		case a.inbox.detail != nil:
+			return base + ":inbox:detail"
+		default:
+			return base + ":inbox:list"
+		}
+	case tabEntities:
+		if a.entities.metaInspect {
+			return base + ":entities:meta-inspect"
+		}
+		return fmt.Sprintf("%s:entities:%d:mode=%t:filter=%t", base, a.entities.view, a.entities.modeFocus, a.entities.filtering)
+	case tabRelations:
+		return fmt.Sprintf("%s:rels:%d:mode=%t:filter=%t", base, a.rels.view, a.rels.modeFocus, a.rels.filtering)
+	case tabKnow:
+		return fmt.Sprintf("%s:context:%d:mode=%t:filter=%t", base, a.know.view, a.know.modeFocus, a.know.filtering)
+	case tabJobs:
+		if a.jobs.changingSt {
+			return base + ":jobs:status"
+		}
+		if a.jobs.creatingSubtask {
+			return base + ":jobs:subtask"
+		}
+		return fmt.Sprintf("%s:jobs:%d:mode=%t:filter=%t", base, a.jobs.view, a.jobs.modeFocus, a.jobs.filtering)
+	case tabLogs:
+		return fmt.Sprintf("%s:logs:%d:mode=%t:filter=%t", base, a.logs.view, a.logs.modeFocus, a.logs.filtering)
+	case tabFiles:
+		return fmt.Sprintf("%s:files:%d:mode=%t:filter=%t", base, a.files.view, a.files.modeFocus, a.files.filtering)
+	case tabProtocols:
+		return fmt.Sprintf("%s:protocols:%d:mode=%t:filter=%t", base, a.protocols.view, a.protocols.modeFocus, a.protocols.filtering)
+	case tabHistory:
+		return fmt.Sprintf("%s:history:%d", base, a.history.view)
+	case tabProfile:
+		if a.profile.sectionFocus {
+			return fmt.Sprintf("%s:settings:%d:sections", base, a.profile.section)
+		}
+		return fmt.Sprintf("%s:settings:%d", base, a.profile.section)
+	default:
+		return base
+	}
 }
 
 // tabWantsArrows returns true when the active tab needs left/right arrow keys.
