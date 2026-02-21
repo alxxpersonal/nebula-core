@@ -42,17 +42,17 @@ set_paths() {
 
 require_docker() {
   if ! command -v docker >/dev/null 2>&1; then
-    error_box "docker is required for nebula install.\ninstall docker desktop and rerun this command."
+    error_box $'docker is required for nebula install.\ninstall docker desktop and rerun this command.'
     exit 1
   fi
 
   if ! docker info >/dev/null 2>&1; then
-    error_box "docker daemon is not running.\nstart docker desktop and rerun this command."
+    error_box $'docker daemon is not running.\nstart docker desktop and rerun this command.'
     exit 1
   fi
 
   if ! docker compose version >/dev/null 2>&1; then
-    error_box "docker compose plugin is required.\nupdate docker desktop and rerun this command."
+    error_box $'docker compose plugin is required.\nupdate docker desktop and rerun this command.'
     exit 1
   fi
 }
@@ -67,7 +67,7 @@ resolve_root_dir() {
   fi
 
   if ! command -v git >/dev/null 2>&1; then
-    error_box "git is required for curl install mode.\ninstall git and rerun this command."
+    error_box $'git is required for curl install mode.\ninstall git and rerun this command.'
     exit 1
   fi
 
