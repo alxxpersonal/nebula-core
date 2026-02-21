@@ -86,6 +86,15 @@ const (
 	bulkTargetScopes
 )
 
+type entitiesFilterFacet int
+
+const (
+	entitiesFilterFacetType entitiesFilterFacet = iota
+	entitiesFilterFacetStatus
+	entitiesFilterFacetScope
+	entitiesFilterFacetCount
+)
+
 type bulkInput struct {
 	op     string
 	values []string
@@ -94,29 +103,38 @@ type bulkInput struct {
 // --- Entities Model ---
 
 type EntitiesModel struct {
-	client        *api.Client
-	items         []api.Entity
-	allItems      []api.Entity
-	list          *components.List
-	loading       bool
-	view          entitiesView
-	modeFocus     bool
-	filtering     bool
-	searchBuf     string
-	searchSuggest string
-	width         int
-	height        int
+	client         *api.Client
+	items          []api.Entity
+	allItems       []api.Entity
+	list           *components.List
+	loading        bool
+	view           entitiesView
+	modeFocus      bool
+	filtering      bool
+	searchBuf      string
+	searchSuggest  string
+	filterFacet    entitiesFilterFacet
+	filterCursor   [entitiesFilterFacetCount]int
+	filterTypes    map[string]bool
+	filterStatus   map[string]bool
+	filterScopes   map[string]bool
+	filterTypeSet  []string
+	filterStatSet  []string
+	filterScopeSet []string
+	width          int
+	height         int
 
-	detail       *api.Entity
-	detailRels   []api.Relationship
-	errText      string
-	metaExpanded bool
-	metaRows     []metadataDisplayRow
-	metaList     *components.List
-	metaSelected map[int]bool
-	metaInspect  bool
-	metaInspectI int
-	metaInspectO int
+	detail         *api.Entity
+	detailRels     []api.Relationship
+	errText        string
+	metaExpanded   bool
+	metaRows       []metadataDisplayRow
+	metaList       *components.List
+	metaSelected   map[int]bool
+	metaSelectMode bool
+	metaInspect    bool
+	metaInspectI   int
+	metaInspectO   int
 
 	// add
 	addFields         []formField
@@ -202,14 +220,18 @@ func NewEntitiesModel(client *api.Client) EntitiesModel {
 			{label: "Scopes"},
 			{label: "Metadata"},
 		},
-		relList:      components.NewList(8),
-		relateList:   components.NewList(8),
-		historyList:  components.NewList(8),
-		metaList:     components.NewList(metadataPanelPageSize(false)),
-		view:         entitiesViewList,
-		bulkSelected: map[string]bool{},
-		scopeNames:   map[string]string{},
-		metaSelected: map[int]bool{},
+		relList:        components.NewList(8),
+		relateList:     components.NewList(8),
+		historyList:    components.NewList(8),
+		metaList:       components.NewList(metadataPanelPageSize(false)),
+		view:           entitiesViewList,
+		bulkSelected:   map[string]bool{},
+		scopeNames:     map[string]string{},
+		metaSelected:   map[int]bool{},
+		metaSelectMode: false,
+		filterTypes:    map[string]bool{},
+		filterStatus:   map[string]bool{},
+		filterScopes:   map[string]bool{},
 	}
 }
 
@@ -220,9 +242,18 @@ func (m EntitiesModel) Init() tea.Cmd {
 	m.filtering = false
 	m.searchBuf = ""
 	m.searchSuggest = ""
+	m.filterFacet = entitiesFilterFacetType
+	m.filterCursor = [entitiesFilterFacetCount]int{}
+	m.filterTypes = map[string]bool{}
+	m.filterStatus = map[string]bool{}
+	m.filterScopes = map[string]bool{}
+	m.filterTypeSet = nil
+	m.filterStatSet = nil
+	m.filterScopeSet = nil
 	m.metaExpanded = false
 	m.metaRows = nil
 	m.metaSelected = map[int]bool{}
+	m.metaSelectMode = false
 	if m.metaList == nil {
 		m.metaList = components.NewList(metadataPanelPageSize(false))
 	}
@@ -249,15 +280,9 @@ func (m EntitiesModel) Update(msg tea.Msg) (EntitiesModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case entitiesLoadedMsg:
 		m.loading = false
-		m.items = msg.items
-		if strings.TrimSpace(m.searchBuf) == "" {
-			m.allItems = msg.items
-		}
-		labels := make([]string, len(msg.items))
-		for i, e := range msg.items {
-			labels[i] = formatEntityLine(e)
-		}
-		m.list.SetItems(labels)
+		m.allItems = msg.items
+		m.refreshFilterSets()
+		m.applyEntityFilters()
 		m.updateSearchSuggest()
 		if m.view == entitiesViewSearch {
 			m.view = entitiesViewList
@@ -340,6 +365,8 @@ func (m EntitiesModel) Update(msg tea.Msg) (EntitiesModel, tea.Cmd) {
 		m.scopeOptions = scopeNameList(m.scopeNames)
 		m.addMeta.SetScopeOptions(m.scopeOptions)
 		m.editMeta.SetScopeOptions(m.scopeOptions)
+		m.refreshFilterSets()
+		m.applyEntityFilters()
 		return m, nil
 
 	case errMsg:
@@ -399,7 +426,7 @@ func (m EntitiesModel) View() string {
 		return components.Indent(components.InputDialog(m.bulkPrompt, m.bulkBuf), 1)
 	}
 	if m.view == entitiesViewList && m.filtering {
-		return components.Indent(components.InputDialog("Filter Entities", m.searchBuf), 1)
+		return components.Indent(m.renderFilterPicker(), 1)
 	}
 	if m.view == entitiesViewAdd {
 		if m.addSaving {
@@ -487,6 +514,7 @@ func (m EntitiesModel) handleListKeys(msg tea.KeyMsg) (EntitiesModel, tea.Cmd) {
 		}
 	case isKey(msg, "f"):
 		m.filtering = true
+		m.refreshFilterSets()
 		return m, nil
 	case isKey(msg, "tab"):
 		if m.searchSuggest != "" && strings.TrimSpace(m.searchBuf) != strings.TrimSpace(m.searchSuggest) {
@@ -553,28 +581,330 @@ func (m EntitiesModel) handleFilterInput(msg tea.KeyMsg) (EntitiesModel, tea.Cmd
 		m.filtering = false
 	case isBack(msg):
 		m.filtering = false
-		m.searchBuf = ""
-		m.searchSuggest = ""
-		m.loading = true
-		return m, m.loadEntities("")
-	case isKey(msg, "backspace", "delete"):
-		if len(m.searchBuf) > 0 {
-			m.searchBuf = m.searchBuf[:len(m.searchBuf)-1]
-			m.loading = true
-			return m, m.loadEntities(strings.TrimSpace(m.searchBuf))
+		if m.hasActiveEntityFilters() {
+			m.clearEntityFilters()
+			m.applyEntityFilters()
 		}
-	default:
-		ch := msg.String()
-		if len(ch) == 1 || ch == " " {
-			if ch == " " && m.searchBuf == "" {
-				return m, nil
+	case isKey(msg, "left"):
+		m.filterFacet = (m.filterFacet - 1 + entitiesFilterFacetCount) % entitiesFilterFacetCount
+	case isKey(msg, "right"):
+		m.filterFacet = (m.filterFacet + 1) % entitiesFilterFacetCount
+	case isDown(msg):
+		options := m.filterOptionsForFacet(m.filterFacet)
+		if len(options) > 0 {
+			m.filterCursor[m.filterFacet] = (m.filterCursor[m.filterFacet] + 1) % len(options)
+		}
+	case isUp(msg):
+		options := m.filterOptionsForFacet(m.filterFacet)
+		if len(options) > 0 {
+			m.filterCursor[m.filterFacet] = (m.filterCursor[m.filterFacet] - 1 + len(options)) % len(options)
+		}
+	case isSpace(msg):
+		options := m.filterOptionsForFacet(m.filterFacet)
+		if len(options) > 0 {
+			idx := m.filterCursor[m.filterFacet]
+			if idx >= 0 && idx < len(options) {
+				key := options[idx]
+				selected := m.filterMapForFacet(m.filterFacet)
+				if selected[key] {
+					delete(selected, key)
+				} else {
+					selected[key] = true
+				}
+				m.applyEntityFilters()
 			}
-			m.searchBuf += ch
-			m.loading = true
-			return m, m.loadEntities(strings.TrimSpace(m.searchBuf))
 		}
+	case isKey(msg, "b"):
+		options := m.filterOptionsForFacet(m.filterFacet)
+		selected := m.filterMapForFacet(m.filterFacet)
+		if len(options) > 0 {
+			if len(selected) == len(options) {
+				for _, option := range options {
+					delete(selected, option)
+				}
+			} else {
+				for _, option := range options {
+					selected[option] = true
+				}
+			}
+			m.applyEntityFilters()
+		}
+	case isKey(msg, "c"):
+		m.clearEntityFilters()
+		m.applyEntityFilters()
+	default:
+		return m, nil
 	}
 	return m, nil
+}
+
+func (m *EntitiesModel) refreshFilterSets() {
+	typeSeen := map[string]struct{}{}
+	statusSeen := map[string]struct{}{}
+	scopeSeen := map[string]struct{}{}
+
+	for _, item := range m.allItems {
+		typ := normalizeScope(item.Type)
+		if typ != "" {
+			typeSeen[typ] = struct{}{}
+		}
+		status := normalizeScope(item.Status)
+		if status != "" {
+			statusSeen[status] = struct{}{}
+		}
+		for _, scope := range m.scopeNamesFromIDs(item.PrivacyScopeIDs) {
+			scopeName := normalizeScope(scope)
+			if scopeName != "" {
+				scopeSeen[scopeName] = struct{}{}
+			}
+		}
+	}
+
+	m.filterTypeSet = sortedFilterKeys(typeSeen)
+	m.filterStatSet = sortedFilterKeys(statusSeen)
+	m.filterScopeSet = sortedFilterKeys(scopeSeen)
+	m.filterTypes = retainEntityFilterSelection(m.filterTypes, m.filterTypeSet)
+	m.filterStatus = retainEntityFilterSelection(m.filterStatus, m.filterStatSet)
+	m.filterScopes = retainEntityFilterSelection(m.filterScopes, m.filterScopeSet)
+
+	for facet := entitiesFilterFacetType; facet < entitiesFilterFacetCount; facet++ {
+		options := m.filterOptionsForFacet(facet)
+		if len(options) == 0 {
+			m.filterCursor[facet] = 0
+			continue
+		}
+		if m.filterCursor[facet] < 0 {
+			m.filterCursor[facet] = 0
+		}
+		if m.filterCursor[facet] >= len(options) {
+			m.filterCursor[facet] = len(options) - 1
+		}
+	}
+}
+
+func retainEntityFilterSelection(current map[string]bool, options []string) map[string]bool {
+	if current == nil {
+		current = map[string]bool{}
+	}
+	allowed := map[string]struct{}{}
+	for _, option := range options {
+		allowed[option] = struct{}{}
+	}
+	next := map[string]bool{}
+	for key, selected := range current {
+		if !selected {
+			continue
+		}
+		if _, ok := allowed[key]; ok {
+			next[key] = true
+		}
+	}
+	return next
+}
+
+func sortedFilterKeys(values map[string]struct{}) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func (m EntitiesModel) filterOptionsForFacet(facet entitiesFilterFacet) []string {
+	switch facet {
+	case entitiesFilterFacetType:
+		return m.filterTypeSet
+	case entitiesFilterFacetStatus:
+		return m.filterStatSet
+	case entitiesFilterFacetScope:
+		return m.filterScopeSet
+	default:
+		return nil
+	}
+}
+
+func (m *EntitiesModel) filterMapForFacet(facet entitiesFilterFacet) map[string]bool {
+	switch facet {
+	case entitiesFilterFacetType:
+		if m.filterTypes == nil {
+			m.filterTypes = map[string]bool{}
+		}
+		return m.filterTypes
+	case entitiesFilterFacetStatus:
+		if m.filterStatus == nil {
+			m.filterStatus = map[string]bool{}
+		}
+		return m.filterStatus
+	case entitiesFilterFacetScope:
+		if m.filterScopes == nil {
+			m.filterScopes = map[string]bool{}
+		}
+		return m.filterScopes
+	default:
+		return map[string]bool{}
+	}
+}
+
+func (m *EntitiesModel) clearEntityFilters() {
+	m.filterTypes = map[string]bool{}
+	m.filterStatus = map[string]bool{}
+	m.filterScopes = map[string]bool{}
+}
+
+func (m EntitiesModel) hasActiveEntityFilters() bool {
+	return len(m.filterTypes) > 0 || len(m.filterStatus) > 0 || len(m.filterScopes) > 0
+}
+
+func (m *EntitiesModel) applyEntityFilters() {
+	filtered := make([]api.Entity, 0, len(m.allItems))
+	for _, item := range m.allItems {
+		if !m.matchesEntityFilters(item) {
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+	m.items = filtered
+	labels := make([]string, len(filtered))
+	for i, e := range filtered {
+		labels[i] = formatEntityLine(e)
+	}
+	m.list.SetItems(labels)
+	m.pruneBulkSelection(filtered)
+	m.updateSearchSuggest()
+}
+
+func (m *EntitiesModel) pruneBulkSelection(items []api.Entity) {
+	if len(m.bulkSelected) == 0 {
+		return
+	}
+	visible := map[string]struct{}{}
+	for _, item := range items {
+		if item.ID != "" {
+			visible[item.ID] = struct{}{}
+		}
+	}
+	for id := range m.bulkSelected {
+		if _, ok := visible[id]; !ok {
+			delete(m.bulkSelected, id)
+		}
+	}
+}
+
+func (m EntitiesModel) matchesEntityFilters(item api.Entity) bool {
+	if len(m.filterTypes) > 0 {
+		typ := normalizeScope(item.Type)
+		if typ == "" || !m.filterTypes[typ] {
+			return false
+		}
+	}
+	if len(m.filterStatus) > 0 {
+		status := normalizeScope(item.Status)
+		if status == "" || !m.filterStatus[status] {
+			return false
+		}
+	}
+	if len(m.filterScopes) > 0 {
+		matched := false
+		for _, scope := range m.scopeNamesFromIDs(item.PrivacyScopeIDs) {
+			scopeName := normalizeScope(scope)
+			if scopeName == "" {
+				continue
+			}
+			if m.filterScopes[scopeName] {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return false
+		}
+	}
+	return true
+}
+
+func (m EntitiesModel) renderFilterPicker() string {
+	labels := []string{"Type", "Status", "Scope"}
+	facetTabs := make([]string, len(labels))
+	for idx, label := range labels {
+		tab := TabInactiveStyle.Render(label)
+		selectedCount := len(m.filterMapForFacet(entitiesFilterFacet(idx)))
+		if selectedCount > 0 {
+			tab = TabActiveStyle.Render(fmt.Sprintf("%s (%d)", label, selectedCount))
+		}
+		if m.filterFacet == entitiesFilterFacet(idx) {
+			tab = TabFocusStyle.Render(label)
+			if selectedCount > 0 {
+				tab = TabFocusStyle.Render(fmt.Sprintf("%s (%d)", label, selectedCount))
+			}
+		}
+		facetTabs[idx] = tab
+	}
+
+	options := m.filterOptionsForFacet(m.filterFacet)
+	selected := m.filterMapForFacet(m.filterFacet)
+	rows := make([][]string, 0, len(options))
+	activeRow := -1
+	for i, option := range options {
+		marker := "[ ]"
+		if selected[option] {
+			marker = "[X]"
+		}
+		rows = append(rows, []string{marker, option})
+		if i == m.filterCursor[m.filterFacet] {
+			activeRow = i
+		}
+	}
+	if len(rows) == 0 {
+		rows = append(rows, []string{"-", "No values in current list"})
+	}
+
+	boxWidth := components.BoxContentWidth(m.width)
+	if boxWidth < 48 {
+		boxWidth = 48
+	}
+	tableWidth := boxWidth - 2
+	if tableWidth < 40 {
+		tableWidth = 40
+	}
+	optionWidth := tableWidth - 6
+	if optionWidth < 20 {
+		optionWidth = 20
+	}
+	cols := []components.TableColumn{
+		{Header: "Sel", Width: 4, Align: lipgloss.Left},
+		{Header: "Value", Width: optionWidth, Align: lipgloss.Left},
+	}
+	table := components.TableGridWithActiveRow(cols, rows, tableWidth, activeRow)
+
+	summary := "No active filters"
+	if m.hasActiveEntityFilters() {
+		var parts []string
+		if len(m.filterTypes) > 0 {
+			parts = append(parts, fmt.Sprintf("type=%d", len(m.filterTypes)))
+		}
+		if len(m.filterStatus) > 0 {
+			parts = append(parts, fmt.Sprintf("status=%d", len(m.filterStatus)))
+		}
+		if len(m.filterScopes) > 0 {
+			parts = append(parts, fmt.Sprintf("scope=%d", len(m.filterScopes)))
+		}
+		summary = "Active: " + strings.Join(parts, ", ")
+	}
+
+	content := strings.Join([]string{
+		strings.Join(facetTabs, " "),
+		"",
+		MutedStyle.Render(summary),
+		"",
+		table,
+		"",
+		MutedStyle.Render("left/right facet · up/down option · space toggle · b toggle all · c clear · enter apply · esc clear"),
+	}, "\n")
+	return components.TitledBox("Filter Entities", content, m.width)
 }
 
 // --- Mode Line ---
@@ -1083,6 +1413,9 @@ func (m EntitiesModel) renderList() string {
 			countLine = fmt.Sprintf("%s · next: %s", countLine, strings.TrimSpace(m.searchSuggest))
 		}
 	}
+	if m.hasActiveEntityFilters() {
+		countLine = fmt.Sprintf("%s · filters active", countLine)
+	}
 	countLine = MutedStyle.Render(countLine)
 
 	table := components.TableGridWithActiveRow(cols, tableRows, tableWidth, activeRowRel)
@@ -1361,11 +1694,19 @@ func (m EntitiesModel) handleDetailKeys(msg tea.KeyMsg) (EntitiesModel, tea.Cmd)
 			return m, nil
 		case isSpace(msg):
 			if m.metaList != nil {
+				m.metaSelectMode = true
 				m.toggleMetaSelection(m.metaList.Selected())
+			}
+			if len(m.metaSelected) == 0 {
+				m.metaSelectMode = false
 			}
 			return m, nil
 		case isKey(msg, "b"):
+			m.metaSelectMode = true
 			m.toggleMetaSelectAll()
+			if len(m.metaSelected) == 0 {
+				m.metaSelectMode = false
+			}
 			return m, nil
 		case isEnter(msg):
 			if m.metaList != nil {
@@ -1375,7 +1716,7 @@ func (m EntitiesModel) handleDetailKeys(msg tea.KeyMsg) (EntitiesModel, tea.Cmd)
 		case isKey(msg, "c"):
 			return m, m.copySelectedMetadataRows()
 		case isBack(msg):
-			if len(m.metaSelected) > 0 {
+			if len(m.metaSelected) > 0 || m.metaSelectMode {
 				m.clearMetaSelection()
 				return m, nil
 			}
@@ -1459,6 +1800,7 @@ func (m EntitiesModel) renderDetail() string {
 			m.width,
 			m.metaList,
 			m.metaSelected,
+			m.metaSelectMode,
 		))
 		if m.metaInspect {
 			sections = append(sections, m.renderMetaInspect())
@@ -2617,6 +2959,9 @@ func (m *EntitiesModel) syncDetailMetadataRows() {
 	syncMetadataList(m.metaList, rows, metadataPanelPageSize(m.metaExpanded))
 	if !m.metaExpanded || len(rows) == 0 {
 		m.closeMetaInspect()
+		if !m.metaExpanded {
+			m.metaSelectMode = false
+		}
 	}
 	if m.metaInspect && (m.metaInspectI < 0 || m.metaInspectI >= len(rows)) {
 		m.closeMetaInspect()
@@ -2630,6 +2975,7 @@ func (m *EntitiesModel) syncDetailMetadataRows() {
 
 func (m *EntitiesModel) clearMetaSelection() {
 	m.metaSelected = map[int]bool{}
+	m.metaSelectMode = false
 }
 
 func (m *EntitiesModel) toggleMetaSelection(idx int) {
@@ -2641,9 +2987,13 @@ func (m *EntitiesModel) toggleMetaSelection(idx int) {
 	}
 	if m.metaSelected[idx] {
 		delete(m.metaSelected, idx)
+		if len(m.metaSelected) == 0 {
+			m.metaSelectMode = false
+		}
 		return
 	}
 	m.metaSelected[idx] = true
+	m.metaSelectMode = true
 }
 
 func (m *EntitiesModel) toggleMetaSelectAll() {
@@ -2659,6 +3009,7 @@ func (m *EntitiesModel) toggleMetaSelectAll() {
 		all[i] = true
 	}
 	m.metaSelected = all
+	m.metaSelectMode = true
 }
 
 func (m EntitiesModel) selectedMetaIndices() []int {

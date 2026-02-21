@@ -641,6 +641,7 @@ func renderMetadataSelectableBlockWithTitle(
 	width int,
 	list *components.List,
 	selected map[int]bool,
+	showSelectors bool,
 ) string {
 	if len(rows) == 0 {
 		return components.TitledBox(title, MetaValueStyle.Render("None"), width)
@@ -666,7 +667,7 @@ func renderMetadataSelectableBlockWithTitle(
 			selectedCount++
 		}
 	}
-	showSelectionColumn := selectedCount > 0
+	showSelectionColumn := showSelectors
 	columnBudget := contentWidth
 	if showSelectionColumn {
 		columnBudget -= 5
@@ -719,9 +720,14 @@ func renderMetadataSelectableBlockWithTitle(
 	if selectedCount > 0 {
 		metaLine += fmt.Sprintf(" · selected %d", selectedCount)
 	}
-	hintLine := "↑/↓ navigate · space select · b all · enter inspect · c copy selected"
-
-	content := rendered + "\n\n" + MutedStyle.Render(metaLine) + "\n" + MutedStyle.Render(hintLine)
+	content := rendered + "\n\n" + MutedStyle.Render(metaLine)
+	if showSelectionColumn {
+		hintLine := "↑/↓ navigate · space select · b all · enter inspect · c copy selected"
+		content += "\n" + MutedStyle.Render(hintLine)
+	} else {
+		hintLine := "enter inspect · m metadata select mode"
+		content += "\n" + MutedStyle.Render(hintLine)
+	}
 	return components.TitledBox(title, content, width)
 }
 

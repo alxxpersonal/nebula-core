@@ -22,7 +22,7 @@ func TestEntitiesDetailMetadataPanelHidesSelectionColumnUntilAnyRowSelected(t *t
 		Type:   "person",
 		Status: "active",
 		Metadata: api.JSONMap{
-			"note": "hello",
+			"note":  "hello",
 			"owner": "alxx",
 			"context_segments": []any{
 				map[string]any{"text": "first"},
@@ -42,6 +42,31 @@ func TestEntitiesDetailMetadataPanelHidesSelectionColumnUntilAnyRowSelected(t *t
 	assert.NotContains(t, clean, "[ ]")
 	assert.NotContains(t, clean, ">[")
 	assert.Contains(t, clean, "enter inspect")
+}
+
+func TestEntitiesDetailMetadataPanelHidesSelectorsWhenNotInSelectMode(t *testing.T) {
+	model := NewEntitiesModel(nil)
+	model.width = 100
+	model.view = entitiesViewDetail
+	model.metaExpanded = true
+	model.detail = &api.Entity{
+		ID:     "ent-1",
+		Name:   "Alpha",
+		Type:   "person",
+		Status: "active",
+		Metadata: api.JSONMap{
+			"note": "hello",
+		},
+	}
+	model.syncDetailMetadataRows()
+	model.metaSelected[0] = true
+	model.metaSelectMode = false
+
+	out := model.renderDetail()
+	clean := components.SanitizeText(out)
+
+	assert.NotContains(t, clean, "Sel")
+	assert.NotContains(t, clean, "[X]")
 }
 
 func TestEntitiesDetailMetadataCopyCurrentRow(t *testing.T) {

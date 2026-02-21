@@ -28,13 +28,24 @@ func TestFilterInputAcrossTabs(t *testing.T) {
 	t.Run("entities", func(t *testing.T) {
 		model := NewEntitiesModel(nil)
 		model.filtering = true
-		model.searchBuf = "alpha"
-		updated, cmd := model.handleFilterInput(tea.KeyMsg{Type: tea.KeyBackspace})
-		assert.Equal(t, "alph", updated.searchBuf)
-		require.NotNil(t, cmd)
+		model.allItems = []api.Entity{
+			{ID: "ent-1", Name: "Alpha", Type: "person", Status: "active"},
+			{ID: "ent-2", Name: "Beta", Type: "tool", Status: "inactive"},
+		}
+		model.refreshFilterSets()
+		model.applyEntityFilters()
+		assert.Len(t, model.items, 2)
+
+		updated, cmd := model.handleFilterInput(tea.KeyMsg{Type: tea.KeySpace})
+		require.Nil(t, cmd)
+		assert.True(t, updated.filtering)
+		assert.True(t, updated.hasActiveEntityFilters())
+		assert.Len(t, updated.items, 1)
 
 		updated, _ = updated.handleFilterInput(tea.KeyMsg{Type: tea.KeyEsc})
 		assert.False(t, updated.filtering)
+		assert.False(t, updated.hasActiveEntityFilters())
+		assert.Len(t, updated.items, 2)
 	})
 
 	t.Run("files", func(t *testing.T) {

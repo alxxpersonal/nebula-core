@@ -210,7 +210,7 @@ func TestRenderMetadataSelectableBlockHidesSelectionColumnWhenNothingIsSelected(
 	list := components.NewList(metadataPanelPageSize(false))
 	syncMetadataList(list, rows, metadataPanelPageSize(false))
 
-	out := renderMetadataSelectableBlockWithTitle("Metadata", rows, 80, list, map[int]bool{})
+	out := renderMetadataSelectableBlockWithTitle("Metadata", rows, 80, list, map[int]bool{}, false)
 	clean := components.SanitizeText(out)
 
 	assert.NotContains(t, clean, "Sel")
@@ -226,7 +226,7 @@ func TestRenderMetadataSelectableBlockShowsSelectionColumnWhenRowsSelected(t *te
 	list := components.NewList(metadataPanelPageSize(false))
 	syncMetadataList(list, rows, metadataPanelPageSize(false))
 
-	out := renderMetadataSelectableBlockWithTitle("Metadata", rows, 80, list, map[int]bool{0: true})
+	out := renderMetadataSelectableBlockWithTitle("Metadata", rows, 80, list, map[int]bool{0: true}, true)
 	clean := components.SanitizeText(out)
 
 	assert.Contains(t, clean, "Sel")
@@ -242,7 +242,7 @@ func TestRenderMetadataSelectableBlockHumanizesContextSegmentField(t *testing.T)
 	list := components.NewList(metadataPanelPageSize(false))
 	syncMetadataList(list, rows, metadataPanelPageSize(false))
 
-	out := renderMetadataSelectableBlockWithTitle("Metadata", rows, 80, list, map[int]bool{})
+	out := renderMetadataSelectableBlockWithTitle("Metadata", rows, 80, list, map[int]bool{}, false)
 	clean := components.SanitizeText(out)
 
 	assert.Contains(t, clean, "context")
