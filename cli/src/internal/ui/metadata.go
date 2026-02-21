@@ -717,7 +717,7 @@ func renderMetadataSelectableBlockWithTitle(
 			continue
 		}
 		row := rows[absIdx]
-		if showSelectionColumn && list.IsSelected(absIdx) {
+		if list.IsSelected(absIdx) {
 			activeVisible = len(gridRows)
 		}
 		group, field := metadataGroupAndField(row.field)
