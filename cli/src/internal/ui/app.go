@@ -623,19 +623,43 @@ func (a App) rowHighlightEnabled() bool {
 	case tabInbox:
 		return !a.inbox.filtering && !a.inbox.rejecting && !a.inbox.confirming && !a.inbox.rejectPreview && a.inbox.detail == nil
 	case tabEntities:
+		if (a.entities.addMeta.Active || a.entities.editMeta.Active) && !a.entities.modeFocus {
+			return true
+		}
+		if a.entities.view == entitiesViewDetail && a.entities.metaExpanded && len(a.entities.metaRows) > 0 && !a.entities.metaInspect {
+			return true
+		}
 		return !a.entities.modeFocus && !a.entities.filtering &&
 			(a.entities.view == entitiesViewList || a.entities.view == entitiesViewHistory || a.entities.view == entitiesViewRelationships)
 	case tabRelations:
+		if a.rels.editMeta.Active && !a.rels.modeFocus {
+			return true
+		}
 		return !a.rels.modeFocus && !a.rels.filtering && a.rels.view == relsViewList
 	case tabKnow:
+		if (a.know.metaEditor.Active || a.know.editMeta.Active) && !a.know.modeFocus {
+			return true
+		}
 		return !a.know.modeFocus && !a.know.filtering && a.know.view == contextViewList
 	case tabJobs:
+		if a.jobs.addMeta.Active || a.jobs.editMeta.Active {
+			return true
+		}
 		return !a.jobs.modeFocus && !a.jobs.filtering && a.jobs.view == jobsViewList && a.jobs.detail == nil && !a.jobs.changingSt
 	case tabLogs:
+		if a.logs.addMeta.Active || a.logs.editMeta.Active || a.logs.addValue.Active || a.logs.editValue.Active {
+			return true
+		}
 		return !a.logs.modeFocus && !a.logs.filtering && a.logs.view == logsViewList
 	case tabFiles:
+		if a.files.addMeta.Active || a.files.editMeta.Active {
+			return true
+		}
 		return !a.files.modeFocus && !a.files.filtering && a.files.view == filesViewList
 	case tabProtocols:
+		if a.protocols.addMeta.Active || a.protocols.editMeta.Active {
+			return true
+		}
 		return !a.protocols.modeFocus && !a.protocols.filtering && a.protocols.view == protocolsViewList
 	case tabHistory:
 		return !a.history.filtering && a.history.view == historyViewList

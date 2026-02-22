@@ -289,7 +289,7 @@ func (m MetadataEditor) renderTableMode(width int) string {
 		}
 		row := rows[absIdx]
 		group, field := metadataGroupAndField(row.path)
-		if showSelectionColumn && m.list.IsSelected(absIdx) {
+		if m.list.IsSelected(absIdx) {
 			activeRow = len(gridRows)
 		}
 		cells := make([]string, 0, 4)
