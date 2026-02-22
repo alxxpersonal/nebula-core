@@ -219,6 +219,42 @@ async def test_update_entity_with_null_tags_is_allowed(api, test_entity):
 
 
 @pytest.mark.asyncio
+async def test_update_entity_metadata_patch_merges_nested_keys(api):
+    """Entity update should deep-merge metadata patch values."""
+
+    create = await api.post(
+        "/api/entities",
+        json={
+            "name": "Metadata Merge API Entity",
+            "type": "person",
+            "scopes": ["public"],
+            "metadata": {
+                "profile": {"timezone": "Europe/Warsaw", "alias": "bro"},
+                "flags": {"visible": True},
+            },
+        },
+    )
+    assert create.status_code == 200
+    entity_id = create.json()["data"]["id"]
+
+    update = await api.patch(
+        f"/api/entities/{entity_id}",
+        json={
+            "metadata": {
+                "profile": {"timezone": "UTC"},
+                "flags": {"trusted": True},
+            }
+        },
+    )
+    assert update.status_code == 200
+    merged = update.json()["data"]["metadata"]
+    assert merged["profile"]["timezone"] == "UTC"
+    assert merged["profile"]["alias"] == "bro"
+    assert merged["flags"]["visible"] is True
+    assert merged["flags"]["trusted"] is True
+
+
+@pytest.mark.asyncio
 async def test_update_entity_untrusted_agent_returns_approval_required(
     db_pool, enums, untrusted_agent_row
 ):
