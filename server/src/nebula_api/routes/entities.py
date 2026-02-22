@@ -65,6 +65,12 @@ def _normalize_entity_metadata(entity: dict[str, Any]) -> dict[str, Any]:
             metadata = json.loads(metadata)
         except json.JSONDecodeError:
             metadata = {}
+        # Backward compatibility: legacy rows may be double-encoded JSON.
+        if isinstance(metadata, str):
+            try:
+                metadata = json.loads(metadata)
+            except json.JSONDecodeError:
+                metadata = {}
     if not isinstance(metadata, dict):
         metadata = {}
     entity["metadata"] = metadata
