@@ -100,14 +100,19 @@ def _is_admin(auth: dict, enums: Any) -> bool:
 def _list_scope_ids(auth: dict, enums: Any) -> list:
     """Return scopes used for list/search filtering.
 
-    For API user callers, default to public-only to avoid leaking
-    private context segments in list/search results.
+    Use caller scopes directly so list/search visibility matches
+    get-by-id visibility semantics.
     """
 
     scope_ids = auth.get("scopes", []) or []
-    if auth.get("caller_type") == "user":
-        public_id = enums.scopes.name_to_id.get("public")
-        return [public_id] if public_id else []
+    if scope_ids:
+        return scope_ids
+
+    public_id = enums.scopes.name_to_id.get("public")
+    if auth.get("caller_type") == "user" and public_id:
+        # Keep a safe fallback for legacy keys with missing scope bindings.
+        return [public_id]
+
     return scope_ids
 
 
