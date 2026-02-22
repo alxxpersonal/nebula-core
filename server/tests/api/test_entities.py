@@ -242,6 +242,31 @@ async def test_create_entity_normalizes_missing_metadata_response(api, monkeypat
 
 
 @pytest.mark.asyncio
+async def test_create_entity_normalizes_non_object_metadata_response(api, monkeypatch):
+    """Create route should coerce non-object metadata payloads to an empty object."""
+
+    async def _fake_create(*_args, **_kwargs):
+        """Return a create-entity payload with list metadata."""
+
+        return {
+            "id": "33333333-3333-3333-3333-333333333333",
+            "name": "ListMeta",
+            "metadata": ["bad-shape"],
+        }
+
+    monkeypatch.setattr(
+        "nebula_api.routes.entities.execute_create_entity",
+        _fake_create,
+    )
+    r = await api.post(
+        "/api/entities",
+        json={"name": "ListMeta", "type": "person", "scopes": ["public"]},
+    )
+    assert r.status_code == 200
+    assert r.json()["data"]["metadata"] == {}
+
+
+@pytest.mark.asyncio
 async def test_update_entity(api, test_entity):
     """Test update entity."""
 
@@ -305,6 +330,33 @@ async def test_update_entity_preserves_object_metadata_response(
     )
     assert r.status_code == 200
     assert r.json()["data"]["metadata"]["profile"]["timezone"] == "Europe/Warsaw"
+
+
+@pytest.mark.asyncio
+async def test_update_entity_normalizes_non_object_metadata_response(
+    api, test_entity, monkeypatch
+):
+    """Update route should coerce list metadata payloads to an empty object."""
+
+    async def _fake_update(*_args, **_kwargs):
+        """Return an update-entity payload with list metadata."""
+
+        return {
+            "id": str(test_entity["id"]),
+            "name": test_entity["name"],
+            "metadata": ["bad-shape"],
+        }
+
+    monkeypatch.setattr(
+        "nebula_api.routes.entities.execute_update_entity",
+        _fake_update,
+    )
+    r = await api.patch(
+        f"/api/entities/{test_entity['id']}",
+        json={"tags": ["updated"]},
+    )
+    assert r.status_code == 200
+    assert r.json()["data"]["metadata"] == {}
 
 
 @pytest.mark.asyncio
