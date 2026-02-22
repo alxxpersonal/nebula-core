@@ -250,6 +250,23 @@ func TestRenderMetadataSelectableBlockShowsSelectionColumnWhenRowsSelected(t *te
 	assert.NotContains(t, clean, ">[")
 }
 
+// TestRenderMetadataSelectableBlockShowsSelectionColumnWhenSelectModeEnabled handles test render metadata selectable block shows selection column when select mode enabled.
+func TestRenderMetadataSelectableBlockShowsSelectionColumnWhenSelectModeEnabled(t *testing.T) {
+	rows := []metadataDisplayRow{
+		{field: "note", value: "hello"},
+	}
+	list := components.NewList(metadataPanelPageSize(false))
+	syncMetadataList(list, rows, metadataPanelPageSize(false))
+
+	out := renderMetadataSelectableBlockWithTitle("Metadata", rows, 80, list, map[int]bool{}, true)
+	clean := components.SanitizeText(out)
+
+	assert.Contains(t, clean, "Sel")
+	assert.Contains(t, clean, "[ ]")
+	assert.NotContains(t, clean, "›[")
+	assert.NotContains(t, clean, ">[")
+}
+
 // TestRenderMetadataSelectableBlockHumanizesContextSegmentField handles test render metadata selectable block humanizes context segment field.
 func TestRenderMetadataSelectableBlockHumanizesContextSegmentField(t *testing.T) {
 	rows := []metadataDisplayRow{

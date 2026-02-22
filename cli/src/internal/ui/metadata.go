@@ -692,7 +692,7 @@ func renderMetadataSelectableBlockWithTitle(
 		}
 		selectedCount++
 	}
-	showSelectionColumn := showSelectors && selectedCount > 0
+	showSelectionColumn := showSelectors
 	columnBudget := contentWidth
 	if showSelectionColumn {
 		columnBudget -= 5
