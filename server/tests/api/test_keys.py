@@ -155,6 +155,30 @@ async def test_login_returns_service_unavailable_when_person_type_missing(
 
 
 @pytest.mark.asyncio
+async def test_login_returns_service_unavailable_when_active_status_missing(
+    api_no_auth, enums
+):
+    """Login returns 503 when required active status is unavailable."""
+
+    removed_id = enums.statuses.name_to_id.pop("active", None)
+    if removed_id is not None:
+        enums.statuses.id_to_name.pop(removed_id, None)
+
+    try:
+        r = await api_no_auth.post(
+            "/api/keys/login", json={"username": "missing-active-status-user"}
+        )
+        assert r.status_code == 503
+        err = r.json()["detail"]["error"]
+        assert err["code"] == "SERVICE_UNAVAILABLE"
+        assert "required baseline taxonomy is missing" in err["message"]
+    finally:
+        if removed_id is not None:
+            enums.statuses.name_to_id["active"] = removed_id
+            enums.statuses.id_to_name[removed_id] = "active"
+
+
+@pytest.mark.asyncio
 async def test_create_additional_key(api):
     """Test create additional key."""
 
