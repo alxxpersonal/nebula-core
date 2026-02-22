@@ -420,3 +420,172 @@ async def test_queued_create_context_preserves_metadata_after_approval(
         ]
     finally:
         app.dependency_overrides.pop(require_auth, None)
+
+
+@pytest.mark.asyncio
+async def test_queued_create_log_preserves_metadata_after_approval(
+    db_pool, enums
+):
+    """Queued log creates should preserve nested metadata after approval."""
+
+    public_scope = enums.scopes.name_to_id["public"]
+    untrusted_agent = await _make_agent(
+        db_pool,
+        enums,
+        "approval-queue-agent-log-metadata",
+        True,
+        scopes=["public"],
+    )
+    reviewer_id = await _make_reviewer(db_pool, enums)
+
+    payload = {
+        "log_type": "note",
+        "value": {"text": "queued metadata log"},
+        "status": "active",
+        "tags": ["metadata", "log"],
+        "metadata": {
+            "owner": "alxx",
+            "profile": {"timezone": "Europe/Warsaw"},
+            "context_segments": [
+                {"text": "public log context", "scopes": ["public"]},
+                {"text": "private log context", "scopes": ["private"]},
+            ],
+        },
+    }
+
+    app.state.pool = db_pool
+    app.state.enums = enums
+    transport = ASGITransport(app=app)
+    try:
+        app.dependency_overrides[require_auth] = await _agent_auth_override(
+            untrusted_agent,
+            [public_scope],
+        )
+        async with AsyncClient(
+            transport=transport, base_url="http://test", follow_redirects=True
+        ) as client:
+            queued = await client.post("/api/logs/", json=payload)
+        assert queued.status_code == 202, queued.text
+
+        approval = await db_pool.fetchrow(
+            """
+            SELECT id
+            FROM approval_requests
+            WHERE requested_by = $1::uuid
+              AND request_type = 'create_log'
+              AND status = 'pending'
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            untrusted_agent["id"],
+        )
+        assert approval is not None
+        approved = await approve_request(db_pool, enums, str(approval["id"]), reviewer_id)
+        created_id = str(approved["entity"]["id"])
+
+        row = await db_pool.fetchrow(
+            "SELECT metadata FROM logs WHERE id = $1::uuid",
+            created_id,
+        )
+        assert row is not None
+        persisted_metadata = row["metadata"]
+        if isinstance(persisted_metadata, str):
+            persisted_metadata = json.loads(persisted_metadata)
+        assert persisted_metadata == payload["metadata"]
+
+        app.dependency_overrides[require_auth] = await _agent_auth_override(
+            {**untrusted_agent, "requires_approval": False},
+            [public_scope],
+        )
+        async with AsyncClient(
+            transport=transport, base_url="http://test", follow_redirects=True
+        ) as client:
+            response = await client.get(f"/api/logs/{created_id}")
+
+        assert response.status_code == 200, response.text
+        assert response.json()["data"]["metadata"] == payload["metadata"]
+    finally:
+        app.dependency_overrides.pop(require_auth, None)
+
+
+@pytest.mark.asyncio
+async def test_queued_create_file_preserves_metadata_after_approval(
+    db_pool, enums
+):
+    """Queued file creates should preserve nested metadata after approval."""
+
+    public_scope = enums.scopes.name_to_id["public"]
+    untrusted_agent = await _make_agent(
+        db_pool,
+        enums,
+        "approval-queue-agent-file-metadata",
+        True,
+        scopes=["public"],
+    )
+    reviewer_id = await _make_reviewer(db_pool, enums)
+
+    payload = {
+        "filename": "queued-file.txt",
+        "uri": "path:queued-file.txt",
+        "status": "active",
+        "tags": ["metadata", "file"],
+        "metadata": {
+            "owner": "alxx",
+            "profile": {"timezone": "Europe/Warsaw"},
+            "notes": "queued file metadata",
+        },
+    }
+
+    app.state.pool = db_pool
+    app.state.enums = enums
+    transport = ASGITransport(app=app)
+    try:
+        app.dependency_overrides[require_auth] = await _agent_auth_override(
+            untrusted_agent,
+            [public_scope],
+        )
+        async with AsyncClient(
+            transport=transport, base_url="http://test", follow_redirects=True
+        ) as client:
+            queued = await client.post("/api/files/", json=payload)
+        assert queued.status_code == 202, queued.text
+
+        approval = await db_pool.fetchrow(
+            """
+            SELECT id
+            FROM approval_requests
+            WHERE requested_by = $1::uuid
+              AND request_type = 'create_file'
+              AND status = 'pending'
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            untrusted_agent["id"],
+        )
+        assert approval is not None
+        approved = await approve_request(db_pool, enums, str(approval["id"]), reviewer_id)
+        created_id = str(approved["entity"]["id"])
+
+        row = await db_pool.fetchrow(
+            "SELECT metadata FROM files WHERE id = $1::uuid",
+            created_id,
+        )
+        assert row is not None
+        persisted_metadata = row["metadata"]
+        if isinstance(persisted_metadata, str):
+            persisted_metadata = json.loads(persisted_metadata)
+        assert persisted_metadata == payload["metadata"]
+
+        app.dependency_overrides[require_auth] = await _agent_auth_override(
+            {**untrusted_agent, "requires_approval": False},
+            [public_scope],
+        )
+        async with AsyncClient(
+            transport=transport, base_url="http://test", follow_redirects=True
+        ) as client:
+            response = await client.get(f"/api/files/{created_id}")
+
+        assert response.status_code == 200, response.text
+        assert response.json()["data"]["metadata"] == payload["metadata"]
+    finally:
+        app.dependency_overrides.pop(require_auth, None)
