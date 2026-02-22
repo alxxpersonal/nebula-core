@@ -1,6 +1,10 @@
 """Entity route tests."""
 
+# Standard Library
+import json
+
 # Third-Party
+from asyncpg import CheckViolationError
 from httpx import ASGITransport, AsyncClient
 import pytest
 
@@ -65,7 +69,6 @@ async def test_get_entity(api, test_entity):
     assert data["name"] == "api-test-user"
 
 
-@pytest.mark.asyncio
 async def test_get_entity_not_found(api):
     """Test get entity not found."""
 
@@ -94,6 +97,26 @@ async def test_query_entities(api):
     assert r.status_code == 200
     data = r.json()["data"]
     assert len(data) >= 1
+
+
+@pytest.mark.asyncio
+async def test_entities_metadata_constraint_rejects_stringified_payload(db_pool, enums):
+    """Database should reject stringified metadata payload storage."""
+
+    with pytest.raises(CheckViolationError):
+        await db_pool.fetchrow(
+            """
+            INSERT INTO entities (name, type_id, status_id, privacy_scope_ids, tags, metadata)
+            VALUES ($1, $2::uuid, $3::uuid, $4::uuid[], $5, $6::jsonb)
+            RETURNING id
+            """,
+            "BadLegacyMeta",
+            enums.entity_types.name_to_id["person"],
+            enums.statuses.name_to_id["active"],
+            [enums.scopes.name_to_id["public"]],
+            [],
+            json.dumps(json.dumps({"profile": {"timezone": "UTC"}})),
+        )
 
 
 @pytest.mark.asyncio
