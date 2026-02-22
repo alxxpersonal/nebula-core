@@ -321,6 +321,34 @@ async def test_create_entity_still_blocks_duplicate_active_name_scope(api):
 
 
 @pytest.mark.asyncio
+async def test_create_entity_allows_same_name_with_different_scope_set(api):
+    """Same name/type should be allowed when scope set differs."""
+
+    first_resp = await api.post(
+        "/api/entities",
+        json={
+            "name": "Scope Variant Entity",
+            "type": "project",
+            "status": "active",
+            "scopes": ["public"],
+        },
+    )
+    assert first_resp.status_code == 200, first_resp.text
+
+    second_resp = await api.post(
+        "/api/entities",
+        json={
+            "name": "Scope Variant Entity",
+            "type": "project",
+            "status": "active",
+            "scopes": ["private"],
+        },
+    )
+    assert second_resp.status_code == 200, second_resp.text
+    assert second_resp.json()["data"]["id"] != first_resp.json()["data"]["id"]
+
+
+@pytest.mark.asyncio
 async def test_update_entity_executor_value_error_returns_400(
     api, test_entity, monkeypatch
 ):

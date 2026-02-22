@@ -79,6 +79,21 @@ func TestRunStartCmdUsesLiveState(t *testing.T) {
 	assert.Contains(t, out.String(), strconv.Itoa(os.Getpid()))
 }
 
+// TestRunStartCmdReportsHeldLockPID ensures start reports a running API when
+// lock ownership is held by a live process.
+func TestRunStartCmdReportsHeldLockPID(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	require.NoError(t, acquireAPILock())
+	require.NoError(t, updateAPILockPID(os.Getpid()))
+
+	var out bytes.Buffer
+	require.NoError(t, runStartCmd(&out))
+	text := strings.ToLower(out.String())
+	assert.Contains(t, text, "already running")
+	assert.Contains(t, out.String(), strconv.Itoa(os.Getpid()))
+}
+
 // TestAPIStateRoundTrip handles test apistate round trip.
 func TestAPIStateRoundTrip(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
