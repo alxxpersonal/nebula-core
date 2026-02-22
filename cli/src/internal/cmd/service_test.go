@@ -58,6 +58,27 @@ func TestRunLogsCmdWithoutLogFileShowsFriendlyMessage(t *testing.T) {
 	assert.Contains(t, out.String(), "No API logs yet")
 }
 
+// TestRunStartCmdUsesLiveState verifies start reports already-running when a live
+// runtime state PID exists.
+func TestRunStartCmdUsesLiveState(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	state := &apiRuntimeState{
+		PID:       os.Getpid(),
+		Port:      api.DefaultAPIPort,
+		ServerDir: "/tmp/nebula/server",
+		LogPath:   "/tmp/nebula/api.log",
+		StartedAt: time.Now().UTC(),
+	}
+	require.NoError(t, saveAPIState(state))
+
+	var out bytes.Buffer
+	require.NoError(t, runStartCmd(&out))
+	text := strings.ToLower(out.String())
+	assert.Contains(t, text, "already running")
+	assert.Contains(t, out.String(), strconv.Itoa(os.Getpid()))
+}
+
 // TestAPIStateRoundTrip handles test apistate round trip.
 func TestAPIStateRoundTrip(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
@@ -159,6 +180,15 @@ func TestRunStopCmdRefusesUnmanagedRunningProcess(t *testing.T) {
 
 	_, err := loadAPIState()
 	require.NoError(t, err)
+}
+
+// TestRunStopCmdNoState reports a clean not-running message when there is no
+// runtime state or lockfile.
+func TestRunStopCmdNoState(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	var out bytes.Buffer
+	require.NoError(t, runStopCmd(&out))
+	assert.Contains(t, strings.ToLower(out.String()), "api is not running")
 }
 
 // TestRunStopCmdCleansStaleLock verifies stale lockfiles are cleaned when no live

@@ -293,6 +293,34 @@ async def test_create_entity_allows_reuse_after_archive(api):
 
 
 @pytest.mark.asyncio
+async def test_create_entity_still_blocks_duplicate_active_name_scope(api):
+    """Active entities should still enforce same name/type/scope uniqueness."""
+
+    first_resp = await api.post(
+        "/api/entities",
+        json={
+            "name": "Duplicate Active Entity",
+            "type": "project",
+            "status": "active",
+            "scopes": ["public"],
+        },
+    )
+    assert first_resp.status_code == 200, first_resp.text
+
+    dup_resp = await api.post(
+        "/api/entities",
+        json={
+            "name": "Duplicate Active Entity",
+            "type": "project",
+            "status": "active",
+            "scopes": ["public"],
+        },
+    )
+    assert dup_resp.status_code == 400, dup_resp.text
+    assert dup_resp.json()["detail"]["error"]["code"] == "INVALID_INPUT"
+
+
+@pytest.mark.asyncio
 async def test_update_entity_executor_value_error_returns_400(
     api, test_entity, monkeypatch
 ):
