@@ -298,7 +298,11 @@ async def execute_update_context(
 
     metadata = None
     if payload.metadata is not None:
-        context_row = await pool.fetchrow(QUERIES["context/get"], payload.context_id, None)
+        context_row = await pool.fetchrow(
+            QUERIES["context/get"],
+            payload.context_id,
+            None,
+        )
         if not context_row:
             raise ValueError("Context not found")
         existing_metadata = _decode_json_object(context_row.get("metadata"))
