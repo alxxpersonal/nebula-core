@@ -121,6 +121,41 @@ def test_normalize_entity_metadata_preserves_non_metadata_fields():
     assert result["metadata"]["profile"]["timezone"] == "UTC"
 
 
+@pytest.mark.parametrize(
+    "raw_metadata",
+    (
+        [],
+        0,
+        False,
+    ),
+)
+def test_normalize_entity_metadata_coerces_non_object_values(raw_metadata):
+    """Metadata normalizer should coerce non-object runtime values to objects."""
+
+    entity = {
+        "id": "dddddddd-dddd-dddd-dddd-dddddddddddd",
+        "metadata": raw_metadata,
+    }
+
+    result = _normalize_entity_metadata(entity)
+
+    assert result["metadata"] == {}
+
+
+def test_normalize_entity_metadata_is_idempotent():
+    """Metadata normalizer should be stable across repeated normalization passes."""
+
+    entity = {
+        "id": "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
+        "metadata": '{"profile":{"timezone":"UTC"}}',
+    }
+
+    once = _normalize_entity_metadata(entity)
+    twice = _normalize_entity_metadata(once)
+
+    assert once == twice
+
+
 @pytest.mark.asyncio
 async def test_create_entity(api):
     """Test create entity."""
