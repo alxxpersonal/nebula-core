@@ -267,6 +267,31 @@ async def test_create_entity_normalizes_non_object_metadata_response(api, monkey
 
 
 @pytest.mark.asyncio
+async def test_create_entity_normalizes_json_string_non_object_metadata(api, monkeypatch):
+    """Create route should coerce parsed non-object JSON metadata to an empty object."""
+
+    async def _fake_create(*_args, **_kwargs):
+        """Return a create-entity payload with list metadata encoded as JSON string."""
+
+        return {
+            "id": "44444444-4444-4444-4444-444444444444",
+            "name": "JSONListMeta",
+            "metadata": '["bad-shape"]',
+        }
+
+    monkeypatch.setattr(
+        "nebula_api.routes.entities.execute_create_entity",
+        _fake_create,
+    )
+    r = await api.post(
+        "/api/entities",
+        json={"name": "JSONListMeta", "type": "person", "scopes": ["public"]},
+    )
+    assert r.status_code == 200
+    assert r.json()["data"]["metadata"] == {}
+
+
+@pytest.mark.asyncio
 async def test_update_entity(api, test_entity):
     """Test update entity."""
 
@@ -345,6 +370,33 @@ async def test_update_entity_normalizes_non_object_metadata_response(
             "id": str(test_entity["id"]),
             "name": test_entity["name"],
             "metadata": ["bad-shape"],
+        }
+
+    monkeypatch.setattr(
+        "nebula_api.routes.entities.execute_update_entity",
+        _fake_update,
+    )
+    r = await api.patch(
+        f"/api/entities/{test_entity['id']}",
+        json={"tags": ["updated"]},
+    )
+    assert r.status_code == 200
+    assert r.json()["data"]["metadata"] == {}
+
+
+@pytest.mark.asyncio
+async def test_update_entity_normalizes_json_string_non_object_metadata(
+    api, test_entity, monkeypatch
+):
+    """Update route should coerce parsed non-object JSON metadata to an empty object."""
+
+    async def _fake_update(*_args, **_kwargs):
+        """Return an update-entity payload with numeric JSON metadata."""
+
+        return {
+            "id": str(test_entity["id"]),
+            "name": test_entity["name"],
+            "metadata": "1",
         }
 
     monkeypatch.setattr(
