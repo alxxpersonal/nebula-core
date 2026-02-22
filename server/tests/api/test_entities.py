@@ -1340,6 +1340,51 @@ async def test_search_by_metadata(api):
 
 
 @pytest.mark.asyncio
+async def test_query_entities_respects_user_scopes_not_public_only(api):
+    """Entity query should include private-scoped rows when caller has private scope."""
+
+    create_resp = await api.post(
+        "/api/entities",
+        json={
+            "name": "PrivateVisibleEntity",
+            "type": "person",
+            "scopes": ["private"],
+            "metadata": {"marker": "private-visible"},
+        },
+    )
+    assert create_resp.status_code == 200
+
+    query_resp = await api.get("/api/entities")
+    assert query_resp.status_code == 200
+    names = [row["name"] for row in query_resp.json()["data"]]
+    assert "PrivateVisibleEntity" in names
+
+
+@pytest.mark.asyncio
+async def test_search_by_metadata_respects_user_scopes_not_public_only(api):
+    """Metadata search should include private rows for users with private scope."""
+
+    create_resp = await api.post(
+        "/api/entities",
+        json={
+            "name": "PrivateSearchTarget",
+            "type": "person",
+            "scopes": ["private"],
+            "metadata": {"search_marker": "private-search-visible"},
+        },
+    )
+    assert create_resp.status_code == 200
+
+    search_resp = await api.post(
+        "/api/entities/search",
+        json={"metadata_query": {"search_marker": "private-search-visible"}},
+    )
+    assert search_resp.status_code == 200
+    names = [row["name"] for row in search_resp.json()["data"]]
+    assert "PrivateSearchTarget" in names
+
+
+@pytest.mark.asyncio
 async def test_query_with_pagination(api):
     """Test query with pagination."""
 
