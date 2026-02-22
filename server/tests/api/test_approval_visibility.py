@@ -322,3 +322,101 @@ async def test_queued_create_entity_preserves_metadata_after_approval(
         ]
     finally:
         app.dependency_overrides.pop(require_auth, None)
+
+
+@pytest.mark.asyncio
+async def test_queued_create_context_preserves_metadata_after_approval(
+    db_pool, enums
+):
+    """Queued context creates should keep metadata and filter context segments by scope."""
+
+    public_scope = enums.scopes.name_to_id["public"]
+    private_scope = enums.scopes.name_to_id["private"]
+    untrusted_agent = await _make_agent(
+        db_pool,
+        enums,
+        "approval-queue-agent-context-metadata",
+        True,
+        scopes=["public", "private"],
+    )
+    reviewer_id = await _make_reviewer(db_pool, enums)
+
+    payload = {
+        "title": "Queue Metadata Preserve Context",
+        "source_type": "note",
+        "status": "active",
+        "scopes": ["public", "private"],
+        "tags": ["metadata", "context"],
+        "metadata": {
+            "owner": "alxx",
+            "profile": {"timezone": "Europe/Warsaw"},
+            "context_segments": [
+                {"text": "public context", "scopes": ["public"]},
+                {"text": "private context", "scopes": ["private"]},
+            ],
+        },
+    }
+
+    app.state.pool = db_pool
+    app.state.enums = enums
+    transport = ASGITransport(app=app)
+    try:
+        app.dependency_overrides[require_auth] = await _agent_auth_override(
+            untrusted_agent,
+            [public_scope, private_scope],
+        )
+        async with AsyncClient(
+            transport=transport, base_url="http://test", follow_redirects=True
+        ) as client:
+            queued = await client.post("/api/context", json=payload)
+        assert queued.status_code == 202, queued.text
+
+        approval = await db_pool.fetchrow(
+            """
+            SELECT id
+            FROM approval_requests
+            WHERE requested_by = $1::uuid
+              AND request_type = 'create_context'
+              AND status = 'pending'
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            untrusted_agent["id"],
+        )
+        assert approval is not None
+        approved = await approve_request(db_pool, enums, str(approval["id"]), reviewer_id)
+        created_id = str(approved["entity"]["id"])
+
+        row = await db_pool.fetchrow(
+            "SELECT metadata FROM context_items WHERE id = $1::uuid",
+            created_id,
+        )
+        assert row is not None
+        persisted_metadata = row["metadata"]
+        if isinstance(persisted_metadata, str):
+            persisted_metadata = json.loads(persisted_metadata)
+        assert persisted_metadata["owner"] == "alxx"
+        assert persisted_metadata["profile"]["timezone"] == "Europe/Warsaw"
+        assert persisted_metadata["context_segments"] == [
+            {"text": "public context", "scopes": ["public"]},
+            {"text": "private context", "scopes": ["private"]},
+        ]
+
+        app.dependency_overrides[require_auth] = await _agent_auth_override(
+            {**untrusted_agent, "requires_approval": False},
+            [public_scope],
+        )
+        async with AsyncClient(
+            transport=transport, base_url="http://test", follow_redirects=True
+        ) as client:
+            response = await client.get(f"/api/context/{created_id}")
+
+        assert response.status_code == 200, response.text
+        metadata = response.json()["data"]["metadata"]
+        assert metadata["owner"] == "alxx"
+        assert metadata["profile"]["timezone"] == "Europe/Warsaw"
+        assert metadata["context_segments"] == [
+            {"text": "public context", "scopes": ["public"]}
+        ]
+    finally:
+        app.dependency_overrides.pop(require_auth, None)
