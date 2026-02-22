@@ -133,15 +133,21 @@ async def test_logs_create_get_query_and_update_roundtrip(api):
     )
     assert created.status_code == 200
     log_row = created.json()["data"]
-    assert log_row["value"] in ({}, "{}")
-    assert log_row["metadata"] in ({}, "{}")
+    assert isinstance(log_row["value"], dict)
+    assert log_row["value"] == {}
+    assert isinstance(log_row["metadata"], dict)
+    assert log_row["metadata"] == {}
 
     fetched = await api.get(f"/api/logs/{log_row['id']}")
     assert fetched.status_code == 200
+    assert isinstance(fetched.json()["data"]["value"], dict)
+    assert isinstance(fetched.json()["data"]["metadata"], dict)
 
     queried = await api.get("/api/logs", params={"log_type": "event"})
     assert queried.status_code == 200
     assert queried.json()["data"]
+    assert isinstance(queried.json()["data"][0]["value"], dict)
+    assert isinstance(queried.json()["data"][0]["metadata"], dict)
 
     updated = await api.patch(
         f"/api/logs/{log_row['id']}",

@@ -140,10 +140,14 @@ async def test_files_create_and_get_roundtrip(api):
     assert created.status_code == 200
     data = created.json()["data"]
     assert data["filename"] == "doc.md"
+    assert isinstance(data["metadata"], dict)
+    assert data["metadata"] == {"owner": "alxx"}
 
     fetched = await api.get(f"/api/files/{data['id']}")
     assert fetched.status_code == 200
     assert fetched.json()["data"]["id"] == data["id"]
+    assert isinstance(fetched.json()["data"]["metadata"], dict)
+    assert fetched.json()["data"]["metadata"] == {"owner": "alxx"}
 
 
 @pytest.mark.asyncio
