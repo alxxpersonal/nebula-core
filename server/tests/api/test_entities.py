@@ -170,6 +170,31 @@ async def test_create_entity_executor_value_error_returns_400(api, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_create_entity_normalizes_string_metadata_response(api, monkeypatch):
+    """Create route should normalize string metadata payloads in response."""
+
+    async def _fake_create(*_args, **_kwargs):
+        """Return a create-entity payload with string metadata."""
+
+        return {
+            "id": "11111111-1111-1111-1111-111111111111",
+            "name": "MetaString",
+            "metadata": '{"profile":{"timezone":"UTC"}}',
+        }
+
+    monkeypatch.setattr(
+        "nebula_api.routes.entities.execute_create_entity",
+        _fake_create,
+    )
+    r = await api.post(
+        "/api/entities",
+        json={"name": "MetaString", "type": "person", "scopes": ["public"]},
+    )
+    assert r.status_code == 200
+    assert r.json()["data"]["metadata"]["profile"]["timezone"] == "UTC"
+
+
+@pytest.mark.asyncio
 async def test_update_entity(api, test_entity):
     """Test update entity."""
 
@@ -181,6 +206,31 @@ async def test_update_entity(api, test_entity):
         },
     )
     assert r.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_update_entity_normalizes_string_metadata_response(api, test_entity, monkeypatch):
+    """Update route should normalize malformed string metadata payloads."""
+
+    async def _fake_update(*_args, **_kwargs):
+        """Return an update-entity payload with malformed string metadata."""
+
+        return {
+            "id": str(test_entity["id"]),
+            "name": test_entity["name"],
+            "metadata": "not-json",
+        }
+
+    monkeypatch.setattr(
+        "nebula_api.routes.entities.execute_update_entity",
+        _fake_update,
+    )
+    r = await api.patch(
+        f"/api/entities/{test_entity['id']}",
+        json={"tags": ["updated"]},
+    )
+    assert r.status_code == 200
+    assert r.json()["data"]["metadata"] == {}
 
 
 @pytest.mark.asyncio
