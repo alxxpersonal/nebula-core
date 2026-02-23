@@ -13,10 +13,16 @@ MCP-first by design, CLI today, **web UI & shared cloud** next.
 ## Quickstart
 
 ```bash
-curl -fsSL https://nebula.gravitrone.com/install.sh | bash
-nebula start   # starts the API & MCP server
-nebula         # open the CLI
+git clone https://github.com/alxxpersonal/nebula-core.git
+cd nebula-core
+docker compose up -d
+cd cli/src
+go build -o build/nebula ./cmd/nebula
+./build/nebula start   # starts the API & MCP server
+./build/nebula         # open the CLI
 ```
+
+> A one-line installation script is currently in development and will be available in the next release.
 
 ## Vision
 
@@ -48,11 +54,6 @@ flowchart LR
 ```
 
 > Simple rule - if scope says no, data stays hidden. if trust says no, writes need approval.
-
-## Resources
-
-- Changelog lives in [changelog/](changelog/) or here → [nebula.gravitrone.com/changelog](https://nebula.gravitrone.com/changelog)
-- Docs live in [docs/](docs/) or here → [nebula.gravitrone.com/docs](https://nebula.gravitrone.com/docs)
 
 ## Contributing
 
