@@ -10,6 +10,10 @@ MCP-first by design, CLI today, **web UI & shared cloud** next.
 
 > Nebula is perfect whether you’re building with **multiple unrelated agents** and need **real collaboration** (not copy-pasted prompts and messy markdown files), or if you just want agents to **manage your notes** and **store context** any approved agent can use.
 
+## Demo
+
+- [Watch Nebula Demo](https://youtu.be/cR5bnvC3Rd8?si=KlFn6hXRUlDIOzsP)
+
 ## Quickstart
 
 ```bash
