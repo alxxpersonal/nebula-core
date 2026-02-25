@@ -19,5 +19,5 @@ print_box() {
   printf '╰%s╯\n' "${rule}"
 }
 
-print_box "install paused" "installer bootstrap is parked for now.\nmanual setup is still available via repo docs.\ncheck artifacts/Refactor-TODO.md for the next rollout steps."
+print_box "install paused" "installer bootstrap is parked for now.\nmanual setup is still available in README.md.\nrun the quickstart steps from the repository root."
 exit 1
