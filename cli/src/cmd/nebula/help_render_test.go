@@ -2,8 +2,11 @@ package main
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 
+	"github.com/charmbracelet/lipgloss"
+	"github.com/gravitrone/nebula-core/cli/internal/ui/components"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -38,4 +41,19 @@ func TestSubcommandHelpUsesNebulaBoxLayout(t *testing.T) {
 	assert.Contains(t, output, "nebula keys")
 	assert.Contains(t, output, "/list")
 	assert.NotContains(t, output, "Usage:\n  nebula keys")
+}
+
+// TestHelpRenderHandlesUnknownSubcommandAndNarrowWidth verifies fallback help output
+// still renders cleanly when the terminal is very narrow.
+func TestHelpRenderHandlesUnknownSubcommandAndNarrowWidth(t *testing.T) {
+	t.Setenv("COLUMNS", "20")
+
+	output := runHelpOutput(t, "help", "does-not-exist")
+	clean := components.SanitizeText(output)
+	for _, line := range strings.Split(clean, "\n") {
+		assert.LessOrEqual(t, lipgloss.Width(line), 20)
+	}
+
+	assert.Contains(t, clean, "[ Help ]")
+	assert.Contains(t, clean, "command")
 }

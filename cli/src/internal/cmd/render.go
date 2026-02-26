@@ -26,7 +26,9 @@ func commandWidth(out io.Writer) int {
 func centerBlockLines(block string, width int) string {
 	lines := strings.Split(block, "\n")
 	for i, line := range lines {
-		lines[i] = components.CenterLine(line, width)
+		clean := components.SanitizeText(line)
+		clean = components.ClampTextWidthEllipsis(clean, width)
+		lines[i] = components.CenterLine(clean, width)
 	}
 	return strings.Join(lines, "\n")
 }
