@@ -27,6 +27,11 @@ const (
 	apiLockFilename  = "api.lock"
 )
 
+var waitForAPIHealthProbe = func() (string, error) {
+	client := api.NewDefaultClient("", 900*time.Millisecond)
+	return client.Health()
+}
+
 type apiRuntimeState struct {
 	PID       int       `json:"pid"`
 	Port      int       `json:"port"`
@@ -462,10 +467,9 @@ func waitForAPIHealth(timeout time.Duration) bool {
 	if timeout <= 0 {
 		timeout = 6 * time.Second
 	}
-	client := api.NewDefaultClient("", 900*time.Millisecond)
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		status, err := client.Health()
+		status, err := waitForAPIHealthProbe()
 		if err == nil && strings.TrimSpace(status) != "" {
 			return true
 		}
