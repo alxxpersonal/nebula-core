@@ -1795,6 +1795,7 @@ func classifyStartupAuth(errText string, cfg *config.Config) string {
 	case strings.Contains(lower, "http 500"), strings.Contains(lower, "internal server error"):
 		return "failed"
 	case strings.Contains(lower, "invalid api key"),
+		strings.Contains(lower, "invalid_api_key"),
 		strings.Contains(lower, "missing or invalid authorization"),
 		strings.Contains(lower, "auth_required"),
 		strings.Contains(lower, "unauthorized"),

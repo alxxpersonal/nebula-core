@@ -174,6 +174,8 @@ func TestStartupParsingHelpers(t *testing.T) {
 	assert.Equal(t, "missing", classifyStartupAuth("", &config.Config{APIKey: ""}))
 	assert.Equal(t, "ok", classifyStartupAuth("", &config.Config{APIKey: "key"}))
 	assert.Equal(t, "invalid", classifyStartupAuth("HTTP 401: Unauthorized", &config.Config{APIKey: "key"}))
+	assert.Equal(t, "invalid", classifyStartupAuth("INVALID_API_KEY: bad token", &config.Config{APIKey: "key"}))
+	assert.Equal(t, "invalid", classifyStartupAuth("AUTH_REQUIRED: missing auth", &config.Config{APIKey: "key"}))
 	assert.Equal(t, "failed", classifyStartupAuth("HTTP 500: Internal Server Error", &config.Config{APIKey: "key"}))
 	assert.Equal(
 		t,
@@ -447,4 +449,21 @@ func TestStartupCheckedMsgMultiAPIConflictShowsActionableToast(t *testing.T) {
 	assert.Equal(t, "error", updated.toast.level)
 	assert.Contains(t, strings.ToLower(updated.toast.text), "multiple api instances detected")
 	assert.Contains(t, updated.toast.text, "nebula start")
+}
+
+// TestStartupCheckedMsgAuthCodeErrorEnablesRecoveryHints handles coded auth errors from API envelopes.
+func TestStartupCheckedMsgAuthCodeErrorEnablesRecoveryHints(t *testing.T) {
+	app := NewApp(nil, &config.Config{APIKey: "bad-key"})
+	app.startupChecking = true
+
+	model, cmd := app.Update(startupCheckedMsg{authErr: "INVALID_API_KEY: bad token"})
+	updated := model.(App)
+
+	assert.False(t, updated.startupChecking)
+	assert.Equal(t, "invalid", updated.startup.Auth)
+	assert.True(t, updated.showRecoveryHints)
+	assert.Equal(t, "INVALID_API_KEY", updated.lastErrCode)
+	require.NotNil(t, cmd)
+	require.NotNil(t, updated.toast)
+	assert.Equal(t, "warning", updated.toast.level)
 }
