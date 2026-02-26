@@ -188,6 +188,23 @@ func runStartCmd(out io.Writer) error {
 	startSucceeded = true
 
 	ready := waitForAPIHealth(startHealthTimeout)
+	if !ready {
+		logBytes, _ := os.ReadFile(logPath)
+		logText := string(logBytes)
+		if isPortConflictLog(logText) {
+			_ = cleanupAPIState()
+			_ = os.Remove(apiLockPath())
+			return fmt.Errorf(
+				"multiple api instances detected: stop duplicate API processes and restart with `nebula start`",
+			)
+		}
+		if !processAlive(pid) {
+			_ = cleanupAPIState()
+			_ = os.Remove(apiLockPath())
+			return fmt.Errorf("api failed to start; check log at %s", logPath)
+		}
+	}
+
 	status := "starting"
 	if ready {
 		status = "running"
@@ -478,6 +495,15 @@ func waitForAPIHealth(timeout time.Duration) bool {
 		time.Sleep(250 * time.Millisecond)
 	}
 	return false
+}
+
+// isPortConflictLog handles is port conflict log.
+func isPortConflictLog(logText string) bool {
+	lower := strings.ToLower(logText)
+	return strings.Contains(lower, "address already in use") ||
+		strings.Contains(lower, "errno 98") ||
+		strings.Contains(lower, "errno 48") ||
+		strings.Contains(lower, "eaddrinuse")
 }
 
 // resolveServerDir handles resolve server dir.

@@ -168,6 +168,28 @@ func TestRunStartCmdReportsStartingWhenHealthNotReady(t *testing.T) {
 	require.NoError(t, runStopCmd(&stopOut))
 }
 
+// TestRunStartCmdDetectsMultiAPIConflictMessage handles address-in-use startup failures with explicit recovery guidance.
+func TestRunStartCmdDetectsMultiAPIConflictMessage(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	serverDir := createFakeServerDirWithUvicornScript(
+		t,
+		"#!/bin/sh\necho 'ERROR: [Errno 98] Address already in use' >&2\nexit 1\n",
+	)
+	t.Setenv("NEBULA_SERVER_DIR", serverDir)
+	setWaitForAPIProbe(t, func() (string, error) { return "", assert.AnError })
+	setStartHealthTimeout(t, 300*time.Millisecond)
+
+	var out bytes.Buffer
+	err := runStartCmd(&out)
+	require.Error(t, err)
+	assert.Contains(t, strings.ToLower(err.Error()), "multiple api instances detected")
+
+	_, stateErr := loadAPIState()
+	assert.True(t, os.IsNotExist(stateErr))
+	_, lockErr := loadAPILock()
+	assert.True(t, os.IsNotExist(lockErr))
+}
+
 // TestRunStopCmdReturnsErrorOnCorruptLock handles invalid lock-file parse failures.
 func TestRunStopCmdReturnsErrorOnCorruptLock(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
@@ -191,6 +213,23 @@ func createFakeServerDirWithUvicorn(t *testing.T) string {
 	)
 	require.NoError(t, os.MkdirAll(filepath.Join(serverDir, ".venv", "bin"), 0o755))
 	uvicornScript := "#!/bin/sh\nsleep 30\n"
+	require.NoError(
+		t,
+		os.WriteFile(filepath.Join(serverDir, ".venv", "bin", "uvicorn"), []byte(uvicornScript), 0o755),
+	)
+	return serverDir
+}
+
+// createFakeServerDirWithUvicornScript handles constructing a temporary server dir with a custom uvicorn shim script.
+func createFakeServerDirWithUvicornScript(t *testing.T, uvicornScript string) string {
+	t.Helper()
+	serverDir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(serverDir, "src", "nebula_api"), 0o755))
+	require.NoError(
+		t,
+		os.WriteFile(filepath.Join(serverDir, "src", "nebula_api", "app.py"), []byte("app = None\n"), 0o644),
+	)
+	require.NoError(t, os.MkdirAll(filepath.Join(serverDir, ".venv", "bin"), 0o755))
 	require.NoError(
 		t,
 		os.WriteFile(filepath.Join(serverDir, ".venv", "bin", "uvicorn"), []byte(uvicornScript), 0o755),

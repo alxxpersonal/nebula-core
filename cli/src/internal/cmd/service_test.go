@@ -315,3 +315,12 @@ func TestRunStopCmdCleansLockWithoutPID(t *testing.T) {
 	_, statErr := os.Stat(apiLockPath())
 	assert.ErrorIs(t, statErr, os.ErrNotExist)
 }
+
+// TestIsPortConflictLogMatchesKnownPatterns handles explicit port-conflict log detection.
+func TestIsPortConflictLogMatchesKnownPatterns(t *testing.T) {
+	assert.True(t, isPortConflictLog("ERROR: [Errno 98] Address already in use"))
+	assert.True(t, isPortConflictLog("bind failed with EADDRINUSE"))
+	assert.True(t, isPortConflictLog("uvicorn error errno 48"))
+	assert.False(t, isPortConflictLog("runtime error: startup failed"))
+	assert.False(t, isPortConflictLog(""))
+}
