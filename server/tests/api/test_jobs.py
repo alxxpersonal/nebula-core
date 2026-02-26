@@ -69,6 +69,27 @@ async def test_create_job_accepts_iso_due_at(api):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "due_at",
+    [
+        "2026-02-18T18:00:00Z",
+        "2026-02-18T18:00:00+00:00",
+        "2026-02-18T19:30:00+01:30",
+        "2026-02-18",
+    ],
+)
+async def test_create_job_due_at_timezone_matrix(api, due_at):
+    """Create job should accept ISO due_at values across timezone formats."""
+
+    r = await api.post(
+        "/api/jobs",
+        json={"title": f"Timed Job {due_at}", "due_at": due_at},
+    )
+    assert r.status_code == 200
+    assert r.json()["data"]["due_at"] is not None
+
+
+@pytest.mark.asyncio
 async def test_get_job(api):
     """Test get job."""
 
@@ -285,6 +306,51 @@ async def test_update_job_due_at_null_clears_existing_value(api):
     patched = await api.patch(f"/api/jobs/{job_id}", json={"due_at": None})
     assert patched.status_code == 200
     assert patched.json()["data"]["due_at"] is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "due_at",
+    [
+        "2026-02-18T18:00:00Z",
+        "2026-02-18T18:00:00+00:00",
+        "2026-02-18T21:15:00+03:15",
+        "2026-02-18",
+    ],
+)
+async def test_update_job_due_at_timezone_matrix(api, due_at):
+    """Job patch should accept due_at values across timezone formats."""
+
+    created = await api.post("/api/jobs", json={"title": "Due TZ Matrix"})
+    assert created.status_code == 200
+    job_id = created.json()["data"]["id"]
+
+    patched = await api.patch(f"/api/jobs/{job_id}", json={"due_at": due_at})
+    assert patched.status_code == 200
+    assert patched.json()["data"]["due_at"] is not None
+
+
+@pytest.mark.asyncio
+async def test_update_job_due_at_clear_then_set_roundtrip(api):
+    """Job patch should allow clear then set transitions for due_at."""
+
+    created = await api.post(
+        "/api/jobs",
+        json={"title": "Due Roundtrip", "due_at": "2026-02-18T18:00:00Z"},
+    )
+    assert created.status_code == 200
+    job_id = created.json()["data"]["id"]
+
+    cleared = await api.patch(f"/api/jobs/{job_id}", json={"due_at": None})
+    assert cleared.status_code == 200
+    assert cleared.json()["data"]["due_at"] is None
+
+    reset = await api.patch(
+        f"/api/jobs/{job_id}",
+        json={"due_at": "2026-02-19T09:00:00+02:00"},
+    )
+    assert reset.status_code == 200
+    assert reset.json()["data"]["due_at"] is not None
 
 
 @pytest.mark.asyncio

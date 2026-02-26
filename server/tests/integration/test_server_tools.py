@@ -589,6 +589,38 @@ async def test_update_job_due_at_null_clears_existing_value(
     assert updated["due_at"] is None
 
 
+@pytest.mark.parametrize(
+    "due_at",
+    [
+        "2026-02-18T18:00:00Z",
+        "2026-02-18T18:00:00+00:00",
+        "2026-02-18T22:45:00+04:45",
+        "2026-02-18",
+    ],
+)
+async def test_update_job_due_at_timezone_matrix(
+    mock_mcp_context, test_agent, due_at
+):
+    """MCP update_job should accept due_at values across timezone formats."""
+
+    job = await create_job(
+        CreateJobInput(
+            title="Due TZ MCP",
+            priority="medium",
+        ),
+        mock_mcp_context,
+    )
+
+    updated = await update_job(
+        UpdateJobInput(
+            job_id=job["id"],
+            due_at=due_at,
+        ),
+        mock_mcp_context,
+    )
+    assert updated["due_at"] is not None
+
+
 async def test_create_subtask(mock_mcp_context, test_agent):
     """Creating a subtask under a parent job should succeed."""
 
