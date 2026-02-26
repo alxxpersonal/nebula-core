@@ -10,8 +10,13 @@ from uuid import uuid4
 import pytest
 
 from nebula_mcp.context import (
+    _env_truthy,
+    _get_or_create_local_insecure_agent,
+    _local_insecure_agent_name,
     authenticate_agent_optional,
+    authenticate_agent,
     authenticate_agent_with_key,
+    enrollment_required_error,
     maybe_require_approval,
     require_agent,
     require_context,
@@ -246,6 +251,169 @@ class TestAuthenticateAgentWithKey:
 
         with pytest.raises(ValueError, match="too short"):
             await authenticate_agent_with_key(mock_pool, "short")
+
+    async def test_rejects_unknown_prefix(self, mock_pool):
+        """Unknown key prefix should return invalid or revoked."""
+
+        mock_pool.fetchrow.return_value = None
+        with pytest.raises(ValueError, match="invalid or revoked"):
+            await authenticate_agent_with_key(mock_pool, "nbl_abcdef123456")
+
+    @patch("argon2.PasswordHasher.verify", side_effect=Exception("boom"))
+    async def test_hash_verification_error_bubbles(self, _verify, mock_pool):
+        """Unexpected hasher errors should bubble for visibility."""
+
+        mock_pool.fetchrow.return_value = {
+            "key_hash": "hash",
+            "agent_id": uuid4(),
+        }
+        with pytest.raises(Exception, match="boom"):
+            await authenticate_agent_with_key(mock_pool, "nbl_abcdef123456")
+
+    @patch("argon2.PasswordHasher.verify")
+    async def test_rejects_non_agent_key(self, _verify, mock_pool):
+        """Keys bound to users only should not authenticate MCP agents."""
+
+        mock_pool.fetchrow.return_value = {
+            "key_hash": "hash",
+            "agent_id": None,
+        }
+        with pytest.raises(ValueError, match="not an agent key"):
+            await authenticate_agent_with_key(mock_pool, "nbl_abcdef123456")
+
+    @patch("argon2.PasswordHasher.verify")
+    async def test_rejects_missing_agent_after_key_match(self, _verify, mock_pool):
+        """Revoked/inactive agents should fail after key hash verification."""
+
+        mock_pool.fetchrow.side_effect = [
+            {"key_hash": "hash", "agent_id": str(uuid4())},
+            None,
+        ]
+        with pytest.raises(ValueError, match="Agent not found or inactive"):
+            await authenticate_agent_with_key(mock_pool, "nbl_abcdef123456")
+
+    @patch("argon2.PasswordHasher.verify")
+    async def test_success_returns_agent_dict(self, _verify, mock_pool):
+        """Valid key and active agent should return agent dict."""
+
+        agent_id = str(uuid4())
+        mock_pool.fetchrow.side_effect = [
+            {"key_hash": "hash", "agent_id": agent_id},
+            {"id": agent_id, "name": "agent-1", "requires_approval": False},
+        ]
+        agent = await authenticate_agent_with_key(mock_pool, "nbl_abcdef123456")
+        assert agent["name"] == "agent-1"
+
+
+class TestAuthenticateAgent:
+    """Tests for environment-based agent authentication wrapper."""
+
+    @patch.dict("os.environ", {}, clear=True)
+    async def test_missing_env_key_raises(self, mock_pool):
+        """Missing NEBULA_API_KEY should raise helpful setup error."""
+
+        with pytest.raises(ValueError, match="NEBULA_API_KEY"):
+            await authenticate_agent(mock_pool)
+
+    @patch.dict("os.environ", {"NEBULA_API_KEY": "nbl_env_key"}, clear=True)
+    @patch("nebula_mcp.context.authenticate_agent_with_key")
+    async def test_passes_env_key_to_authenticator(self, mock_auth, mock_pool):
+        """Wrapper should delegate to authenticate_agent_with_key."""
+
+        mock_auth.return_value = {"id": uuid4(), "name": "agent-env"}
+        agent = await authenticate_agent(mock_pool)
+        assert agent["name"] == "agent-env"
+        mock_auth.assert_awaited_once_with(
+            mock_pool, "nbl_env_key", key_name="NEBULA_API_KEY"
+        )
+
+
+class TestEnrollmentErrorPayload:
+    """Tests for bootstrap enrollment required error helper."""
+
+    def test_enrollment_required_error_contains_structured_payload(self):
+        """Error payload should include code, message, and next steps."""
+
+        err = enrollment_required_error()
+        payload = json.loads(str(err))
+        assert payload["error"]["code"] == "ENROLLMENT_REQUIRED"
+        assert payload["error"]["message"] == "Agent not enrolled"
+        assert payload["error"]["next_steps"] == [
+            "agent_enroll_start",
+            "agent_enroll_wait",
+            "agent_enroll_redeem",
+            "agent_auth_attach",
+        ]
+
+
+class TestLocalInsecureHelpers:
+    """Tests for local insecure mode utility helpers."""
+
+    @patch.dict("os.environ", {"NEBULA_MCP_LOCAL_INSECURE": "TRUE"}, clear=True)
+    def test_env_truthy_true_variants(self):
+        """Truthy environment values should be recognized."""
+
+        assert _env_truthy("NEBULA_MCP_LOCAL_INSECURE") is True
+
+    @patch.dict("os.environ", {"NEBULA_MCP_LOCAL_INSECURE": "0"}, clear=True)
+    def test_env_truthy_false_variants(self):
+        """Falsy environment values should be rejected."""
+
+        assert _env_truthy("NEBULA_MCP_LOCAL_INSECURE") is False
+
+    @patch.dict("os.environ", {"NEBULA_MCP_LOCAL_AGENT_NAME": " custom-agent "}, clear=True)
+    def test_local_insecure_agent_name_uses_env_value(self):
+        """Agent-name helper should trim and use override values."""
+
+        assert _local_insecure_agent_name() == "custom-agent"
+
+    @patch.dict("os.environ", {}, clear=True)
+    def test_local_insecure_agent_name_defaults(self):
+        """Agent-name helper should fallback to default when unset."""
+
+        assert _local_insecure_agent_name() == "local-dev-agent"
+
+    @patch.dict("os.environ", {"NEBULA_MCP_LOCAL_AGENT_NAME": "local-existing"}, clear=True)
+    async def test_get_or_create_local_insecure_agent_returns_existing(
+        self, mock_pool, mock_enums
+    ):
+        """Existing local agent should be returned without creation."""
+
+        mock_pool.fetchrow.return_value = {"id": uuid4(), "name": "local-existing"}
+        agent = await _get_or_create_local_insecure_agent(mock_pool, mock_enums)
+        assert agent["name"] == "local-existing"
+
+    @patch.dict("os.environ", {"NEBULA_MCP_LOCAL_AGENT_NAME": "local-new"}, clear=True)
+    async def test_get_or_create_local_insecure_agent_requires_scope(
+        self, mock_pool, mock_enums
+    ):
+        """Missing all known scopes should fail with explicit error."""
+
+        mock_pool.fetchrow.side_effect = [None]
+        mock_enums.scopes.name_to_id = {}
+        with pytest.raises(ValueError, match="at least one valid scope"):
+            await _get_or_create_local_insecure_agent(mock_pool, mock_enums)
+
+    @patch.dict("os.environ", {"NEBULA_MCP_LOCAL_AGENT_NAME": "local-new"}, clear=True)
+    async def test_get_or_create_local_insecure_agent_requires_active_status(
+        self, mock_pool, mock_enums
+    ):
+        """Missing active status enum should fail clearly."""
+
+        mock_pool.fetchrow.side_effect = [None]
+        mock_enums.statuses.name_to_id = {}
+        with pytest.raises(ValueError, match="active status enum"):
+            await _get_or_create_local_insecure_agent(mock_pool, mock_enums)
+
+    @patch.dict("os.environ", {"NEBULA_MCP_LOCAL_AGENT_NAME": "local-new"}, clear=True)
+    async def test_get_or_create_local_insecure_agent_create_failure_raises(
+        self, mock_pool, mock_enums
+    ):
+        """Creation failure should raise explicit local-insecure error."""
+
+        mock_pool.fetchrow.side_effect = [None, None]
+        with pytest.raises(ValueError, match="Failed to create local insecure agent"):
+            await _get_or_create_local_insecure_agent(mock_pool, mock_enums)
 
 
 # --- maybe_require_approval ---
