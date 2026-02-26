@@ -169,3 +169,72 @@ func TestEntitiesDetailMetadataMultiSelectCopy(t *testing.T) {
 	assert.NotEmpty(t, strings.TrimSpace(lines[0]))
 	assert.NotEmpty(t, strings.TrimSpace(lines[1]))
 }
+
+// TestEntitiesDetailMetadataInspectScrollClamp ensures inspect scrolling stays
+// bounded and renders scroll affordances for long values.
+func TestEntitiesDetailMetadataInspectScrollClamp(t *testing.T) {
+	model := NewEntitiesModel(nil)
+	model.width = 100
+	model.height = 24
+	model.view = entitiesViewDetail
+	model.metaExpanded = true
+	model.detail = &api.Entity{
+		ID:   "ent-1",
+		Name: "Alpha",
+		Metadata: api.JSONMap{
+			"note": strings.Join([]string{
+				"line 01", "line 02", "line 03", "line 04", "line 05",
+				"line 06", "line 07", "line 08", "line 09", "line 10",
+				"line 11", "line 12", "line 13", "line 14", "line 15",
+			}, "\n"),
+		},
+	}
+	model.syncDetailMetadataRows()
+	model.openMetaInspect(0)
+
+	model.moveMetaInspect(999)
+	lines := model.metaInspectLines()
+	page := model.metaInspectPageSize()
+	maxOffset := len(lines) - page
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	assert.Equal(t, maxOffset, model.metaInspectO)
+
+	rendered := components.SanitizeText(model.renderMetaInspect())
+	assert.Contains(t, rendered, "Metadata Value")
+	assert.Contains(t, rendered, "Lines")
+	assert.Contains(t, rendered, "... ↑ more")
+}
+
+// TestEntitiesDetailMetadataCopyCurrentRowWithoutList ensures copy command is
+// skipped when metadata list state is unavailable.
+func TestEntitiesDetailMetadataCopyCurrentRowWithoutList(t *testing.T) {
+	model := NewEntitiesModel(nil)
+	model.metaRows = []metadataDisplayRow{{field: "note", value: "hello"}}
+	model.metaList = nil
+	assert.Nil(t, model.copyCurrentMetadataRow())
+}
+
+// TestEntitiesDetailMetadataCopyRowsNormalizesEmptyValue ensures empty metadata
+// values copy as explicit None.
+func TestEntitiesDetailMetadataCopyRowsNormalizesEmptyValue(t *testing.T) {
+	model := NewEntitiesModel(nil)
+	model.metaRows = []metadataDisplayRow{{field: "empty", value: "   "}}
+
+	prevCopy := copyEntityMetadataClipboard
+	defer func() { copyEntityMetadataClipboard = prevCopy }()
+	copied := ""
+	copyEntityMetadataClipboard = func(text string) error {
+		copied = text
+		return nil
+	}
+
+	cmd := model.copyMetadataRows([]int{0})
+	require.NotNil(t, cmd)
+	msg := cmd()
+	copiedMsg, ok := msg.(entityMetadataCopiedMsg)
+	require.True(t, ok)
+	assert.Equal(t, 1, copiedMsg.count)
+	assert.Equal(t, "None", copied)
+}

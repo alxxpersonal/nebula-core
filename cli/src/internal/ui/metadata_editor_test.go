@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -122,4 +123,86 @@ func TestDropLastRuneHandlesMultibyteRunes(t *testing.T) {
 	assert.Equal(t, "", dropLastRune(""))
 	assert.Equal(t, "a", dropLastRune("ab"))
 	assert.Equal(t, "a", dropLastRune("a😊"))
+}
+
+// TestMetadataEditorToggleSelectAllAndCopySelectedValues ensures bulk select
+// and copy flows stay stable across repeated toggles.
+func TestMetadataEditorToggleSelectAllAndCopySelectedValues(t *testing.T) {
+	prevCopy := copyMetadataEditorClipboard
+	defer func() { copyMetadataEditorClipboard = prevCopy }()
+
+	var copied string
+	copyMetadataEditorClipboard = func(text string) error {
+		copied = text
+		return nil
+	}
+
+	var ed MetadataEditor
+	ed.Open(map[string]any{
+		"name":  "alex",
+		"owner": "alxx",
+		"role":  "cto",
+	})
+
+	ed.toggleSelectAll()
+	assert.Equal(t, len(ed.rows), len(ed.selected))
+
+	count, err := ed.copySelectedValues()
+	require.NoError(t, err)
+	assert.Equal(t, len(ed.rows), count)
+	assert.NotEmpty(t, copied)
+	assert.GreaterOrEqual(t, len(splitTrimmedLines(copied)), 3)
+
+	ed.toggleSelectAll()
+	assert.Empty(t, ed.selected)
+}
+
+// TestMetadataEditorMoveInspectClampsOffset ensures inspect scrolling is always
+// bounded to valid visible ranges.
+func TestMetadataEditorMoveInspectClampsOffset(t *testing.T) {
+	var ed MetadataEditor
+	ed.Open(map[string]any{
+		"note": "line 01\nline 02\nline 03\nline 04\nline 05\nline 06\nline 07\nline 08\nline 09\nline 10\nline 11\nline 12\nline 13\nline 14",
+	})
+	ed.inspectMode = true
+	ed.inspectRowIdx = 0
+
+	ed.moveInspect(999)
+	lines := ed.inspectLines()
+	maxOffset := len(lines) - ed.inspectPageSize()
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	assert.Equal(t, maxOffset, ed.inspectOffset)
+
+	ed.moveInspect(-999)
+	assert.Zero(t, ed.inspectOffset)
+}
+
+// TestMetadataEditorRenderEntryModeIncludesFormatHints ensures add/edit entry
+// mode keeps structured input hints visible.
+func TestMetadataEditorRenderEntryModeIncludesFormatHints(t *testing.T) {
+	var ed MetadataEditor
+	ed.Open(map[string]any{})
+	ed.entryMode = true
+	ed.entryBuf = "profile | timezone | europe/warsaw"
+	ed.notice = "invalid value"
+
+	out := components.SanitizeText(ed.Render(90))
+	assert.Contains(t, out, "Add Metadata Row")
+	assert.Contains(t, out, "format: group | field | value")
+	assert.Contains(t, out, "enter save")
+	assert.Contains(t, out, "invalid value")
+}
+
+// splitTrimmedLines handles split trimmed lines.
+func splitTrimmedLines(input string) []string {
+	raw := strings.Split(strings.TrimSpace(input), "\n")
+	out := make([]string, 0, len(raw))
+	for _, line := range raw {
+		if trimmed := strings.TrimSpace(line); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
 }
