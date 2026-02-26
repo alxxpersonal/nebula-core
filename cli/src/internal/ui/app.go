@@ -325,6 +325,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.lastErrCode = "INVALID_API_KEY"
 			a.lastErrMsg = "Invalid API key"
 			a.showRecoveryHints = true
+		} else {
+			a.lastErrCode = ""
+			a.lastErrMsg = ""
+			a.showRecoveryHints = false
 		}
 		level, text := startupToastCopy(a.startup)
 		return a, a.setToast(level, text)

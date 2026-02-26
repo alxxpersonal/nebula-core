@@ -207,3 +207,141 @@ func TestStartupCheckedMsgInvalidAuthEnablesRecoveryHints(t *testing.T) {
 	assert.True(t, updated.showRecoveryHints)
 	require.NotNil(t, cmd)
 }
+
+// TestStartupCheckedMsgClearsRecoveryHintsAfterAuthRecovery handles startup auth recovery clearing stale invalid-key hints.
+func TestStartupCheckedMsgClearsRecoveryHintsAfterAuthRecovery(t *testing.T) {
+	app := NewApp(nil, &config.Config{APIKey: "good-key"})
+	app.startupChecking = true
+	app.lastErrCode = "INVALID_API_KEY"
+	app.lastErrMsg = "Invalid API key"
+	app.showRecoveryHints = true
+
+	model, cmd := app.Update(startupCheckedMsg{})
+	updated := model.(App)
+
+	assert.False(t, updated.startupChecking)
+	assert.Equal(t, "ok", updated.startup.Auth)
+	assert.Equal(t, "", updated.lastErrCode)
+	assert.Equal(t, "", updated.lastErrMsg)
+	assert.False(t, updated.showRecoveryHints)
+	require.NotNil(t, cmd)
+}
+
+// TestRunStartupCheckCmdCollectsAuthAndTaxonomyErrors handles startup check collecting downstream failures.
+func TestRunStartupCheckCmdCollectsAuthAndTaxonomyErrors(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/health" && r.Method == http.MethodGet:
+			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"status": "ok"}))
+		case r.URL.Path == "/api/keys" && r.Method == http.MethodGet:
+			w.WriteHeader(http.StatusUnauthorized)
+			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+				"error": map[string]any{
+					"code":    "INVALID_API_KEY",
+					"message": "bad token",
+				},
+			}))
+		case strings.HasPrefix(r.URL.Path, "/api/taxonomy/scopes") && r.Method == http.MethodGet:
+			w.WriteHeader(http.StatusForbidden)
+			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+				"error": map[string]any{
+					"code":    "FORBIDDEN",
+					"message": "scope missing",
+				},
+			}))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	app := NewApp(api.NewClient(srv.URL, "bad-key"), &config.Config{APIKey: "bad-key"})
+	cmd := app.runStartupCheckCmd()
+	require.NotNil(t, cmd)
+
+	msg, ok := cmd().(startupCheckedMsg)
+	require.True(t, ok)
+	assert.Equal(t, "", msg.apiErr)
+	assert.Contains(t, msg.authErr, "INVALID_API_KEY")
+	assert.Contains(t, msg.taxonomyErr, "FORBIDDEN")
+}
+
+// TestRunStartupCheckCmdStopsOnAPIError handles startup check short-circuiting when API health fails.
+func TestRunStartupCheckCmdStopsOnAPIError(t *testing.T) {
+	var keysCalled bool
+	var taxonomyCalled bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/health" && r.Method == http.MethodGet:
+			w.WriteHeader(http.StatusServiceUnavailable)
+			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+				"error": map[string]any{
+					"code":    "API_DOWN",
+					"message": "unavailable",
+				},
+			}))
+		case r.URL.Path == "/api/keys" && r.Method == http.MethodGet:
+			keysCalled = true
+			w.WriteHeader(http.StatusInternalServerError)
+		case strings.HasPrefix(r.URL.Path, "/api/taxonomy/scopes") && r.Method == http.MethodGet:
+			taxonomyCalled = true
+			w.WriteHeader(http.StatusInternalServerError)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	app := NewApp(api.NewClient(srv.URL, "any"), &config.Config{APIKey: "any"})
+	cmd := app.runStartupCheckCmd()
+	require.NotNil(t, cmd)
+
+	msg, ok := cmd().(startupCheckedMsg)
+	require.True(t, ok)
+	assert.Contains(t, msg.apiErr, "API_DOWN")
+	assert.Equal(t, "", msg.authErr)
+	assert.Equal(t, "", msg.taxonomyErr)
+	assert.False(t, keysCalled)
+	assert.False(t, taxonomyCalled)
+}
+
+// TestRecoveryHintsReloginKeyFlowHandlesEndToEnd handles pressing r to relogin and clear recovery state.
+func TestRecoveryHintsReloginKeyFlowHandlesEndToEnd(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/keys/login" && r.Method == http.MethodPost {
+			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"api_key":   "nbl_recovered_key",
+					"entity_id": "ent-1",
+					"username":  "alxx",
+				},
+			}))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	t.Cleanup(srv.Close)
+
+	cfg := &config.Config{APIKey: "stale-key", Username: "alxx"}
+	app := NewApp(api.NewClient(srv.URL, "stale-key"), cfg)
+	app.showRecoveryHints = true
+	app.lastErrCode = "INVALID_API_KEY"
+	app.lastErrMsg = "Invalid API key"
+
+	model, cmd := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	require.NotNil(t, cmd)
+
+	updated := model.(App)
+	reloginMsg := cmd()
+	model, _ = updated.Update(reloginMsg)
+	recovered := model.(App)
+
+	assert.Equal(t, "nbl_recovered_key", recovered.config.APIKey)
+	assert.Equal(t, "", recovered.lastErrCode)
+	assert.Equal(t, "", recovered.lastErrMsg)
+	assert.False(t, recovered.showRecoveryHints)
+	require.NotNil(t, recovered.toast)
+	assert.Equal(t, "success", recovered.toast.level)
+}
