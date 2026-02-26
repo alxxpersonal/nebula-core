@@ -18,7 +18,7 @@ _env_artifact = os.getenv("NEBULA_SCHEMA_ARTIFACT")
 ARTIFACT_SCHEMA_CANDIDATES = (
     ([Path(_env_artifact).expanduser()] if _env_artifact else [])
     + [
-        _ROOT.parents[3] / "artifacts" / "schema.sql",  # nebula-core/artifacts/schema.sql
+        _ROOT.parents[3] / "database" / "schema.sql",  # nebula-core/database/schema.sql
     ]
 )
 
@@ -46,7 +46,7 @@ CORE_TABLES = {
 
 
 def _read_artifact_schema() -> str:
-    """Load the schema artifact from the repository artifacts directory."""
+    """Load the schema artifact from the repository database directory."""
 
     for candidate in ARTIFACT_SCHEMA_CANDIDATES:
         if candidate and candidate.is_file():
