@@ -1788,7 +1788,23 @@ func classifyStartupAuth(errText string, cfg *config.Config) string {
 	if strings.TrimSpace(errText) == "" {
 		return "ok"
 	}
-	return "invalid"
+	lower := strings.ToLower(errText)
+	switch {
+	case strings.Contains(lower, "multiple api instances detected"):
+		return "multi_api_conflict"
+	case strings.Contains(lower, "http 500"), strings.Contains(lower, "internal server error"):
+		return "failed"
+	case strings.Contains(lower, "invalid api key"),
+		strings.Contains(lower, "missing or invalid authorization"),
+		strings.Contains(lower, "auth_required"),
+		strings.Contains(lower, "unauthorized"),
+		strings.Contains(lower, "http 401"),
+		strings.Contains(lower, "http 403"),
+		strings.Contains(lower, "not logged in"):
+		return "invalid"
+	default:
+		return "failed"
+	}
 }
 
 // classifyStartupTaxonomy handles classify startup taxonomy.
@@ -1812,6 +1828,9 @@ func startupToastCopy(summary startupSummary) (string, string) {
 	if summary.API == "ok" && summary.Auth == "ok" && summary.Taxonomy == "ok" {
 		return "success", "Startup checks passed: API, auth, and taxonomy are healthy."
 	}
+	if summary.Auth == "multi_api_conflict" {
+		return "error", "multiple api instances detected. stop duplicate API processes and restart with `nebula start`."
+	}
 	if summary.API != "ok" {
 		return "error", fmt.Sprintf("Startup checks failed: API is %s.", summary.API)
 	}
@@ -1827,7 +1846,7 @@ func startupStatusColor(status string) string {
 		return string(ColorMuted)
 	case "missing", "forbidden", "timeout":
 		return string(ColorWarning)
-	case "invalid", "down", "failed", "schema_error":
+	case "invalid", "down", "failed", "schema_error", "multi_api_conflict":
 		return string(ColorError)
 	default:
 		return string(ColorMuted)

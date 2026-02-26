@@ -173,7 +173,13 @@ func TestStartupParsingHelpers(t *testing.T) {
 	assert.Equal(t, "missing", classifyStartupAuth("", nil))
 	assert.Equal(t, "missing", classifyStartupAuth("", &config.Config{APIKey: ""}))
 	assert.Equal(t, "ok", classifyStartupAuth("", &config.Config{APIKey: "key"}))
-	assert.Equal(t, "invalid", classifyStartupAuth("bad", &config.Config{APIKey: "key"}))
+	assert.Equal(t, "invalid", classifyStartupAuth("HTTP 401: Unauthorized", &config.Config{APIKey: "key"}))
+	assert.Equal(t, "failed", classifyStartupAuth("HTTP 500: Internal Server Error", &config.Config{APIKey: "key"}))
+	assert.Equal(
+		t,
+		"multi_api_conflict",
+		classifyStartupAuth("HTTP 500: multiple api instances detected", &config.Config{APIKey: "key"}),
+	)
 
 	assert.Equal(t, "ok", classifyStartupTaxonomy(""))
 	assert.Equal(t, "forbidden", classifyStartupTaxonomy("forbidden: scope"))
@@ -400,4 +406,45 @@ func TestStartupCheckedMsgAPIDownClearsStaleRecoveryHints(t *testing.T) {
 	assert.Equal(t, "", updated.lastErrCode)
 	assert.Equal(t, "", updated.lastErrMsg)
 	require.NotNil(t, cmd)
+}
+
+// TestStartupCheckedMsgAuth500DoesNotShowInvalidKeyRecoveryHints handles auth 500 startup failures without invalid-key hinting.
+func TestStartupCheckedMsgAuth500DoesNotShowInvalidKeyRecoveryHints(t *testing.T) {
+	app := NewApp(nil, &config.Config{APIKey: "bad-key"})
+	app.startupChecking = true
+	app.showRecoveryHints = true
+	app.lastErrCode = "INVALID_API_KEY"
+	app.lastErrMsg = "Invalid API key"
+
+	model, cmd := app.Update(startupCheckedMsg{authErr: "HTTP 500: Internal Server Error"})
+	updated := model.(App)
+
+	assert.False(t, updated.startupChecking)
+	assert.Equal(t, "ok", updated.startup.API)
+	assert.Equal(t, "failed", updated.startup.Auth)
+	assert.False(t, updated.showRecoveryHints)
+	assert.Equal(t, "", updated.lastErrCode)
+	assert.Equal(t, "", updated.lastErrMsg)
+	require.NotNil(t, cmd)
+	require.NotNil(t, updated.toast)
+	assert.Equal(t, "warning", updated.toast.level)
+	assert.Contains(t, strings.ToLower(updated.toast.text), "auth=failed")
+}
+
+// TestStartupCheckedMsgMultiAPIConflictShowsActionableToast handles explicit multi-api conflict startup messaging.
+func TestStartupCheckedMsgMultiAPIConflictShowsActionableToast(t *testing.T) {
+	app := NewApp(nil, &config.Config{APIKey: "key"})
+	app.startupChecking = true
+
+	model, cmd := app.Update(startupCheckedMsg{authErr: "HTTP 500: multiple api instances detected"})
+	updated := model.(App)
+
+	assert.False(t, updated.startupChecking)
+	assert.Equal(t, "multi_api_conflict", updated.startup.Auth)
+	assert.False(t, updated.showRecoveryHints)
+	require.NotNil(t, cmd)
+	require.NotNil(t, updated.toast)
+	assert.Equal(t, "error", updated.toast.level)
+	assert.Contains(t, strings.ToLower(updated.toast.text), "multiple api instances detected")
+	assert.Contains(t, updated.toast.text, "nebula start")
 }
