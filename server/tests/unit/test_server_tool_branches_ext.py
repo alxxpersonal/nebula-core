@@ -14,12 +14,15 @@ from nebula_mcp.models import (
     AgentEnrollStartInput,
     ApproveRequestInput,
     BulkImportInput,
+    BulkUpdateEntityScopesInput,
+    BulkUpdateEntityTagsInput,
     CreateContextInput,
     CreateAPIKeyInput,
     CreateTaxonomyInput,
     GetApprovalDiffInput,
     ListAllKeysInput,
     RejectRequestInput,
+    RevertEntityInput,
     RevokeKeyInput,
     UpdateContextInput,
     UpdateTaxonomyInput,
@@ -27,6 +30,8 @@ from nebula_mcp.models import (
 from nebula_mcp.server import (
     _run_bulk_import,
     approve_request,
+    bulk_update_entity_scopes,
+    bulk_update_entity_tags,
     create_api_key,
     create_context,
     create_taxonomy,
@@ -35,6 +40,7 @@ from nebula_mcp.server import (
     list_all_api_keys,
     register_agent,
     reject_request,
+    revert_entity,
     revoke_api_key,
     update_context,
     update_taxonomy,
@@ -662,6 +668,130 @@ async def test_update_context_status_scope_and_approval_short_circuit(
     result = await update_context(payload, _ctx(pool, mock_enums, agent))
 
     assert result["status"] == "approval_required"
+
+
+@pytest.mark.asyncio
+async def test_bulk_update_entity_tags_approval_short_circuit(monkeypatch, mock_enums):
+    """bulk_update_entity_tags should return approval payload when required."""
+
+    pool = _PoolStub()
+    agent = _public_agent(mock_enums)
+    payload = BulkUpdateEntityTagsInput(
+        entity_ids=[str(uuid4())],
+        tags=["a", "b"],
+        op="add",
+    )
+    maybe_approval = AsyncMock(return_value={"status": "approval_required", "approval_request_id": "x"})
+
+    monkeypatch.setattr(
+        "nebula_mcp.server.require_context",
+        AsyncMock(return_value=(pool, mock_enums, agent)),
+    )
+    monkeypatch.setattr("nebula_mcp.server._require_entity_write_access", AsyncMock())
+    monkeypatch.setattr("nebula_mcp.server.maybe_require_approval", maybe_approval)
+    monkeypatch.setattr("nebula_mcp.server.do_bulk_update_entity_tags", AsyncMock())
+
+    result = await bulk_update_entity_tags(payload, _ctx(pool, mock_enums, agent))
+
+    assert result["status"] == "approval_required"
+
+
+@pytest.mark.asyncio
+async def test_bulk_update_entity_tags_direct_update(monkeypatch, mock_enums):
+    """bulk_update_entity_tags should return updated ids on direct path."""
+
+    pool = _PoolStub()
+    agent = _public_agent(mock_enums)
+    entity_id = str(uuid4())
+    payload = BulkUpdateEntityTagsInput(
+        entity_ids=[entity_id],
+        tags=["a"],
+        op="replace",
+    )
+
+    monkeypatch.setattr(
+        "nebula_mcp.server.require_context",
+        AsyncMock(return_value=(pool, mock_enums, agent)),
+    )
+    monkeypatch.setattr("nebula_mcp.server._require_entity_write_access", AsyncMock())
+    monkeypatch.setattr("nebula_mcp.server.maybe_require_approval", AsyncMock(return_value=None))
+    monkeypatch.setattr("nebula_mcp.server.normalize_bulk_operation", lambda op: op)
+    monkeypatch.setattr("nebula_mcp.server.do_bulk_update_entity_tags", AsyncMock(return_value=[entity_id]))
+
+    result = await bulk_update_entity_tags(payload, _ctx(pool, mock_enums, agent))
+
+    assert result == {"updated": 1, "entity_ids": [entity_id]}
+
+
+@pytest.mark.asyncio
+async def test_bulk_update_entity_scopes_direct_update(monkeypatch, mock_enums):
+    """bulk_update_entity_scopes should enforce subset then return updated ids."""
+
+    pool = _PoolStub()
+    agent = _public_agent(mock_enums)
+    entity_id = str(uuid4())
+    payload = BulkUpdateEntityScopesInput(
+        entity_ids=[entity_id],
+        scopes=["public"],
+        op="add",
+    )
+
+    monkeypatch.setattr(
+        "nebula_mcp.server.require_context",
+        AsyncMock(return_value=(pool, mock_enums, agent)),
+    )
+    monkeypatch.setattr("nebula_mcp.server._require_entity_write_access", AsyncMock())
+    monkeypatch.setattr("nebula_mcp.server.normalize_bulk_operation", lambda op: op)
+    monkeypatch.setattr("nebula_mcp.server.scope_names_from_ids", lambda ids, enums: ["public"])
+    monkeypatch.setattr("nebula_mcp.server.enforce_scope_subset", lambda scopes, allowed: scopes)
+    monkeypatch.setattr("nebula_mcp.server.require_scopes", lambda scopes, enums: scopes)
+    monkeypatch.setattr("nebula_mcp.server.maybe_require_approval", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        "nebula_mcp.server.do_bulk_update_entity_scopes",
+        AsyncMock(return_value=[entity_id]),
+    )
+
+    result = await bulk_update_entity_scopes(payload, _ctx(pool, mock_enums, agent))
+
+    assert result == {"updated": 1, "entity_ids": [entity_id]}
+
+
+@pytest.mark.asyncio
+async def test_revert_entity_rejects_non_entity_audit(monkeypatch, mock_enums):
+    """revert_entity should fail when audit row table is not entities."""
+
+    pool = _PoolStub(fetchrow_rows=[{"table_name": "jobs", "record_id": str(uuid4())}])
+    agent = _public_agent(mock_enums)
+    payload = RevertEntityInput(entity_id=str(uuid4()), audit_id=str(uuid4()))
+
+    monkeypatch.setattr(
+        "nebula_mcp.server.require_context",
+        AsyncMock(return_value=(pool, mock_enums, agent)),
+    )
+
+    with pytest.raises(ValueError, match="Audit entry is not for entities"):
+        await revert_entity(payload, _ctx(pool, mock_enums, agent))
+
+
+@pytest.mark.asyncio
+async def test_revert_entity_rejects_mismatched_record_id(monkeypatch, mock_enums):
+    """revert_entity should fail when audit record does not match entity id."""
+
+    pool = _PoolStub(
+        fetchrow_rows=[
+            {"table_name": "entities", "record_id": str(uuid4())},
+        ]
+    )
+    agent = _public_agent(mock_enums)
+    payload = RevertEntityInput(entity_id=str(uuid4()), audit_id=str(uuid4()))
+
+    monkeypatch.setattr(
+        "nebula_mcp.server.require_context",
+        AsyncMock(return_value=(pool, mock_enums, agent)),
+    )
+
+    with pytest.raises(ValueError, match="Audit entry does not match entity"):
+        await revert_entity(payload, _ctx(pool, mock_enums, agent))
 
 
 @pytest.mark.asyncio
