@@ -1,0 +1,156 @@
+package ui
+
+import (
+	"strings"
+	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/gravitrone/nebula-core/cli/internal/api"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestEntitiesAddTagScopeHelpersBranchMatrix(t *testing.T) {
+	model := NewEntitiesModel(nil)
+
+	assert.Equal(t, "-", model.renderAddTags(false))
+	assert.Contains(t, stripANSI(model.renderAddTags(true)), "█")
+
+	model.addTags = []string{"alpha"}
+	model.addTagBuf = "beta"
+	assert.Contains(t, stripANSI(model.renderAddTags(false)), "alpha")
+	assert.Contains(t, stripANSI(model.renderAddTags(false)), "beta")
+	assert.Contains(t, stripANSI(model.renderAddTags(true)), "█")
+
+	model.addTagBuf = "   "
+	model.commitAddTag()
+	assert.Equal(t, "", model.addTagBuf)
+
+	model.addTagBuf = "ALPHA"
+	model.commitAddTag()
+	assert.Equal(t, []string{"alpha"}, model.addTags)
+
+	model.addTagBuf = "gamma_tag"
+	model.commitAddTag()
+	assert.Equal(t, []string{"alpha", "gamma-tag"}, model.addTags)
+
+	model.addScopeBuf = "  "
+	model.commitAddScope()
+	assert.Equal(t, "", model.addScopeBuf)
+
+	model.addScopes = []string{"public"}
+	model.addScopeBuf = " PUBLIC "
+	model.commitAddScope()
+	assert.Equal(t, []string{"public"}, model.addScopes)
+
+	model.addScopeBuf = "sensitive"
+	model.commitAddScope()
+	assert.Equal(t, []string{"public", "sensitive"}, model.addScopes)
+}
+
+func TestEntitiesSearchInputAndBulkSelectionBranchMatrix(t *testing.T) {
+	model := NewEntitiesModel(nil)
+	model.view = entitiesViewSearch
+
+	updated, cmd := model.handleSearchInput(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	require.Nil(t, cmd)
+	assert.Equal(t, "a", updated.searchBuf)
+
+	updated, _ = updated.handleSearchInput(tea.KeyMsg{Type: tea.KeySpace})
+	assert.Equal(t, "a ", updated.searchBuf)
+
+	updated, _ = updated.handleSearchInput(tea.KeyMsg{Type: tea.KeyBackspace})
+	assert.Equal(t, "a", updated.searchBuf)
+
+	updated, _ = updated.handleSearchInput(tea.KeyMsg{Type: tea.KeyEsc})
+	assert.Equal(t, entitiesViewList, updated.view)
+	assert.Equal(t, "", updated.searchBuf)
+
+	updated.view = entitiesViewSearch
+	updated.searchBuf = "  alpha "
+	updated, cmd = updated.handleSearchInput(tea.KeyMsg{Type: tea.KeyEnter})
+	require.NotNil(t, cmd)
+	assert.Equal(t, entitiesViewList, updated.view)
+	assert.Equal(t, "", updated.searchBuf)
+	assert.True(t, updated.loading)
+
+	updated.items = []api.Entity{
+		{ID: "ent-1", Name: "Alpha"},
+		{ID: "", Name: "NoID"},
+	}
+
+	updated.toggleBulkSelection(-1)
+	assert.Equal(t, 0, updated.bulkCount())
+
+	updated.toggleBulkSelection(1)
+	assert.Equal(t, 0, updated.bulkCount())
+
+	updated.toggleBulkSelection(0)
+	assert.Equal(t, 1, updated.bulkCount())
+	assert.True(t, updated.isBulkSelected(0))
+	assert.False(t, updated.isBulkSelected(1))
+	assert.False(t, updated.isBulkSelected(9))
+
+	ids := updated.bulkSelectedIDs()
+	assert.Equal(t, []string{"ent-1"}, ids)
+
+	updated.toggleBulkSelection(0)
+	assert.Equal(t, 0, updated.bulkCount())
+
+	updated.bulkSelected = map[string]bool{"ent-1": true}
+	updated.clearBulkSelection()
+	assert.Empty(t, updated.bulkSelected)
+}
+
+func TestEntitiesMetaSelectionAndInspectBranchMatrix(t *testing.T) {
+	model := NewEntitiesModel(nil)
+	model.width = 80
+	model.height = 20
+	model.metaRows = []metadataDisplayRow{
+		{field: "profile.note", value: strings.Repeat("line\n", 20)},
+		{field: "profile.tz", value: "UTC"},
+	}
+	model.metaSelected = map[int]bool{}
+
+	model.toggleMetaSelection(-1)
+	assert.Empty(t, model.metaSelected)
+	model.toggleMetaSelection(9)
+	assert.Empty(t, model.metaSelected)
+
+	model.toggleMetaSelection(0)
+	assert.True(t, model.metaSelected[0])
+	assert.True(t, model.metaSelectMode)
+
+	model.toggleMetaSelection(0)
+	assert.False(t, model.metaSelected[0])
+	assert.False(t, model.metaSelectMode)
+
+	model.metaSelected = map[int]bool{1: true, 0: true}
+	assert.Equal(t, []int{0, 1}, model.selectedMetaIndices())
+
+	model.openMetaInspect(-1)
+	assert.False(t, model.metaInspect)
+	model.openMetaInspect(9)
+	assert.False(t, model.metaInspect)
+
+	model.openMetaInspect(0)
+	assert.True(t, model.metaInspect)
+	assert.Equal(t, 0, model.metaInspectI)
+
+	model.moveMetaInspect(999)
+	lines := model.metaInspectLines()
+	require.NotNil(t, lines)
+	page := model.metaInspectPageSize()
+	maxOffset := len(lines) - page
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	assert.Equal(t, maxOffset, model.metaInspectO)
+
+	model.moveMetaInspect(-999)
+	assert.Equal(t, 0, model.metaInspectO)
+
+	model.closeMetaInspect()
+	assert.False(t, model.metaInspect)
+	assert.Nil(t, model.metaInspectLines())
+}
