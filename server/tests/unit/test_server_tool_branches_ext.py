@@ -18,18 +18,26 @@ from nebula_mcp.models import (
     BulkUpdateEntityTagsInput,
     CreateContextInput,
     CreateAPIKeyInput,
+    CreateJobInput,
     CreateLogInput,
     CreateRelationshipInput,
+    CreateSubtaskInput,
     CreateTaxonomyInput,
+    GetJobInput,
     GetLogInput,
     GetRelationshipsInput,
     GetApprovalDiffInput,
+    GraphNeighborsInput,
+    GraphShortestPathInput,
     ListAllKeysInput,
+    QueryJobsInput,
     QueryRelationshipsInput,
     QueryLogsInput,
     RejectRequestInput,
     RevertEntityInput,
     RevokeKeyInput,
+    UpdateJobInput,
+    UpdateJobStatusInput,
     UpdateRelationshipInput,
     UpdateLogInput,
     UpdateContextInput,
@@ -42,20 +50,28 @@ from nebula_mcp.server import (
     bulk_update_entity_tags,
     create_api_key,
     create_context,
+    create_job,
     create_log,
     create_relationship,
+    create_subtask,
     create_taxonomy,
+    get_job,
     get_log,
     get_relationships,
     get_approval_diff,
+    graph_neighbors,
+    graph_shortest_path,
     lifespan,
     list_all_api_keys,
+    query_jobs,
     query_logs,
     query_relationships,
     register_agent,
     reject_request,
     revert_entity,
     revoke_api_key,
+    update_job,
+    update_job_status,
     update_relationship,
     update_log,
     update_context,
@@ -1099,6 +1115,292 @@ async def test_update_relationship_direct_update_returns_empty_when_no_row(
     result = await update_relationship(payload, _ctx(pool, mock_enums, agent))
 
     assert result == {}
+
+
+@pytest.mark.asyncio
+async def test_decode_graph_path_ignores_invalid_segments():
+    """_decode_graph_path should skip malformed entries and split valid ones."""
+
+    decoded = server_mod._decode_graph_path(["entity:1", "bad", "job:2026Q1-ABCD"])
+
+    assert decoded == [
+        {"type": "entity", "id": "1"},
+        {"type": "job", "id": "2026Q1-ABCD"},
+    ]
+    assert server_mod._decode_graph_path([]) == []
+    assert server_mod._decode_graph_path(None) == []
+
+
+@pytest.mark.asyncio
+async def test_graph_neighbors_denies_inaccessible_source(monkeypatch, mock_enums):
+    """graph_neighbors should fail fast when source node is not readable."""
+
+    pool = _PoolStub()
+    agent = _public_agent(mock_enums)
+    payload = GraphNeighborsInput(source_type="entity", source_id=str(uuid4()), max_hops=2, limit=10)
+
+    monkeypatch.setattr(
+        "nebula_mcp.server.require_context",
+        AsyncMock(return_value=(pool, mock_enums, agent)),
+    )
+    monkeypatch.setattr("nebula_mcp.server._node_allowed", AsyncMock(return_value=False))
+
+    with pytest.raises(ValueError, match="Access denied"):
+        await graph_neighbors(payload, _ctx(pool, mock_enums, agent))
+
+
+@pytest.mark.asyncio
+async def test_graph_neighbors_filters_rows_with_blocked_path_nodes(monkeypatch, mock_enums):
+    """graph_neighbors should remove neighbor rows with blocked path nodes."""
+
+    source_id = str(uuid4())
+    blocked_id = str(uuid4())
+    pool = _PoolStub(
+        fetch_rows=[
+            [
+                {
+                    "node_type": "entity",
+                    "node_id": str(uuid4()),
+                    "depth": 1,
+                    "path": [f"entity:{source_id}", f"entity:{blocked_id}"],
+                },
+                {
+                    "node_type": "entity",
+                    "node_id": str(uuid4()),
+                    "depth": 1,
+                    "path": [f"entity:{source_id}", f"entity:{uuid4()}"],
+                },
+            ]
+        ]
+    )
+    agent = _public_agent(mock_enums)
+    payload = GraphNeighborsInput(source_type="entity", source_id=source_id, max_hops=2, limit=10)
+
+    async def _allowed(_pool, _enums, _agent, _node_type, node_id):
+        return node_id != blocked_id
+
+    monkeypatch.setattr(
+        "nebula_mcp.server.require_context",
+        AsyncMock(return_value=(pool, mock_enums, agent)),
+    )
+    monkeypatch.setattr("nebula_mcp.server._node_allowed", _allowed)
+
+    result = await graph_neighbors(payload, _ctx(pool, mock_enums, agent))
+
+    assert len(result) == 1
+    assert all(node["id"] != blocked_id for node in result[0]["path"])
+
+
+@pytest.mark.asyncio
+async def test_graph_shortest_path_no_row_raises(monkeypatch, mock_enums):
+    """graph_shortest_path should raise when backend returns no path."""
+
+    source_id = str(uuid4())
+    target_id = str(uuid4())
+    pool = _PoolStub(fetchrow_rows=[None])
+    agent = _public_agent(mock_enums)
+    payload = GraphShortestPathInput(
+        source_type="entity",
+        source_id=source_id,
+        target_type="entity",
+        target_id=target_id,
+        max_hops=3,
+    )
+
+    monkeypatch.setattr(
+        "nebula_mcp.server.require_context",
+        AsyncMock(return_value=(pool, mock_enums, agent)),
+    )
+    monkeypatch.setattr("nebula_mcp.server._node_allowed", AsyncMock(return_value=True))
+
+    with pytest.raises(ValueError, match="No path found"):
+        await graph_shortest_path(payload, _ctx(pool, mock_enums, agent))
+
+
+@pytest.mark.asyncio
+async def test_graph_shortest_path_blocked_path_node_raises(monkeypatch, mock_enums):
+    """graph_shortest_path should reject paths containing hidden nodes."""
+
+    source_id = str(uuid4())
+    target_id = str(uuid4())
+    blocked_id = str(uuid4())
+    pool = _PoolStub(
+        fetchrow_rows=[
+            {
+                "depth": 2,
+                "path": [f"entity:{source_id}", f"entity:{blocked_id}", f"entity:{target_id}"],
+            }
+        ]
+    )
+    agent = _public_agent(mock_enums)
+    payload = GraphShortestPathInput(
+        source_type="entity",
+        source_id=source_id,
+        target_type="entity",
+        target_id=target_id,
+        max_hops=3,
+    )
+
+    async def _allowed(_pool, _enums, _agent, _node_type, node_id):
+        return node_id != blocked_id
+
+    monkeypatch.setattr(
+        "nebula_mcp.server.require_context",
+        AsyncMock(return_value=(pool, mock_enums, agent)),
+    )
+    monkeypatch.setattr("nebula_mcp.server._node_allowed", _allowed)
+
+    with pytest.raises(ValueError, match="No path found"):
+        await graph_shortest_path(payload, _ctx(pool, mock_enums, agent))
+
+
+@pytest.mark.asyncio
+async def test_create_job_invalid_priority_raises(monkeypatch, mock_enums):
+    """create_job should reject unknown priorities before approval/executor."""
+
+    pool = _PoolStub()
+    agent = _public_agent(mock_enums)
+    payload = CreateJobInput(title="t", priority="urgent")
+
+    monkeypatch.setattr(
+        "nebula_mcp.server.require_context",
+        AsyncMock(return_value=(pool, mock_enums, agent)),
+    )
+
+    with pytest.raises(ValueError, match="Invalid priority: urgent"):
+        await create_job(payload, _ctx(pool, mock_enums, agent))
+
+
+@pytest.mark.asyncio
+async def test_create_job_non_admin_defaults_and_approval(monkeypatch, mock_enums):
+    """create_job should default scopes and force agent_id for non-admin callers."""
+
+    pool = _PoolStub()
+    agent = _public_agent(mock_enums)
+    payload = CreateJobInput(title="t", scopes=[])
+    captured = {}
+
+    async def _approval(_pool, _agent, _action, data):
+        captured.update(data)
+        return {"status": "approval_required", "approval_request_id": "j1"}
+
+    monkeypatch.setattr(
+        "nebula_mcp.server.require_context",
+        AsyncMock(return_value=(pool, mock_enums, agent)),
+    )
+    monkeypatch.setattr("nebula_mcp.server.scope_names_from_ids", lambda ids, enums: ["public"])
+    monkeypatch.setattr("nebula_mcp.server.enforce_scope_subset", lambda scopes, allowed: scopes)
+    monkeypatch.setattr("nebula_mcp.server.maybe_require_approval", _approval)
+
+    result = await create_job(payload, _ctx(pool, mock_enums, agent))
+
+    assert result["status"] == "approval_required"
+    assert captured["scopes"] == ["public"]
+    assert captured["agent_id"] == agent["id"]
+
+
+@pytest.mark.asyncio
+async def test_get_job_returns_row(monkeypatch, mock_enums):
+    """get_job should return fetched job when read access passes."""
+
+    job = {"id": "2026Q1-ABCD", "privacy_scope_ids": []}
+    pool = _PoolStub()
+    agent = _public_agent(mock_enums)
+    payload = GetJobInput(job_id="2026Q1-ABCD")
+
+    monkeypatch.setattr(
+        "nebula_mcp.server.require_context",
+        AsyncMock(return_value=(pool, mock_enums, agent)),
+    )
+    monkeypatch.setattr("nebula_mcp.server._get_job_row", AsyncMock(return_value=job))
+    monkeypatch.setattr("nebula_mcp.server._require_job_read", lambda a, e, j: None)
+
+    result = await get_job(payload, _ctx(pool, mock_enums, agent))
+    assert result == job
+
+
+@pytest.mark.asyncio
+async def test_query_jobs_validates_assigned_to(monkeypatch, mock_enums):
+    """query_jobs should validate assignee UUIDs before querying."""
+
+    pool = _PoolStub()
+    agent = _public_agent(mock_enums)
+    payload = QueryJobsInput(assigned_to="not-a-uuid")
+
+    monkeypatch.setattr(
+        "nebula_mcp.server.require_context",
+        AsyncMock(return_value=(pool, mock_enums, agent)),
+    )
+
+    with pytest.raises(ValueError, match="Invalid assignee id"):
+        await query_jobs(payload, _ctx(pool, mock_enums, agent))
+
+
+@pytest.mark.asyncio
+async def test_update_job_invalid_assignee_raises(monkeypatch, mock_enums):
+    """update_job should reject malformed assigned_to values."""
+
+    pool = _PoolStub()
+    agent = _public_agent(mock_enums)
+    payload = UpdateJobInput(job_id="2026Q1-ABCD", assigned_to="bad-uuid")
+
+    monkeypatch.setattr(
+        "nebula_mcp.server.require_context",
+        AsyncMock(return_value=(pool, mock_enums, agent)),
+    )
+    monkeypatch.setattr(
+        "nebula_mcp.server._get_job_row",
+        AsyncMock(return_value={"id": "2026Q1-ABCD", "privacy_scope_ids": [], "agent_id": agent["id"]}),
+    )
+    monkeypatch.setattr("nebula_mcp.server._require_job_owner", lambda a, e, j: None)
+
+    with pytest.raises(ValueError, match="Invalid assignee id"):
+        await update_job(payload, _ctx(pool, mock_enums, agent))
+
+
+@pytest.mark.asyncio
+async def test_update_job_status_not_found_raises(monkeypatch, mock_enums):
+    """update_job_status should raise when update query returns no row."""
+
+    pool = _PoolStub(fetchrow_rows=[None])
+    agent = _public_agent(mock_enums)
+    payload = UpdateJobStatusInput(job_id="2026Q1-ABCD", status="active")
+
+    monkeypatch.setattr(
+        "nebula_mcp.server.require_context",
+        AsyncMock(return_value=(pool, mock_enums, agent)),
+    )
+    monkeypatch.setattr(
+        "nebula_mcp.server._get_job_row",
+        AsyncMock(return_value={"id": "2026Q1-ABCD", "privacy_scope_ids": [], "agent_id": agent["id"]}),
+    )
+    monkeypatch.setattr("nebula_mcp.server._require_job_owner", lambda a, e, j: None)
+    monkeypatch.setattr("nebula_mcp.server.maybe_require_approval", AsyncMock(return_value=None))
+
+    with pytest.raises(ValueError, match="not found"):
+        await update_job_status(payload, _ctx(pool, mock_enums, agent))
+
+
+@pytest.mark.asyncio
+async def test_create_subtask_invalid_priority_raises(monkeypatch, mock_enums):
+    """create_subtask should reject unknown priority values."""
+
+    pool = _PoolStub()
+    agent = _public_agent(mock_enums)
+    payload = CreateSubtaskInput(parent_job_id="2026Q1-ABCD", title="child", priority="urgent")
+
+    monkeypatch.setattr(
+        "nebula_mcp.server.require_context",
+        AsyncMock(return_value=(pool, mock_enums, agent)),
+    )
+    monkeypatch.setattr(
+        "nebula_mcp.server._get_job_row",
+        AsyncMock(return_value={"id": "2026Q1-ABCD", "privacy_scope_ids": [], "agent_id": agent["id"]}),
+    )
+    monkeypatch.setattr("nebula_mcp.server._require_job_owner", lambda a, e, j: None)
+
+    with pytest.raises(ValueError, match="Invalid priority"):
+        await create_subtask(payload, _ctx(pool, mock_enums, agent))
 
 
 @pytest.mark.asyncio
