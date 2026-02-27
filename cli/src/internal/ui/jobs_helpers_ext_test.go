@@ -1,0 +1,251 @@
+package ui
+
+import (
+	"encoding/json"
+	"net/http"
+	"testing"
+	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/gravitrone/nebula-core/cli/internal/api"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestJobsRetainSelectionPrunesMissingIDs(t *testing.T) {
+	model := NewJobsModel(nil)
+	model.allItems = []api.Job{{ID: "job-1"}, {ID: "job-2"}}
+	model.selected = map[string]bool{"job-1": true, "ghost": true}
+
+	model.retainSelection()
+	assert.Equal(t, map[string]bool{"job-1": true}, model.selected)
+}
+
+func TestJobsLoadDetailRelationshipsSuccessAndError(t *testing.T) {
+	now := time.Now()
+	_, client := testJobsClient(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/relationships/job/job-1":
+			err := json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]any{{
+					"id":          "rel-1",
+					"source_type": "job",
+					"source_id":   "job-1",
+					"target_type": "entity",
+					"target_id":   "ent-1",
+					"type":        "assigned-to",
+					"status":      "active",
+					"created_at":  now,
+				}},
+			})
+			require.NoError(t, err)
+		default:
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	})
+
+	model := NewJobsModel(client)
+	msg := model.loadDetailRelationships("job-1")().(jobRelationshipsLoadedMsg) //nolint:forcetypeassert
+	require.Len(t, msg.relationships, 1)
+	assert.Equal(t, "rel-1", msg.relationships[0].ID)
+
+	msg = model.loadDetailRelationships("job-2")().(jobRelationshipsLoadedMsg) //nolint:forcetypeassert
+	assert.Equal(t, "job-2", msg.id)
+	assert.Nil(t, msg.relationships)
+}
+
+func TestJobsHandleModeKeysAndToggle(t *testing.T) {
+	model := NewJobsModel(nil)
+	model.modeFocus = true
+	model.view = jobsViewList
+
+	updated, cmd := model.handleModeKeys(tea.KeyMsg{Type: tea.KeyRight})
+	require.Nil(t, cmd)
+	assert.Equal(t, jobsViewAdd, updated.view)
+	assert.False(t, updated.modeFocus)
+
+	updated.modeFocus = true
+	updated, cmd = updated.handleModeKeys(tea.KeyMsg{Type: tea.KeyLeft})
+	require.NotNil(t, cmd)
+	assert.Equal(t, jobsViewList, updated.view)
+
+	updated.modeFocus = true
+	updated, cmd = updated.handleModeKeys(tea.KeyMsg{Type: tea.KeyEsc})
+	require.Nil(t, cmd)
+	assert.False(t, updated.modeFocus)
+}
+
+func TestJobsHandleAddKeysStatusPriorityAndMetadataBranches(t *testing.T) {
+	model := NewJobsModel(nil)
+	model.view = jobsViewAdd
+	model.addFocus = jobFieldStatus
+
+	updated, cmd := model.handleAddKeys(tea.KeyMsg{Type: tea.KeyRight})
+	require.Nil(t, cmd)
+	assert.Equal(t, 1, updated.addStatusIdx)
+
+	updated.addFocus = jobFieldPriority
+	updated, _ = updated.handleAddKeys(tea.KeyMsg{Type: tea.KeyRight})
+	assert.Equal(t, 1, updated.addPriorityIdx)
+
+	updated.addFocus = jobFieldMetadata
+	updated, _ = updated.handleAddKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	assert.True(t, updated.addMeta.Active)
+	updated.addMeta.Active = false
+
+	updated.addFocus = jobFieldTitle
+	updated.addFields[jobFieldTitle].value = "abc"
+	updated, _ = updated.handleAddKeys(tea.KeyMsg{Type: tea.KeyBackspace})
+	assert.Equal(t, "ab", updated.addFields[jobFieldTitle].value)
+
+	updated.addFocus = 0
+	updated, _ = updated.handleAddKeys(tea.KeyMsg{Type: tea.KeyUp})
+	assert.True(t, updated.modeFocus)
+}
+
+func TestJobsHandleEditKeysStatusPriorityDescriptionMetadataAndBack(t *testing.T) {
+	desc := "hello"
+	model := NewJobsModel(nil)
+	model.view = jobsViewEdit
+	model.detail = &api.Job{ID: "job-1", Status: "pending", Description: &desc, Metadata: api.JSONMap{}}
+	model.startEdit()
+
+	model.editFocus = jobEditFieldStatus
+	updated, cmd := model.handleEditKeys(tea.KeyMsg{Type: tea.KeyRight})
+	require.Nil(t, cmd)
+	assert.Equal(t, 1, updated.editStatusIdx)
+
+	updated.editFocus = jobEditFieldPriority
+	updated, _ = updated.handleEditKeys(tea.KeyMsg{Type: tea.KeyRight})
+	assert.Equal(t, 1, updated.editPriorityIdx)
+
+	updated.editFocus = jobEditFieldDescription
+	updated, _ = updated.handleEditKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	assert.Contains(t, updated.editDesc, "x")
+	updated, _ = updated.handleEditKeys(tea.KeyMsg{Type: tea.KeyBackspace})
+	assert.NotContains(t, updated.editDesc, "x")
+
+	updated.editFocus = jobEditFieldMetadata
+	updated, _ = updated.handleEditKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	assert.True(t, updated.editMeta.Active)
+
+	updated.editMeta.Active = false
+	updated, _ = updated.handleEditKeys(tea.KeyMsg{Type: tea.KeyEsc})
+	assert.Equal(t, jobsViewDetail, updated.view)
+}
+
+func TestJobsHandleStatusInputBranches(t *testing.T) {
+	model := NewJobsModel(nil)
+	model.changingSt = true
+	model.statusBuf = "act"
+
+	updated, cmd := model.handleStatusInput(tea.KeyMsg{Type: tea.KeyBackspace})
+	require.Nil(t, cmd)
+	assert.Equal(t, "ac", updated.statusBuf)
+
+	updated.statusBuf = "active"
+	updated.statusTargets = nil
+	updated.detail = nil
+	updated, cmd = updated.handleStatusInput(tea.KeyMsg{Type: tea.KeyEnter})
+	assert.Nil(t, cmd)
+	assert.False(t, updated.changingSt)
+	assert.Empty(t, updated.statusBuf)
+}
+
+func TestJobsHandleStatusInputEnterWithTargetsReturnsCommand(t *testing.T) {
+	var calls []string
+	_, client := testJobsClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPatch {
+			calls = append(calls, r.URL.Path)
+			err := json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"id": "job-1"}})
+			require.NoError(t, err)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	})
+
+	model := NewJobsModel(client)
+	model.changingSt = true
+	model.statusBuf = "active"
+	model.statusTargets = []string{"job-1"}
+	model.selected = map[string]bool{"job-1": true}
+
+	updated, cmd := model.handleStatusInput(tea.KeyMsg{Type: tea.KeyEnter})
+	require.NotNil(t, cmd)
+	msg := cmd()
+	_, ok := msg.(jobStatusUpdatedMsg)
+	require.True(t, ok)
+	assert.Empty(t, updated.selected)
+	assert.Equal(t, []string{"/api/jobs/job-1/status"}, calls)
+}
+
+func TestJobsHandleLinkInputInvalidAndBackspaceBranches(t *testing.T) {
+	model := NewJobsModel(nil)
+	model.detail = &api.Job{ID: "job-1"}
+	model.linkingRel = true
+	model.linkBuf = "entity-only"
+
+	updated, cmd := model.handleLinkInput(tea.KeyMsg{Type: tea.KeyEnter})
+	require.NotNil(t, cmd)
+	msg := cmd()
+	_, ok := msg.(errMsg)
+	require.True(t, ok)
+	assert.False(t, updated.linkingRel)
+	assert.Equal(t, "", updated.linkBuf)
+
+	updated.linkingRel = true
+	updated.linkBuf = "ab"
+	updated, cmd = updated.handleLinkInput(tea.KeyMsg{Type: tea.KeyBackspace})
+	require.Nil(t, cmd)
+	assert.Equal(t, "a", updated.linkBuf)
+}
+
+func TestJobsHandleUnlinkInputNilDetailAndDirectIDBranches(t *testing.T) {
+	model := NewJobsModel(nil)
+	model.unlinkingRel = true
+	model.unlinkBuf = "1"
+
+	updated, cmd := model.handleUnlinkInput(tea.KeyMsg{Type: tea.KeyEnter})
+	assert.Nil(t, cmd)
+	assert.False(t, updated.unlinkingRel)
+	assert.Equal(t, "", updated.unlinkBuf)
+
+	var updatedID string
+	_, client := testJobsClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPatch {
+			updatedID = r.URL.Path
+			err := json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"id": "rel-custom"}})
+			require.NoError(t, err)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	})
+
+	model = NewJobsModel(client)
+	model.detail = &api.Job{ID: "job-1"}
+	model.unlinkingRel = true
+	model.unlinkBuf = "rel-custom"
+	updated, cmd = model.handleUnlinkInput(tea.KeyMsg{Type: tea.KeyEnter})
+	require.NotNil(t, cmd)
+	msg := cmd()
+	_, ok := msg.(jobRelationshipChangedMsg)
+	require.True(t, ok)
+	assert.Equal(t, "/api/relationships/rel-custom", updatedID)
+	assert.False(t, updated.unlinkingRel)
+}
+
+func TestJobsParsePositiveListIndexAndSelectionHelpers(t *testing.T) {
+	assert.Equal(t, 0, parsePositiveListIndex(""))
+	assert.Equal(t, 0, parsePositiveListIndex("abc"))
+	assert.Equal(t, 12, parsePositiveListIndex("12"))
+
+	model := NewJobsModel(nil)
+	model.items = []api.Job{{ID: "job-1"}, {ID: "job-2"}}
+	model.selected = map[string]bool{"job-2": true}
+	assert.Equal(t, []string{"job-2"}, model.selectedIDs())
+	assert.Equal(t, 1, model.selectedCount())
+
+	model = NewJobsModel(nil)
+	model.selected = map[string]bool{"orphan": true}
+	assert.Equal(t, []string{"orphan"}, model.selectedIDs())
+}
