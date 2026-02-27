@@ -25,11 +25,14 @@ from nebula_mcp.models import (
     CreateTaxonomyInput,
     GetJobInput,
     GetLogInput,
+    GetContextInput,
     GetRelationshipsInput,
     GetApprovalDiffInput,
     GraphNeighborsInput,
     GraphShortestPathInput,
+    LinkContextInput,
     ListAllKeysInput,
+    QueryContextInput,
     QueryJobsInput,
     QueryRelationshipsInput,
     QueryLogsInput,
@@ -55,14 +58,17 @@ from nebula_mcp.server import (
     create_relationship,
     create_subtask,
     create_taxonomy,
+    get_context,
     get_job,
     get_log,
     get_relationships,
     get_approval_diff,
     graph_neighbors,
     graph_shortest_path,
+    link_context_to_entity,
     lifespan,
     list_all_api_keys,
+    query_context,
     query_jobs,
     query_logs,
     query_relationships,
@@ -703,6 +709,143 @@ async def test_update_context_status_scope_and_approval_short_circuit(
 
 
 @pytest.mark.asyncio
+async def test_get_context_not_found_raises(monkeypatch, mock_enums):
+    """get_context should raise when the record is missing."""
+
+    pool = _PoolStub(fetchrow_rows=[None])
+    agent = _public_agent(mock_enums)
+    payload = GetContextInput(context_id=str(uuid4()))
+
+    monkeypatch.setattr(
+        "nebula_mcp.server.require_context",
+        AsyncMock(return_value=(pool, mock_enums, agent)),
+    )
+    monkeypatch.setattr("nebula_mcp.server._scope_filter_ids", lambda _agent, _enums: [])
+
+    with pytest.raises(ValueError, match="Context not found"):
+        await get_context(payload, _ctx(pool, mock_enums, agent))
+
+
+@pytest.mark.asyncio
+async def test_get_context_filters_metadata_segments(monkeypatch, mock_enums):
+    """get_context should filter metadata segments against readable scopes."""
+
+    context_id = str(uuid4())
+    pool = _PoolStub(
+        fetchrow_rows=[
+            {"id": context_id, "metadata": {"context_segments": [{"text": "x", "scopes": ["public"]}]}}
+        ]
+    )
+    agent = _public_agent(mock_enums)
+    payload = GetContextInput(context_id=context_id)
+
+    monkeypatch.setattr(
+        "nebula_mcp.server.require_context",
+        AsyncMock(return_value=(pool, mock_enums, agent)),
+    )
+    monkeypatch.setattr("nebula_mcp.server._scope_filter_ids", lambda _agent, _enums: [])
+    monkeypatch.setattr("nebula_mcp.server.scope_names_from_ids", lambda _ids, _enums: ["public"])
+    monkeypatch.setattr(
+        "nebula_mcp.server.filter_context_segments",
+        lambda metadata, _scopes: {"filtered": metadata},
+    )
+
+    result = await get_context(payload, _ctx(pool, mock_enums, agent))
+
+    assert result["metadata"]["filtered"]["context_segments"][0]["scopes"] == ["public"]
+
+
+@pytest.mark.asyncio
+async def test_query_context_filters_metadata_and_clamps_offset(monkeypatch, mock_enums):
+    """query_context should filter row metadata and clamp negative offsets."""
+
+    row_id = str(uuid4())
+    pool = _PoolStub(
+        fetch_rows=[
+            [
+                {"id": row_id, "metadata": {"context_segments": [{"text": "x"}]}},
+                {"id": str(uuid4()), "metadata": None},
+            ]
+        ]
+    )
+    agent = _public_agent(mock_enums)
+    payload = QueryContextInput(scopes=["public"], limit=1000, offset=-25)
+
+    monkeypatch.setattr(
+        "nebula_mcp.server.require_context",
+        AsyncMock(return_value=(pool, mock_enums, agent)),
+    )
+    monkeypatch.setattr("nebula_mcp.server.scope_names_from_ids", lambda _ids, _enums: ["public"])
+    monkeypatch.setattr("nebula_mcp.server.enforce_scope_subset", lambda scopes, _allowed: scopes)
+    monkeypatch.setattr(
+        "nebula_mcp.server.require_scopes",
+        lambda scopes, enums: [enums.scopes.name_to_id[s] for s in scopes],
+    )
+    monkeypatch.setattr("nebula_mcp.server._clamp_limit", lambda _limit: 50)
+    monkeypatch.setattr(
+        "nebula_mcp.server.filter_context_segments",
+        lambda metadata, _scopes: {"filtered": metadata},
+    )
+
+    result = await query_context(payload, _ctx(pool, mock_enums, agent))
+
+    assert len(result) == 2
+    assert result[0]["metadata"]["filtered"]["context_segments"][0]["text"] == "x"
+    assert pool.fetch_calls[0][1][-1] == 0
+
+
+@pytest.mark.asyncio
+async def test_link_context_to_entity_approval_short_circuit(monkeypatch, mock_enums):
+    """link_context_to_entity should return approval payload without writer call."""
+
+    pool = _PoolStub()
+    agent = _public_agent(mock_enums)
+    payload = LinkContextInput(context_id=str(uuid4()), entity_id=str(uuid4()), relationship_type="references")
+    execute_link = AsyncMock()
+
+    monkeypatch.setattr(
+        "nebula_mcp.server.require_context",
+        AsyncMock(return_value=(pool, mock_enums, agent)),
+    )
+    monkeypatch.setattr("nebula_mcp.server._validate_relationship_node", AsyncMock())
+    monkeypatch.setattr(
+        "nebula_mcp.server.maybe_require_approval",
+        AsyncMock(return_value={"status": "approval_required", "approval_request_id": "r1"}),
+    )
+    monkeypatch.setattr("nebula_mcp.server.execute_create_relationship", execute_link)
+
+    result = await link_context_to_entity(payload, _ctx(pool, mock_enums, agent))
+
+    assert result["status"] == "approval_required"
+    execute_link.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_link_context_to_entity_direct_create(monkeypatch, mock_enums):
+    """link_context_to_entity should execute relationship create on direct path."""
+
+    pool = _PoolStub()
+    agent = _public_agent(mock_enums)
+    payload = LinkContextInput(context_id=str(uuid4()), entity_id=str(uuid4()), relationship_type="references")
+
+    monkeypatch.setattr(
+        "nebula_mcp.server.require_context",
+        AsyncMock(return_value=(pool, mock_enums, agent)),
+    )
+    monkeypatch.setattr("nebula_mcp.server._validate_relationship_node", AsyncMock())
+    monkeypatch.setattr("nebula_mcp.server.maybe_require_approval", AsyncMock(return_value=None))
+    monkeypatch.setattr("nebula_mcp.server.require_relationship_type", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        "nebula_mcp.server.execute_create_relationship",
+        AsyncMock(return_value={"id": str(uuid4())}),
+    )
+
+    result = await link_context_to_entity(payload, _ctx(pool, mock_enums, agent))
+
+    assert "id" in result
+
+
+@pytest.mark.asyncio
 async def test_bulk_update_entity_tags_approval_short_circuit(monkeypatch, mock_enums):
     """bulk_update_entity_tags should return approval payload when required."""
 
@@ -824,6 +967,74 @@ async def test_revert_entity_rejects_mismatched_record_id(monkeypatch, mock_enum
 
     with pytest.raises(ValueError, match="Audit entry does not match entity"):
         await revert_entity(payload, _ctx(pool, mock_enums, agent))
+
+
+@pytest.mark.asyncio
+async def test_revert_entity_approval_short_circuit(monkeypatch, mock_enums):
+    """revert_entity should return approval payload before direct revert."""
+
+    entity_id = str(uuid4())
+    audit_id = str(uuid4())
+    pool = _PoolStub(
+        fetchrow_rows=[
+            {"table_name": "entities", "record_id": entity_id},
+        ]
+    )
+    agent = _public_agent(mock_enums)
+    payload = RevertEntityInput(entity_id=entity_id, audit_id=audit_id)
+    do_revert = AsyncMock()
+
+    monkeypatch.setattr(
+        "nebula_mcp.server.require_context",
+        AsyncMock(return_value=(pool, mock_enums, agent)),
+    )
+    monkeypatch.setattr(
+        "nebula_mcp.server.maybe_require_approval",
+        AsyncMock(return_value={"status": "approval_required", "approval_request_id": "x1"}),
+    )
+    monkeypatch.setattr("nebula_mcp.server.do_revert_entity", do_revert)
+
+    result = await revert_entity(payload, _ctx(pool, mock_enums, agent))
+
+    assert result["status"] == "approval_required"
+    do_revert.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_revert_entity_direct_path_sets_and_resets_changed_by(monkeypatch, mock_enums):
+    """revert_entity direct path should set and reset changed-by session values."""
+
+    entity_id = str(uuid4())
+    audit_id = str(uuid4())
+
+    class _ConnWithExec:
+        def __init__(self):
+            self.execute = AsyncMock()
+
+    conn = _ConnWithExec()
+    pool = _PoolStub(
+        conn=conn,
+        fetchrow_rows=[
+            {"table_name": "entities", "record_id": entity_id},
+        ],
+    )
+    agent = _public_agent(mock_enums)
+    payload = RevertEntityInput(entity_id=entity_id, audit_id=audit_id)
+
+    monkeypatch.setattr(
+        "nebula_mcp.server.require_context",
+        AsyncMock(return_value=(pool, mock_enums, agent)),
+    )
+    monkeypatch.setattr("nebula_mcp.server.maybe_require_approval", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        "nebula_mcp.server.do_revert_entity",
+        AsyncMock(return_value={"id": entity_id, "reverted": True}),
+    )
+
+    result = await revert_entity(payload, _ctx(pool, mock_enums, agent))
+
+    assert result["reverted"] is True
+    assert conn.execute.await_count == 4
 
 
 @pytest.mark.asyncio

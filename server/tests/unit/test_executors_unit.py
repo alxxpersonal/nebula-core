@@ -161,6 +161,26 @@ async def test_execute_update_context_raises_when_metadata_target_missing(mock_e
 
 
 @pytest.mark.asyncio
+async def test_execute_create_entity_rejects_context_segment_without_scopes(mock_enums):
+    """Context segment metadata must include non-empty scopes."""
+
+    pool = _PoolStub()
+
+    with pytest.raises(ValueError, match="Context segment scopes required"):
+        await executors.execute_create_entity(
+            pool,
+            mock_enums,
+            {
+                "name": "bad-segment",
+                "type": "project",
+                "status": "active",
+                "scopes": ["public"],
+                "metadata": {"context_segments": [{"text": "x", "scopes": []}]},
+            },
+        )
+
+
+@pytest.mark.asyncio
 async def test_execute_update_context_status_and_scope_paths(mock_enums):
     """Status/scopes branches should be exercised for context updates."""
 
@@ -185,6 +205,20 @@ async def test_execute_update_context_status_and_scope_paths(mock_enums):
 
     assert result["id"] == context_id
     assert len(pool.fetchrow_calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_execute_update_context_raises_when_update_returns_missing(mock_enums):
+    """Context update should raise when the update query returns no row."""
+
+    pool = _PoolStub(fetchrow_rows=[None])
+
+    with pytest.raises(ValueError, match="Context not found"):
+        await executors.execute_update_context(
+            pool,
+            mock_enums,
+            {"context_id": str(uuid4()), "title": "new"},
+        )
 
 
 @pytest.mark.asyncio
@@ -252,6 +286,21 @@ async def test_execute_update_job_raises_when_missing(mock_enums):
 
 
 @pytest.mark.asyncio
+async def test_execute_update_job_status_field_resolves_status_id(mock_enums):
+    """Job update path should resolve status names when status is supplied."""
+
+    pool = _PoolStub(fetchrow_rows=[{"id": "2026Q1-ABCD"}])
+
+    result = await executors.execute_update_job(
+        pool,
+        mock_enums,
+        {"job_id": "2026Q1-ABCD", "status": "active"},
+    )
+
+    assert result == {"id": "2026Q1-ABCD"}
+
+
+@pytest.mark.asyncio
 async def test_execute_update_job_status_raises_when_missing(mock_enums):
     """Status updates should raise when the target job does not exist."""
 
@@ -277,6 +326,22 @@ async def test_execute_update_relationship_raises_when_missing(mock_enums):
             mock_enums,
             {"relationship_id": str(uuid4()), "status": "active"},
         )
+
+
+@pytest.mark.asyncio
+async def test_execute_update_relationship_success_returns_row(mock_enums):
+    """Relationship updates should return normalized row on success."""
+
+    relationship_id = str(uuid4())
+    pool = _PoolStub(fetchrow_rows=[{"id": relationship_id}])
+
+    result = await executors.execute_update_relationship(
+        pool,
+        mock_enums,
+        {"relationship_id": relationship_id, "status": "active"},
+    )
+
+    assert result == {"id": relationship_id}
 
 
 @pytest.mark.asyncio
