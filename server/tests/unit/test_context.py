@@ -150,6 +150,20 @@ class TestRequireContext:
         payload = json.loads(str(exc.value))
         assert payload["error"]["code"] == "ENROLLMENT_REQUIRED"
 
+    async def test_agent_refresh_missing_row_raises(self, mock_pool, mock_enums):
+        """A stale lifespan agent id should fail with not-found error."""
+
+        ctx = MagicMock()
+        ctx.request_context.lifespan_context = {
+            "pool": mock_pool,
+            "enums": mock_enums,
+            "agent": {"id": uuid4()},
+        }
+        mock_pool.fetchrow.return_value = None
+
+        with pytest.raises(ValueError, match="Agent not found or inactive"):
+            await require_context(ctx)
+
 
 # --- require_pool ---
 
@@ -268,6 +282,17 @@ class TestAuthenticateAgentWithKey:
             "agent_id": uuid4(),
         }
         with pytest.raises(Exception, match="boom"):
+            await authenticate_agent_with_key(mock_pool, "nbl_abcdef123456")
+
+    @patch("argon2.PasswordHasher.verify", side_effect=__import__("argon2").exceptions.VerifyMismatchError)
+    async def test_rejects_hash_mismatch(self, _verify, mock_pool):
+        """Argon2 mismatches should return a clear hash-mismatch error."""
+
+        mock_pool.fetchrow.return_value = {
+            "key_hash": "hash",
+            "agent_id": uuid4(),
+        }
+        with pytest.raises(ValueError, match="hash mismatch"):
             await authenticate_agent_with_key(mock_pool, "nbl_abcdef123456")
 
     @patch("argon2.PasswordHasher.verify")
@@ -414,6 +439,20 @@ class TestLocalInsecureHelpers:
         mock_pool.fetchrow.side_effect = [None, None]
         with pytest.raises(ValueError, match="Failed to create local insecure agent"):
             await _get_or_create_local_insecure_agent(mock_pool, mock_enums)
+
+    @patch.dict("os.environ", {"NEBULA_MCP_LOCAL_AGENT_NAME": "local-new"}, clear=True)
+    async def test_get_or_create_local_insecure_agent_create_success(
+        self, mock_pool, mock_enums
+    ):
+        """Missing local agent should be created and returned."""
+
+        created = {"id": uuid4(), "name": "local-new", "requires_approval": False}
+        mock_pool.fetchrow.side_effect = [None, created]
+
+        result = await _get_or_create_local_insecure_agent(mock_pool, mock_enums)
+
+        assert result["name"] == "local-new"
+        assert result["requires_approval"] is False
 
 
 # --- maybe_require_approval ---

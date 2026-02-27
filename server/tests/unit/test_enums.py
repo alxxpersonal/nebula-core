@@ -6,6 +6,7 @@ from uuid import UUID
 import pytest
 
 from nebula_mcp.enums import (
+    load_enums,
     require_entity_type,
     require_log_type,
     require_relationship_type,
@@ -112,6 +113,12 @@ class TestRequireRelationshipType:
         with pytest.raises(ValueError, match="Unknown relationship type"):
             require_relationship_type("enemies-with", mock_enums)
 
+    def test_empty_relationship_type_raises(self, mock_enums):
+        """Raise ValueError for empty relationship type input."""
+
+        with pytest.raises(ValueError, match="Relationship type required"):
+            require_relationship_type("", mock_enums)
+
 
 # --- require_scopes ---
 
@@ -156,3 +163,39 @@ class TestRequireLogType:
 
         with pytest.raises(ValueError, match="Log type required"):
             require_log_type("", mock_enums)
+
+
+class TestLoadEnums:
+    """Tests for async enum registry loading."""
+
+    @pytest.mark.asyncio
+    async def test_load_enums_calls_all_sections_in_order(self, monkeypatch):
+        """load_enums should request all five enum sections."""
+
+        pool = object()
+        calls = []
+
+        async def _fake_load_section(p, query_name):
+            calls.append((p, query_name))
+            return type(
+                "Section",
+                (),
+                {"name_to_id": {"x": UUID(int=1)}, "id_to_name": {UUID(int=1): "x"}},
+            )()
+
+        monkeypatch.setattr("nebula_mcp.enums._load_section", _fake_load_section)
+
+        enums = await load_enums(pool)
+
+        assert enums.statuses is not None
+        assert enums.scopes is not None
+        assert enums.relationship_types is not None
+        assert enums.entity_types is not None
+        assert enums.log_types is not None
+        assert [q for _, q in calls] == [
+            "enums/statuses",
+            "enums/scopes",
+            "enums/relationship_types",
+            "enums/entity_types",
+            "enums/log_types",
+        ]

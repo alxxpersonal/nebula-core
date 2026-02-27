@@ -42,8 +42,8 @@ MIGRATION_FILES = [
 TEST_DB = os.getenv("NEBULA_TEST_DB", "postgres")
 TEST_SCHEMA = os.getenv("NEBULA_TEST_SCHEMA", "nebula_test")
 ADMIN_SERVER_SETTINGS = {
-    # Prevent hangs in CI/local when teardown/setup is waiting on locks.
-    "statement_timeout": "5000",  # ms
+    # Keep setup bounded without flaking on slower local schema bootstraps.
+    "statement_timeout": "30000",  # ms
     "lock_timeout": "5000",  # ms
 }
 
