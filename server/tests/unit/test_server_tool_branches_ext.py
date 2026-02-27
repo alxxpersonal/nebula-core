@@ -18,12 +18,16 @@ from nebula_mcp.models import (
     BulkUpdateEntityTagsInput,
     CreateContextInput,
     CreateAPIKeyInput,
+    CreateLogInput,
     CreateTaxonomyInput,
+    GetLogInput,
     GetApprovalDiffInput,
     ListAllKeysInput,
+    QueryLogsInput,
     RejectRequestInput,
     RevertEntityInput,
     RevokeKeyInput,
+    UpdateLogInput,
     UpdateContextInput,
     UpdateTaxonomyInput,
 )
@@ -34,14 +38,18 @@ from nebula_mcp.server import (
     bulk_update_entity_tags,
     create_api_key,
     create_context,
+    create_log,
     create_taxonomy,
+    get_log,
     get_approval_diff,
     lifespan,
     list_all_api_keys,
+    query_logs,
     register_agent,
     reject_request,
     revert_entity,
     revoke_api_key,
+    update_log,
     update_context,
     update_taxonomy,
 )
@@ -792,6 +800,145 @@ async def test_revert_entity_rejects_mismatched_record_id(monkeypatch, mock_enum
 
     with pytest.raises(ValueError, match="Audit entry does not match entity"):
         await revert_entity(payload, _ctx(pool, mock_enums, agent))
+
+
+@pytest.mark.asyncio
+async def test_create_log_approval_short_circuit(monkeypatch, mock_enums):
+    """create_log should return approval payload without executing writer."""
+
+    pool = _PoolStub()
+    agent = _public_agent(mock_enums)
+    payload = CreateLogInput(
+        title="note",
+        content="hello",
+        log_type="note",
+        status="active",
+        tags=[],
+        metadata={},
+    )
+    maybe_approval = AsyncMock(return_value={"status": "approval_required", "approval_request_id": "a1"})
+    execute_log = AsyncMock()
+
+    monkeypatch.setattr(
+        "nebula_mcp.server.require_context",
+        AsyncMock(return_value=(pool, mock_enums, agent)),
+    )
+    monkeypatch.setattr("nebula_mcp.server.maybe_require_approval", maybe_approval)
+    monkeypatch.setattr("nebula_mcp.server.execute_create_log", execute_log)
+
+    result = await create_log(payload, _ctx(pool, mock_enums, agent))
+
+    assert result["status"] == "approval_required"
+    execute_log.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_get_log_not_found_raises(monkeypatch, mock_enums):
+    """get_log should raise when requested id does not exist."""
+
+    pool = _PoolStub(fetchrow_rows=[None])
+    agent = _public_agent(mock_enums)
+    payload = GetLogInput(log_id=str(uuid4()))
+
+    monkeypatch.setattr(
+        "nebula_mcp.server.require_context",
+        AsyncMock(return_value=(pool, mock_enums, agent)),
+    )
+
+    with pytest.raises(ValueError, match="Log not found"):
+        await get_log(payload, _ctx(pool, mock_enums, agent))
+
+
+@pytest.mark.asyncio
+async def test_get_log_access_denied_when_hidden_relationships(monkeypatch, mock_enums):
+    """get_log should deny access when log has hidden related nodes."""
+
+    pool = _PoolStub(fetchrow_rows=[{"id": uuid4(), "title": "x"}])
+    agent = _public_agent(mock_enums)
+    payload = GetLogInput(log_id=str(uuid4()))
+
+    monkeypatch.setattr(
+        "nebula_mcp.server.require_context",
+        AsyncMock(return_value=(pool, mock_enums, agent)),
+    )
+    monkeypatch.setattr("nebula_mcp.server._has_hidden_relationships", AsyncMock(return_value=True))
+
+    with pytest.raises(ValueError, match="Access denied"):
+        await get_log(payload, _ctx(pool, mock_enums, agent))
+
+
+@pytest.mark.asyncio
+async def test_query_logs_filters_hidden_rows(monkeypatch, mock_enums):
+    """query_logs should skip rows that fail hidden-relationship checks."""
+
+    hidden_id = uuid4()
+    visible_id = uuid4()
+    pool = _PoolStub(
+        fetch_rows=[
+            [
+                {"id": hidden_id, "title": "hidden"},
+                {"id": visible_id, "title": "visible"},
+            ]
+        ]
+    )
+    agent = _public_agent(mock_enums)
+    payload = QueryLogsInput(log_type="note", limit=50, offset=0)
+
+    async def _hidden(_pool, _enums, _agent, _node_type, node_id):
+        return str(node_id) == str(hidden_id)
+
+    monkeypatch.setattr(
+        "nebula_mcp.server.require_context",
+        AsyncMock(return_value=(pool, mock_enums, agent)),
+    )
+    monkeypatch.setattr("nebula_mcp.server._has_hidden_relationships", _hidden)
+
+    result = await query_logs(payload, _ctx(pool, mock_enums, agent))
+
+    assert len(result) == 1
+    assert str(result[0]["id"]) == str(visible_id)
+
+
+@pytest.mark.asyncio
+async def test_update_log_access_denied_when_hidden_relationships(monkeypatch, mock_enums):
+    """update_log should reject writes when linked data is hidden."""
+
+    pool = _PoolStub()
+    agent = _public_agent(mock_enums)
+    payload = UpdateLogInput(id=str(uuid4()), status="active")
+
+    monkeypatch.setattr(
+        "nebula_mcp.server.require_context",
+        AsyncMock(return_value=(pool, mock_enums, agent)),
+    )
+    monkeypatch.setattr("nebula_mcp.server._has_hidden_relationships", AsyncMock(return_value=True))
+
+    with pytest.raises(ValueError, match="Access denied"):
+        await update_log(payload, _ctx(pool, mock_enums, agent))
+
+
+@pytest.mark.asyncio
+async def test_update_log_approval_short_circuit(monkeypatch, mock_enums):
+    """update_log should return approval payload when maybe_require_approval triggers."""
+
+    pool = _PoolStub()
+    agent = _public_agent(mock_enums)
+    payload = UpdateLogInput(id=str(uuid4()), status="active")
+
+    monkeypatch.setattr(
+        "nebula_mcp.server.require_context",
+        AsyncMock(return_value=(pool, mock_enums, agent)),
+    )
+    monkeypatch.setattr("nebula_mcp.server._has_hidden_relationships", AsyncMock(return_value=False))
+    monkeypatch.setattr(
+        "nebula_mcp.server.maybe_require_approval",
+        AsyncMock(return_value={"status": "approval_required", "approval_request_id": "a1"}),
+    )
+    monkeypatch.setattr("nebula_mcp.server.execute_update_log", AsyncMock())
+
+    result = await update_log(payload, _ctx(pool, mock_enums, agent))
+
+    assert result["status"] == "approval_required"
 
 
 @pytest.mark.asyncio
