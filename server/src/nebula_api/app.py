@@ -46,11 +46,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """
 
     pool = await get_pool(min_size=2, max_size=10)
-    enums = await load_enums(pool)
-    app.state.pool = pool
-    app.state.enums = enums
-    yield
-    await pool.close()
+    try:
+        enums = await load_enums(pool)
+        app.state.pool = pool
+        app.state.enums = enums
+        yield
+    finally:
+        await pool.close()
 
 
 app = FastAPI(
