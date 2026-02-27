@@ -1,0 +1,137 @@
+package ui
+
+import (
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/gravitrone/nebula-core/cli/internal/api"
+	"github.com/stretchr/testify/assert"
+)
+
+func TestFormatAuditActorFallbackMatrix(t *testing.T) {
+	actorType := "agent"
+	actorID := "agent-1234567890"
+
+	entry := api.AuditEntry{ChangedByType: &actorType, ChangedByID: &actorID}
+	assert.Equal(t, "agent:"+shortID(actorID), formatAuditActor(entry))
+
+	actorID = "  "
+	entry = api.AuditEntry{ChangedByType: &actorType, ChangedByID: &actorID}
+	assert.Equal(t, "agent", formatAuditActor(entry))
+
+	entry = api.AuditEntry{}
+	assert.Equal(t, "system", formatAuditActor(entry))
+}
+
+func TestIsUnknownLabelMatrix(t *testing.T) {
+	assert.True(t, isUnknownLabel("unknown"))
+	assert.True(t, isUnknownLabel("None"))
+	assert.True(t, isUnknownLabel("n/a"))
+	assert.False(t, isUnknownLabel("alxx"))
+}
+
+func TestActorDisplayNameMatrix(t *testing.T) {
+	name := "alxx"
+	actor := api.AuditActor{ActorName: &name, ActorType: "agent", ActorID: "agent:abc"}
+	assert.Equal(t, "alxx", actorDisplayName(actor))
+
+	unknown := "unknown"
+	actor = api.AuditActor{ActorName: &unknown, ActorType: "system", ActorID: "entity:ent-123"}
+	assert.Equal(t, "entity", actorDisplayName(actor))
+
+	actor = api.AuditActor{ActorType: "system", ActorID: ""}
+	assert.Equal(t, "system", actorDisplayName(actor))
+}
+
+func TestFormatActorRefMatrix(t *testing.T) {
+	actor := api.AuditActor{ActorType: "", ActorID: ""}
+	assert.Equal(t, "system", formatActorRef(actor))
+
+	actor = api.AuditActor{ActorType: "system", ActorID: "agent:ag-123456789"}
+	assert.Equal(t, "agent:"+shortID("ag-123456789"), formatActorRef(actor))
+
+	actor = api.AuditActor{ActorType: "agent", ActorID: "agent:ag-123456789"}
+	assert.Equal(t, "agent:"+shortID("ag-123456789"), formatActorRef(actor))
+}
+
+func TestInferActorTypeFromIDMatrix(t *testing.T) {
+	assert.Equal(t, "", inferActorTypeFromID(""))
+	assert.Equal(t, "", inferActorTypeFromID("agent"))
+	assert.Equal(t, "agent", inferActorTypeFromID("agent:abc"))
+	assert.Equal(t, "system", inferActorTypeFromID("unknown:abc"))
+}
+
+func TestNormalizeActorTypeMatrix(t *testing.T) {
+	assert.Equal(t, "system", normalizeActorType(""))
+	assert.Equal(t, "system", normalizeActorType("unknown"))
+	assert.Equal(t, "system", normalizeActorType("null"))
+	assert.Equal(t, "agent", normalizeActorType("agent"))
+}
+
+func TestFormatActorDisplayAvoidsDuplicateReference(t *testing.T) {
+	actor := api.AuditActor{ActorType: "agent", ActorID: "ag-1"}
+	ref := formatActorRef(actor)
+	assert.Equal(t, ref, formatActorDisplay(actor, ref))
+	assert.Contains(t, formatActorDisplay(actor, "alxx"), "alxx")
+}
+
+func TestFormatAuditFiltersMatrix(t *testing.T) {
+	assert.Equal(t, "", formatAuditFilters(auditFilter{}))
+
+	single := formatAuditFilters(auditFilter{tableName: "entities"})
+	assert.Equal(t, "Filters: table:entities", single)
+
+	multi := formatAuditFilters(auditFilter{tableName: "entities", action: "update", actor: "alxx"})
+	assert.Contains(t, multi, "Filters:\n")
+	assert.Contains(t, multi, "table:entities")
+	assert.Contains(t, multi, "action:update")
+	assert.Contains(t, multi, "actor:alxx")
+}
+
+func TestFormatAuditValueMatrix(t *testing.T) {
+	assert.Equal(t, "None", formatAuditValue(nil))
+	assert.Equal(t, "None", formatAuditValue("  "))
+
+	structured := formatAuditValue(`{"owner":"alxx"}`)
+	assert.Contains(t, structured, "owner")
+	assert.Contains(t, structured, "alxx")
+
+	timestamp := time.Date(2026, 2, 26, 7, 8, 9, 0, time.UTC)
+	assert.Contains(t, formatAuditValue(timestamp), "2026")
+
+	asList := formatAuditValue([]any{"a", "b"})
+	assert.Contains(t, asList, "a")
+	assert.Contains(t, asList, "b")
+}
+
+func TestBuildAuditDiffRowsUsesUnionWhenChangedFieldsMissing(t *testing.T) {
+	entry := api.AuditEntry{
+		OldData: api.JSONMap{"name": "old", "same": "x"},
+		NewData: api.JSONMap{"name": "new", "same": "x", "status": "active"},
+	}
+	rows := buildAuditDiffRows(entry)
+	assert.Len(t, rows, 2)
+
+	labels := []string{rows[0].Label, rows[1].Label}
+	assert.Contains(t, strings.Join(labels, ","), "Name")
+	assert.Contains(t, strings.Join(labels, ","), "Status")
+}
+
+func TestApplyLocalFiltersRejectsNonMatchingActorOrTerms(t *testing.T) {
+	name := "Agent Smith"
+	items := []api.AuditEntry{{TableName: "entities", RecordID: "ent-1", ActorName: &name}}
+
+	model := HistoryModel{filter: auditFilter{actor: "alice"}}
+	assert.Empty(t, model.applyLocalFilters(items))
+
+	model = HistoryModel{filter: auditFilter{terms: []string{"jobs"}}}
+	assert.Empty(t, model.applyLocalFilters(items))
+}
+
+func TestParseAuditFilterAliases(t *testing.T) {
+	filter := parseAuditFilter("record_id:ent-1 scope_id:scope-1 actor:alxx")
+	assert.Equal(t, "ent-1", filter.recordID)
+	assert.Equal(t, "scope-1", filter.scopeID)
+	assert.Equal(t, "alxx", filter.actor)
+}
