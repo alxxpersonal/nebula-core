@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 # Standard Library
+from datetime import timezone
 from uuid import uuid4
 from unittest.mock import AsyncMock
 
@@ -272,6 +273,61 @@ async def test_execute_create_relationship_rejects_cycle(mock_enums):
 
 
 @pytest.mark.asyncio
+async def test_execute_create_relationship_rejects_self_reference(mock_enums):
+    """Relationships must reject source==target edges for the same node."""
+
+    node_id = str(uuid4())
+    pool = _PoolStub()
+
+    with pytest.raises(ValueError, match="Self-referential"):
+        await executors.execute_create_relationship(
+            pool,
+            mock_enums,
+            {
+                "source_type": "entity",
+                "source_id": node_id,
+                "target_type": "entity",
+                "target_id": node_id,
+                "relationship_type": "related-to",
+            },
+        )
+
+
+@pytest.mark.asyncio
+async def test_execute_create_relationship_duplicate_maps_value_error(
+    monkeypatch, mock_enums
+):
+    """Known relationship duplicate constraint should map to ValueError."""
+
+    class _FakeUniqueViolation(Exception):
+        def __init__(self, constraint_name: str):
+            super().__init__(constraint_name)
+            self.constraint_name = constraint_name
+
+    pool = _PoolStub(
+        fetchrow_rows=[
+            _FakeUniqueViolation(
+                "relationships_source_type_source_id_target_type_target_id_t_key"
+            )
+        ],
+    )
+    monkeypatch.setattr(executors, "UniqueViolationError", _FakeUniqueViolation)
+
+    with pytest.raises(ValueError, match="Relationship already exists"):
+        await executors.execute_create_relationship(
+            pool,
+            mock_enums,
+            {
+                "source_type": "entity",
+                "source_id": str(uuid4()),
+                "target_type": "entity",
+                "target_id": str(uuid4()),
+                "relationship_type": "related-to",
+            },
+        )
+
+
+@pytest.mark.asyncio
 async def test_execute_update_job_raises_when_missing(mock_enums):
     """Job updates should raise not found when row update returns nothing."""
 
@@ -359,6 +415,26 @@ async def test_execute_update_file_status_branch(mock_enums):
 
 
 @pytest.mark.asyncio
+async def test_execute_create_file_success(mock_enums):
+    """File create executor should resolve status and return created row."""
+
+    file_id = str(uuid4())
+    pool = _PoolStub(fetchrow_rows=[{"id": file_id, "filename": "alpha.txt"}])
+    result = await executors.execute_create_file(
+        pool,
+        mock_enums,
+        {
+            "filename": "alpha.txt",
+            "file_path": "/tmp/alpha.txt",
+            "status": "active",
+            "metadata": {"kind": "text"},
+        },
+    )
+    assert result["id"] == file_id
+    assert pool.fetchrow_calls[0][0] == executors.QUERIES["files/create"]
+
+
+@pytest.mark.asyncio
 async def test_execute_update_protocol_status_branch(mock_enums):
     """Protocol updates should resolve status names when supplied."""
 
@@ -369,6 +445,31 @@ async def test_execute_update_protocol_status_branch(mock_enums):
         {"name": "alpha", "status": "active"},
     )
     assert result == {"name": "alpha"}
+
+
+@pytest.mark.asyncio
+async def test_execute_create_protocol_success(mock_enums):
+    """Protocol create executor should resolve status and return created row."""
+
+    pool = _PoolStub(fetchrow_rows=[{"name": "p1", "status": "active"}])
+    result = await executors.execute_create_protocol(
+        pool,
+        mock_enums,
+        {
+            "name": "p1",
+            "title": "Protocol 1",
+            "version": "1.0.0",
+            "content": "steps",
+            "protocol_type": "process",
+            "applies_to": ["entity"],
+            "status": "active",
+            "tags": ["core"],
+            "trusted": False,
+            "metadata": {"owner": "ops"},
+        },
+    )
+    assert result["name"] == "p1"
+    assert pool.fetchrow_calls[0][0] == executors.QUERIES["protocols/create"]
 
 
 @pytest.mark.asyncio
@@ -383,6 +484,28 @@ async def test_execute_update_log_log_type_and_status_branches(mock_enums):
         {"id": log_id, "log_type": "event", "status": "active"},
     )
     assert result == {"id": log_id}
+
+
+@pytest.mark.asyncio
+async def test_execute_create_log_defaults_timestamp_and_maps_types(mock_enums):
+    """Log create executor should resolve log/status ids and default timestamp."""
+
+    log_id = str(uuid4())
+    pool = _PoolStub(fetchrow_rows=[{"id": log_id}])
+    result = await executors.execute_create_log(
+        pool,
+        mock_enums,
+        {
+            "log_type": "event",
+            "status": "active",
+            "value": {"k": "v"},
+            "metadata": {"origin": "unit"},
+        },
+    )
+    assert result == {"id": log_id}
+    call = pool.fetchrow_calls[0]
+    assert call[0] == executors.QUERIES["logs/create"]
+    assert call[2].tzinfo == timezone.utc
 
 
 @pytest.mark.asyncio
