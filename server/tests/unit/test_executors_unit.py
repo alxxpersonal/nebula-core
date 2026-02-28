@@ -115,6 +115,12 @@ def test_decode_json_object_handles_invalid_payloads():
     assert executors._decode_json_object(42) == {}
 
 
+def test_decode_json_object_handles_none():
+    """None payloads should normalize to empty dict."""
+
+    assert executors._decode_json_object(None) == {}
+
+
 def test_normalize_entity_row_handles_none():
     """Entity row normalizer should return empty dict for missing rows."""
 
@@ -146,6 +152,48 @@ async def test_execute_create_entity_uses_explicit_transaction_when_not_in_tx(mo
 
     assert pool.transaction_calls == 1
     assert result["metadata"] == {"ok": True}
+
+
+@pytest.mark.asyncio
+async def test_execute_create_entity_uses_pool_acquire_branch(mock_enums, monkeypatch):
+    """Pool instances should execute through acquire()+transaction path."""
+
+    class _AcquireCtx:
+        def __init__(self, conn):
+            self._conn = conn
+
+        async def __aenter__(self):
+            return self._conn
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    class _PoolAcquireLike:
+        def __init__(self, conn):
+            self._conn = conn
+
+        def acquire(self):
+            return _AcquireCtx(self._conn)
+
+    conn = _PoolStub(
+        fetchrow_rows=[None, {"id": str(uuid4()), "name": "acq", "metadata": "{}"}],
+        in_transaction=True,
+    )
+    pool_like = _PoolAcquireLike(conn)
+    monkeypatch.setattr(executors, "Pool", _PoolAcquireLike)
+
+    result = await executors.execute_create_entity(
+        pool_like,
+        mock_enums,
+        {
+            "name": "acq",
+            "type": "project",
+            "status": "active",
+            "scopes": ["public"],
+        },
+    )
+
+    assert result["name"] == "acq"
 
 
 @pytest.mark.asyncio
@@ -278,6 +326,22 @@ async def test_execute_update_context_status_and_scope_paths(mock_enums):
 
 
 @pytest.mark.asyncio
+async def test_execute_update_context_string_payload_path(mock_enums):
+    """String payloads should decode for update_context."""
+
+    context_id = str(uuid4())
+    pool = _PoolStub(fetchrow_rows=[{"id": context_id, "metadata": {}}])
+
+    result = await executors.execute_update_context(
+        pool,
+        mock_enums,
+        json.dumps({"context_id": context_id, "title": "renamed"}),
+    )
+
+    assert result["id"] == context_id
+
+
+@pytest.mark.asyncio
 async def test_execute_update_context_raises_when_update_returns_missing(mock_enums):
     """Context update should raise when the update query returns no row."""
 
@@ -339,6 +403,31 @@ async def test_execute_create_relationship_rejects_cycle(mock_enums):
                 "relationship_type": "depends-on",
             },
         )
+
+
+@pytest.mark.asyncio
+async def test_execute_create_relationship_string_payload_success(mock_enums):
+    """String payloads should decode for create_relationship success path."""
+
+    relationship_id = str(uuid4())
+    pool = _PoolStub(fetchrow_rows=[{"id": relationship_id, "metadata": "{}"}])
+
+    result = await executors.execute_create_relationship(
+        pool,
+        mock_enums,
+        json.dumps(
+            {
+                "source_type": "entity",
+                "source_id": str(uuid4()),
+                "target_type": "entity",
+                "target_id": str(uuid4()),
+                "relationship_type": "related-to",
+            }
+        ),
+    )
+
+    assert result["id"] == relationship_id
+    assert result["metadata"] == {}
 
 
 @pytest.mark.asyncio
@@ -556,6 +645,48 @@ async def test_execute_update_log_log_type_and_status_branches(mock_enums):
 
 
 @pytest.mark.asyncio
+async def test_execute_update_entity_string_payload_with_metadata_merge(mock_enums):
+    """String payloads should decode and merge metadata for update_entity."""
+
+    entity_id = str(uuid4())
+    type_id = mock_enums.entity_types.name_to_id["project"]
+    pool = _PoolStub(
+        fetchrow_rows=[
+            {"type_id": type_id, "metadata": {"existing": {"a": 1}}},
+            {"id": entity_id, "metadata": '{"existing":{"a":1},"new":{"b":2}}'},
+        ]
+    )
+
+    result = await executors.execute_update_entity(
+        pool,
+        mock_enums,
+        json.dumps(
+            {
+                "entity_id": entity_id,
+                "status": "active",
+                "metadata": {"new": {"b": 2}},
+            }
+        ),
+    )
+
+    assert result["id"] == entity_id
+    assert result["metadata"]["new"] == {"b": 2}
+
+
+@pytest.mark.asyncio
+async def test_execute_update_entity_raises_when_metadata_target_missing(mock_enums):
+    """Metadata updates should fail when the entity row cannot be loaded."""
+
+    pool = _PoolStub(fetchrow_rows=[None])
+    with pytest.raises(ValueError, match="Entity not found"):
+        await executors.execute_update_entity(
+            pool,
+            mock_enums,
+            {"entity_id": str(uuid4()), "metadata": {"x": 1}},
+        )
+
+
+@pytest.mark.asyncio
 async def test_execute_create_log_defaults_timestamp_and_maps_types(mock_enums):
     """Log create executor should resolve log/status ids and default timestamp."""
 
@@ -684,3 +815,266 @@ async def test_execute_register_agent_marks_approved_enrollment_when_metadata_pr
 
     assert result["approval_id"] == approval_id
     pool.execute.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_execute_create_entity_json_payload_duplicate_raises(mock_enums):
+    """JSON payloads should decode and still hit duplicate guardrails."""
+
+    pool = _PoolStub(fetchrow_rows=[{"id": uuid4()}])
+    with pytest.raises(ValueError, match="already exists"):
+        await executors.execute_create_entity(
+            pool,
+            mock_enums,
+            json.dumps(
+                {
+                    "name": "dup",
+                    "type": "project",
+                    "status": "active",
+                    "scopes": ["public"],
+                    "source_path": "notes/dup.md",
+                }
+            ),
+        )
+
+
+@pytest.mark.asyncio
+async def test_execute_create_entity_rejects_unknown_context_segment_scope(mock_enums):
+    """Context segment scopes must exist in enum registry."""
+
+    pool = _PoolStub(fetchrow_rows=[None])
+    with pytest.raises(ValueError, match="Unknown scope: ghost-scope"):
+        await executors.execute_create_entity(
+            pool,
+            mock_enums,
+            {
+                "name": "bad-scope",
+                "type": "project",
+                "status": "active",
+                "scopes": ["public"],
+                "metadata": {
+                    "context_segments": [{"text": "x", "scopes": ["ghost-scope"]}]
+                },
+            },
+        )
+
+
+@pytest.mark.asyncio
+async def test_execute_create_entity_rejects_segment_scope_outside_entity_scopes(
+    mock_enums,
+):
+    """Context segment scopes must be a subset of entity scopes."""
+
+    pool = _PoolStub(fetchrow_rows=[None])
+    with pytest.raises(ValueError, match="not in entity scopes"):
+        await executors.execute_create_entity(
+            pool,
+            mock_enums,
+            {
+                "name": "bad-subset",
+                "type": "project",
+                "status": "active",
+                "scopes": ["public"],
+                "metadata": {
+                    "context_segments": [{"text": "x", "scopes": ["private"]}]
+                },
+            },
+        )
+
+
+@pytest.mark.asyncio
+async def test_execute_string_payload_paths_for_core_mutations(mock_enums):
+    """String change_details should decode across create/update executors."""
+
+    job_id = "2026Q1-ABCD"
+    file_id = str(uuid4())
+    relationship_id = str(uuid4())
+    log_id = str(uuid4())
+    pool = _PoolStub(
+        fetchrow_rows=[
+            {"id": job_id},  # create_job
+            {"id": job_id},  # update_job
+            {"id": relationship_id},  # update_relationship
+            {"id": job_id},  # update_job_status
+            {"id": file_id},  # create_file
+            {"id": file_id},  # update_file
+            {"name": "proto-1"},  # create_protocol
+            {"name": "proto-1"},  # update_protocol
+            {"id": log_id},  # create_log
+            {"id": log_id},  # update_log
+        ],
+        fetchval_rows=[False],  # relationship cycle check
+    )
+
+    created_job = await executors.execute_create_job(
+        pool,
+        mock_enums,
+        json.dumps({"title": "job-1", "scopes": ["public"]}),
+    )
+    assert created_job["id"] == job_id
+
+    updated_job = await executors.execute_update_job(
+        pool,
+        mock_enums,
+        json.dumps({"job_id": job_id, "title": "job-1b"}),
+    )
+    assert updated_job["id"] == job_id
+
+    updated_rel = await executors.execute_update_relationship(
+        pool,
+        mock_enums,
+        json.dumps({"relationship_id": relationship_id}),
+    )
+    assert updated_rel["id"] == relationship_id
+
+    updated_status = await executors.execute_update_job_status(
+        pool,
+        mock_enums,
+        json.dumps({"job_id": job_id, "status": "active"}),
+    )
+    assert updated_status["id"] == job_id
+
+    created_file = await executors.execute_create_file(
+        pool,
+        mock_enums,
+        json.dumps({"filename": "file.txt", "file_path": "/tmp/file.txt"}),
+    )
+    assert created_file["id"] == file_id
+
+    updated_file = await executors.execute_update_file(
+        pool,
+        mock_enums,
+        json.dumps({"file_id": file_id, "filename": "file-renamed.txt"}),
+    )
+    assert updated_file["id"] == file_id
+
+    created_protocol = await executors.execute_create_protocol(
+        pool,
+        mock_enums,
+        json.dumps({"name": "proto-1", "title": "P1", "content": "steps"}),
+    )
+    assert created_protocol["name"] == "proto-1"
+
+    updated_protocol = await executors.execute_update_protocol(
+        pool,
+        mock_enums,
+        json.dumps({"name": "proto-1", "title": "P1-updated"}),
+    )
+    assert updated_protocol["name"] == "proto-1"
+
+    created_log = await executors.execute_create_log(
+        pool,
+        mock_enums,
+        json.dumps({"log_type": "event"}),
+    )
+    assert created_log["id"] == log_id
+
+    updated_log = await executors.execute_update_log(
+        pool,
+        mock_enums,
+        json.dumps({"id": log_id}),
+    )
+    assert updated_log["id"] == log_id
+
+
+@pytest.mark.asyncio
+async def test_execute_bulk_update_and_import_string_payload_wrappers(
+    monkeypatch, mock_enums
+):
+    """String payload wrappers should forward decoded dicts to underlying executors."""
+
+    captured: dict[str, dict] = {}
+
+    async def _create_entity(_pool, _enums, details):
+        captured["entity"] = details
+        return {"ok": "entity"}
+
+    async def _create_context(_pool, _enums, details):
+        captured["context"] = details
+        return {"ok": "context"}
+
+    async def _create_relationship(_pool, _enums, details):
+        captured["relationship"] = details
+        return {"ok": "relationship"}
+
+    async def _create_job(_pool, _enums, details):
+        captured["job"] = details
+        return {"ok": "job"}
+
+    monkeypatch.setattr(executors, "execute_create_entity", _create_entity)
+    monkeypatch.setattr(executors, "execute_create_context", _create_context)
+    monkeypatch.setattr(executors, "execute_create_relationship", _create_relationship)
+    monkeypatch.setattr(executors, "execute_create_job", _create_job)
+
+    pool = _PoolStub(fetch_rows=[[{"id": "ent-1"}], [{"id": "ent-2"}]])
+    tags_result = await executors.execute_bulk_update_entity_tags(
+        pool,
+        mock_enums,
+        json.dumps({"entity_ids": ["ent-1"], "op": "add", "tags": ["x"]}),
+    )
+    scopes_result = await executors.execute_bulk_update_entity_scopes(
+        pool,
+        mock_enums,
+        json.dumps({"entity_ids": ["ent-2"], "op": "remove", "scopes": ["public"]}),
+    )
+    assert tags_result == {"updated": 1, "entity_ids": ["ent-1"]}
+    assert scopes_result == {"updated": 1, "entity_ids": ["ent-2"]}
+
+    ent = await executors.execute_bulk_import_entities(
+        pool, mock_enums, {"name": "alpha"}
+    )
+    ctx = await executors.execute_bulk_import_context(
+        pool, mock_enums, {"title": "ctx"}
+    )
+    rel = await executors.execute_bulk_import_relationships(
+        pool, mock_enums, {"relationship_type": "related-to"}
+    )
+    job = await executors.execute_bulk_import_jobs(pool, mock_enums, {"title": "job"})
+
+    assert ent == {"ok": "entity"}
+    assert ctx == {"ok": "context"}
+    assert rel == {"ok": "relationship"}
+    assert job == {"ok": "job"}
+    assert captured["entity"] == {"name": "alpha"}
+    assert captured["context"] == {"title": "ctx"}
+    assert captured["relationship"] == {"relationship_type": "related-to"}
+    assert captured["job"] == {"title": "job"}
+
+
+@pytest.mark.asyncio
+async def test_execute_register_agent_parses_string_inputs_and_revert_entity_branches(
+    monkeypatch, mock_enums
+):
+    """Register/revert should parse string payloads and validate required ids."""
+
+    agent_id = str(uuid4())
+    pool = _PoolStub(
+        fetchrow_rows=[
+            {"requires_approval": True},
+            {"id": uuid4(), "name": "agent-string"},
+        ]
+    )
+
+    result = await executors.execute_register_agent(
+        pool,
+        mock_enums,
+        json.dumps({"agent_id": agent_id, "requested_scopes": ["public"]}),
+        review_details='{"grant_scopes":["public"],"grant_requires_approval":false}',
+    )
+    assert result["name"] == "agent-string"
+    assert result["requires_approval"] is False
+
+    with pytest.raises(ValueError, match="entity_id and audit_id are required"):
+        await executors.execute_revert_entity(pool, mock_enums, {"entity_id": ""})
+
+    async def _fake_revert(_pool, entity_id, audit_id):
+        return {"entity_id": entity_id, "audit_id": audit_id}
+
+    monkeypatch.setattr("nebula_mcp.helpers.revert_entity", _fake_revert)
+    reverted = await executors.execute_revert_entity(
+        pool,
+        mock_enums,
+        json.dumps({"entity_id": str(uuid4()), "audit_id": str(uuid4())}),
+    )
+    assert "entity_id" in reverted
+    assert "audit_id" in reverted
