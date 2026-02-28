@@ -216,6 +216,59 @@ func TestWrapMetadataDisplayLinesPreservesBlankRows(t *testing.T) {
 	assert.GreaterOrEqual(t, len(lines), 2)
 }
 
+func TestParseMetadataScalarCoversQuotedAndRawValues(t *testing.T) {
+	assert.Equal(t, "", parseMetadataScalar(""))
+	assert.Equal(t, "alpha", parseMetadataScalar("\"alpha\""))
+	assert.Equal(t, "beta", parseMetadataScalar("'beta'"))
+	assert.Equal(t, "plain", parseMetadataScalar("plain"))
+}
+
+func TestNormalizeStructuredMetadataValueCoversContainerVariants(t *testing.T) {
+	normalized := normalizeStructuredMetadataValue(map[string]any{
+		"map_string_string":   map[string]string{"k": "v"},
+		"slice_map_any":       []map[string]any{{"k": "v"}},
+		"slice_map_string":    []map[string]string{{"k": "v"}},
+		"slice_any":           []any{"{\"n\":1}", "x"},
+		"json_struct_literal": "{\"flag\":true}",
+		"default_scalar":      7,
+	}).(map[string]any) //nolint:forcetypeassert
+
+	mapStringString, ok := normalized["map_string_string"].(map[string]any)
+	assert.True(t, ok)
+	assert.Equal(t, "v", mapStringString["k"])
+
+	sliceMapAny, ok := normalized["slice_map_any"].([]any)
+	assert.True(t, ok)
+	if assert.Len(t, sliceMapAny, 1) {
+		entry, ok := sliceMapAny[0].(map[string]any)
+		assert.True(t, ok)
+		assert.Equal(t, "v", entry["k"])
+	}
+
+	sliceMapString, ok := normalized["slice_map_string"].([]any)
+	assert.True(t, ok)
+	if assert.Len(t, sliceMapString, 1) {
+		entry, ok := sliceMapString[0].(map[string]any)
+		assert.True(t, ok)
+		assert.Equal(t, "v", entry["k"])
+	}
+
+	sliceAny, ok := normalized["slice_any"].([]any)
+	assert.True(t, ok)
+	if assert.Len(t, sliceAny, 2) {
+		entry, ok := sliceAny[0].(map[string]any)
+		assert.True(t, ok)
+		assert.Equal(t, float64(1), entry["n"])
+		assert.Equal(t, "x", sliceAny[1])
+	}
+
+	jsonStruct, ok := normalized["json_struct_literal"].(map[string]any)
+	assert.True(t, ok)
+	assert.Equal(t, true, jsonStruct["flag"])
+
+	assert.Equal(t, 7, normalized["default_scalar"])
+}
+
 // TestRenderMetadataSelectableBlockHidesSelectionColumnWhenNothingIsSelected handles test render metadata selectable block hides selection column when nothing is selected.
 func TestRenderMetadataSelectableBlockHidesSelectionColumnWhenNothingIsSelected(t *testing.T) {
 	rows := []metadataDisplayRow{
