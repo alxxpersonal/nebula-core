@@ -105,3 +105,32 @@ func TestWrapDiffLineLongWordFlushesCurrentSegment(t *testing.T) {
 	assert.Contains(t, lines[1], "...")
 	assert.Equal(t, "beta", lines[len(lines)-1])
 }
+
+func TestTitledBoxWithStyleFallsBackWhenRenderedLineTooShort(t *testing.T) {
+	out := titledBoxWithStyle(
+		"title",
+		"",
+		0,
+		lipgloss.NewStyle(),
+		lipgloss.NewStyle(),
+		lipgloss.Color("#000000"),
+	)
+	assert.Equal(t, "", out)
+}
+
+func TestFormatMetadataValueHandlesJSONMarshalFailures(t *testing.T) {
+	mapWithBadValue := map[string]any{
+		"broken": make(chan int),
+	}
+	arrayWithBadMap := []any{
+		mapWithBadValue,
+		"ok",
+	}
+
+	mapResult := formatMetadataValue(mapWithBadValue)
+	arrayResult := formatMetadataValue(arrayWithBadMap)
+
+	assert.Contains(t, mapResult, "broken")
+	assert.Contains(t, arrayResult, "broken")
+	assert.Contains(t, arrayResult, "ok")
+}
