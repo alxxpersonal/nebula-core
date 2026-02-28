@@ -321,11 +321,19 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.startup.Auth = "missing"
 			a.startup.Taxonomy = "failed"
 		}
-		if a.startup.Auth == "invalid" {
+		switch a.startup.Auth {
+		case "invalid":
+			a.err = "INVALID_API_KEY: Invalid API key"
 			a.lastErrCode = "INVALID_API_KEY"
 			a.lastErrMsg = "Invalid API key"
 			a.showRecoveryHints = true
-		} else {
+		case "multi_api_conflict":
+			a.err = "MULTIPLE_API_INSTANCES_DETECTED: multiple api instances detected"
+			a.lastErrCode = "MULTIPLE_API_INSTANCES_DETECTED"
+			a.lastErrMsg = "multiple api instances detected"
+			a.showRecoveryHints = false
+		default:
+			a.err = ""
 			a.lastErrCode = ""
 			a.lastErrMsg = ""
 			a.showRecoveryHints = false
@@ -595,6 +603,9 @@ func (a App) View() string {
 		message := a.err
 		if a.showRecoveryHints {
 			message += "\n\nRecovery: [r] re-login  [s] settings  [c] show command"
+		}
+		if shouldShowMultiAPIRecoveryHint(a.lastErrCode, a.lastErrMsg, a.err) {
+			message += "\n\nRecovery: stop duplicate API processes and restart with `nebula start`."
 		}
 		feedback = centerBlockUniform(components.ErrorBox("Error", message, a.width), a.width)
 	} else if a.toast != nil {
@@ -1320,21 +1331,21 @@ func (a App) statusHintsForTab() []string {
 			components.Hint("k", "API Key"),
 			components.Hint("p", "Queue Limit"),
 		}
-			switch a.profile.section {
-			case 0:
+		switch a.profile.section {
+		case 0:
+			hints = append(hints,
+				components.Hint("n", "New Key"),
+				components.Hint("r", "Revoke"),
+			)
+		case 1:
+			hints = append(hints,
+				components.Hint("enter", "Details"),
+				components.Hint("t", "Toggle Trust"),
+			)
+		default:
+			if a.profile.taxPromptMode != taxPromptNone {
 				hints = append(hints,
-					components.Hint("n", "New Key"),
-					components.Hint("r", "Revoke"),
-				)
-			case 1:
-				hints = append(hints,
-					components.Hint("enter", "Details"),
-					components.Hint("t", "Toggle Trust"),
-				)
-			default:
-				if a.profile.taxPromptMode != taxPromptNone {
-					hints = append(hints,
-						components.Hint("enter", "Apply"),
+					components.Hint("enter", "Apply"),
 					components.Hint("esc", "Cancel"),
 				)
 			} else {
@@ -1348,10 +1359,10 @@ func (a App) statusHintsForTab() []string {
 					components.Hint("i", "Inactive"),
 				)
 			}
-			}
-			return append(base, hints...)
 		}
-		return base
+		return append(base, hints...)
+	}
+	return base
 }
 
 // renderTips renders render tips.
@@ -1768,6 +1779,21 @@ func shouldShowRecoveryHints(code, msg string) bool {
 	return false
 }
 
+// shouldShowMultiAPIRecoveryHint handles should show multi api recovery hint.
+func shouldShowMultiAPIRecoveryHint(code, msg, errText string) bool {
+	normalized := strings.ToUpper(strings.TrimSpace(code))
+	if normalized == "MULTIPLE_API_INSTANCES_DETECTED" {
+		return true
+	}
+	combined := strings.ToLower(strings.TrimSpace(msg + " " + errText))
+	return strings.Contains(combined, "multiple api instances detected") ||
+		strings.Contains(combined, "multiple_api_instances_detected") ||
+		strings.Contains(combined, "address already in use") ||
+		strings.Contains(combined, "eaddrinuse") ||
+		strings.Contains(combined, "errno 98") ||
+		strings.Contains(combined, "errno 48")
+}
+
 // classifyStartupAPI handles classify startup api.
 func classifyStartupAPI(errText string) string {
 	if strings.TrimSpace(errText) == "" {
@@ -1794,7 +1820,7 @@ func classifyStartupAuth(errText string, cfg *config.Config) string {
 		strings.Contains(lower, "multiple_api_instances_detected"):
 		return "multi_api_conflict"
 	case strings.Contains(lower, "http 500"), strings.Contains(lower, "internal server error"):
-		return "failed"
+		return "multi_api_conflict"
 	case strings.Contains(lower, "invalid api key"),
 		strings.Contains(lower, "invalid_api_key"),
 		strings.Contains(lower, "missing or invalid authorization"),

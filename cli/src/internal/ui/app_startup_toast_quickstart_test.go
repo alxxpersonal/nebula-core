@@ -176,7 +176,7 @@ func TestStartupParsingHelpers(t *testing.T) {
 	assert.Equal(t, "invalid", classifyStartupAuth("HTTP 401: Unauthorized", &config.Config{APIKey: "key"}))
 	assert.Equal(t, "invalid", classifyStartupAuth("INVALID_API_KEY: bad token", &config.Config{APIKey: "key"}))
 	assert.Equal(t, "invalid", classifyStartupAuth("AUTH_REQUIRED: missing auth", &config.Config{APIKey: "key"}))
-	assert.Equal(t, "failed", classifyStartupAuth("HTTP 500: Internal Server Error", &config.Config{APIKey: "key"}))
+	assert.Equal(t, "multi_api_conflict", classifyStartupAuth("HTTP 500: Internal Server Error", &config.Config{APIKey: "key"}))
 	assert.Equal(
 		t,
 		"multi_api_conflict",
@@ -215,6 +215,7 @@ func TestStartupCheckedMsgInvalidAuthEnablesRecoveryHints(t *testing.T) {
 
 	assert.False(t, updated.startupChecking)
 	assert.Equal(t, "invalid", updated.startup.Auth)
+	assert.Equal(t, "INVALID_API_KEY: Invalid API key", updated.err)
 	assert.Equal(t, "INVALID_API_KEY", updated.lastErrCode)
 	assert.Equal(t, "Invalid API key", updated.lastErrMsg)
 	assert.True(t, updated.showRecoveryHints)
@@ -459,8 +460,8 @@ func TestStartupCheckedMsgAPIDownClearsStaleRecoveryHints(t *testing.T) {
 	require.NotNil(t, cmd)
 }
 
-// TestStartupCheckedMsgAuth500DoesNotShowInvalidKeyRecoveryHints handles auth 500 startup failures without invalid-key hinting.
-func TestStartupCheckedMsgAuth500DoesNotShowInvalidKeyRecoveryHints(t *testing.T) {
+// TestStartupCheckedMsgAuth500SurfacesMultiAPIRecovery handles generic startup auth 500 conflicts.
+func TestStartupCheckedMsgAuth500SurfacesMultiAPIRecovery(t *testing.T) {
 	app := NewApp(nil, &config.Config{APIKey: "bad-key"})
 	app.startupChecking = true
 	app.showRecoveryHints = true
@@ -472,14 +473,15 @@ func TestStartupCheckedMsgAuth500DoesNotShowInvalidKeyRecoveryHints(t *testing.T
 
 	assert.False(t, updated.startupChecking)
 	assert.Equal(t, "ok", updated.startup.API)
-	assert.Equal(t, "failed", updated.startup.Auth)
+	assert.Equal(t, "multi_api_conflict", updated.startup.Auth)
 	assert.False(t, updated.showRecoveryHints)
-	assert.Equal(t, "", updated.lastErrCode)
-	assert.Equal(t, "", updated.lastErrMsg)
+	assert.Equal(t, "MULTIPLE_API_INSTANCES_DETECTED", updated.lastErrCode)
+	assert.Equal(t, "multiple api instances detected", updated.lastErrMsg)
+	assert.Contains(t, strings.ToLower(updated.err), "multiple api instances detected")
 	require.NotNil(t, cmd)
 	require.NotNil(t, updated.toast)
-	assert.Equal(t, "warning", updated.toast.level)
-	assert.Contains(t, strings.ToLower(updated.toast.text), "auth=failed")
+	assert.Equal(t, "error", updated.toast.level)
+	assert.Contains(t, strings.ToLower(updated.toast.text), "multiple api instances detected")
 }
 
 // TestStartupCheckedMsgMultiAPIConflictShowsActionableToast handles explicit multi-api conflict startup messaging.
@@ -492,6 +494,8 @@ func TestStartupCheckedMsgMultiAPIConflictShowsActionableToast(t *testing.T) {
 
 	assert.False(t, updated.startupChecking)
 	assert.Equal(t, "multi_api_conflict", updated.startup.Auth)
+	assert.Equal(t, "MULTIPLE_API_INSTANCES_DETECTED: multiple api instances detected", updated.err)
+	assert.Equal(t, "MULTIPLE_API_INSTANCES_DETECTED", updated.lastErrCode)
 	assert.False(t, updated.showRecoveryHints)
 	require.NotNil(t, cmd)
 	require.NotNil(t, updated.toast)
@@ -510,6 +514,7 @@ func TestStartupCheckedMsgMultiAPIConflictCodeShowsActionableToast(t *testing.T)
 
 	assert.False(t, updated.startupChecking)
 	assert.Equal(t, "multi_api_conflict", updated.startup.Auth)
+	assert.Equal(t, "MULTIPLE_API_INSTANCES_DETECTED", updated.lastErrCode)
 	assert.False(t, updated.showRecoveryHints)
 	require.NotNil(t, cmd)
 	require.NotNil(t, updated.toast)
@@ -527,9 +532,23 @@ func TestStartupCheckedMsgAuthCodeErrorEnablesRecoveryHints(t *testing.T) {
 
 	assert.False(t, updated.startupChecking)
 	assert.Equal(t, "invalid", updated.startup.Auth)
+	assert.Contains(t, updated.err, "INVALID_API_KEY")
 	assert.True(t, updated.showRecoveryHints)
 	assert.Equal(t, "INVALID_API_KEY", updated.lastErrCode)
 	require.NotNil(t, cmd)
 	require.NotNil(t, updated.toast)
 	assert.Equal(t, "warning", updated.toast.level)
+}
+
+// TestErrorBoxShowsMultiAPIRecoveryHint handles persistent UI guidance for multi-API conflicts.
+func TestErrorBoxShowsMultiAPIRecoveryHint(t *testing.T) {
+	app := NewApp(nil, &config.Config{APIKey: "key"})
+	app.err = "MULTIPLE_API_INSTANCES_DETECTED: multiple api instances detected"
+	app.lastErrCode = "MULTIPLE_API_INSTANCES_DETECTED"
+	app.lastErrMsg = "multiple api instances detected"
+
+	out := app.View()
+	assert.Contains(t, strings.ToLower(out), "multiple api instances detected")
+	assert.Contains(t, strings.ToLower(out), "stop duplicate api processes")
+	assert.Contains(t, out, "nebula start")
 }
