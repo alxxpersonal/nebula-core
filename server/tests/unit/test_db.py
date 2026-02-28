@@ -3,7 +3,7 @@
 # Third-Party
 import pytest
 
-from nebula_mcp.db import build_dsn, get_agent
+from nebula_mcp.db import build_dsn, get_agent, get_pool
 
 pytestmark = pytest.mark.unit
 
@@ -82,3 +82,68 @@ class TestGetAgent:
 
         with pytest.raises(ValueError, match="agent_name required"):
             await get_agent(mock_pool, "")
+
+    async def test_returns_fetchrow_payload(self, mock_pool):
+        """Valid names should delegate to fetchrow and return payload."""
+
+        expected = {"id": "agent-1", "name": "alpha"}
+        mock_pool.fetchrow.return_value = expected
+
+        result = await get_agent(mock_pool, "alpha")
+
+        assert result == expected
+        assert mock_pool.fetchrow.await_count == 1
+        assert mock_pool.fetchrow.await_args.args[1] == "alpha"
+
+
+# --- get_pool ---
+
+
+class TestGetPool:
+    """Tests for the get_pool function."""
+
+    async def test_create_pool_success_uses_passed_parameters(self, monkeypatch):
+        """get_pool should pass dsn and override params to asyncpg.create_pool."""
+
+        called = {}
+
+        async def _fake_create_pool(**kwargs):
+            called.update(kwargs)
+            return "pool-object"
+
+        monkeypatch.setattr("nebula_mcp.db.build_dsn", lambda: "postgresql://dsn")
+        monkeypatch.setattr("nebula_mcp.db.asyncpg.create_pool", _fake_create_pool)
+
+        pool = await get_pool(min_size=2, max_size=5, command_timeout=9)
+
+        assert pool == "pool-object"
+        assert called["dsn"] == "postgresql://dsn"
+        assert called["min_size"] == 2
+        assert called["max_size"] == 5
+        assert called["command_timeout"] == 9
+
+    async def test_connection_refused_maps_to_runtime_error(self, monkeypatch):
+        """Connection refused errors should surface Docker hint RuntimeError."""
+
+        monkeypatch.setattr("nebula_mcp.db.build_dsn", lambda: "postgresql://dsn")
+
+        async def _raise_refused(**_kwargs):
+            raise ConnectionRefusedError(61, "connection refused")
+
+        monkeypatch.setattr("nebula_mcp.db.asyncpg.create_pool", _raise_refused)
+
+        with pytest.raises(RuntimeError, match="Database connection failed"):
+            await get_pool()
+
+    async def test_non_connection_oserror_bubbles(self, monkeypatch):
+        """Non-connectivity OSErrors should re-raise untouched."""
+
+        monkeypatch.setattr("nebula_mcp.db.build_dsn", lambda: "postgresql://dsn")
+
+        async def _raise_permission(**_kwargs):
+            raise OSError(13, "permission denied")
+
+        monkeypatch.setattr("nebula_mcp.db.asyncpg.create_pool", _raise_permission)
+
+        with pytest.raises(OSError, match="permission denied"):
+            await get_pool()

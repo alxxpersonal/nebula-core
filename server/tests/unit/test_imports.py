@@ -98,11 +98,25 @@ def test_extract_items_rejects_empty_csv():
         extract_items("csv", "name,type\n,\n", None)
 
 
+def test_extract_items_returns_csv_rows():
+    """CSV mode should return parsed non-empty rows."""
+
+    rows = extract_items("csv", "name,type\nalpha,project\n", None)
+    assert rows == [{"name": "alpha", "type": "project"}]
+
+
 def test_extract_items_requires_json_items():
     """JSON mode should require non-empty items."""
 
     with pytest.raises(ValueError, match="Items are required for JSON import"):
         extract_items("json", None, [])
+
+
+def test_extract_items_returns_json_items():
+    """JSON mode should return provided items unchanged."""
+
+    items = [{"name": "alpha"}, {"name": "beta"}]
+    assert extract_items("json", None, items) == items
 
 
 def test_merge_defaults_without_defaults_returns_copy():
