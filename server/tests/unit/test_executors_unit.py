@@ -4,6 +4,7 @@ from __future__ import annotations
 
 # Standard Library
 from datetime import timezone
+import json
 from uuid import uuid4
 from unittest.mock import AsyncMock
 
@@ -159,6 +160,74 @@ async def test_execute_update_context_raises_when_metadata_target_missing(mock_e
             mock_enums,
             {"context_id": str(uuid4()), "metadata": {"k": "v"}},
         )
+
+
+@pytest.mark.asyncio
+async def test_execute_create_context_parses_json_change_details(mock_enums):
+    """String payloads should decode before CreateContextInput validation."""
+
+    context_id = str(uuid4())
+    pool = _PoolStub(
+        fetchrow_rows=[
+            None,
+            {"id": context_id, "metadata": '{"ok": true}'},
+        ]
+    )
+
+    result = await executors.execute_create_context(
+        pool,
+        mock_enums,
+        json.dumps(
+            {
+                "title": "alpha",
+                "url": "https://example.com",
+                "source_type": "note",
+                "scopes": ["public"],
+                "metadata": {"ok": True},
+            }
+        ),
+    )
+
+    assert result["id"] == context_id
+    assert result["metadata"] == {"ok": True}
+
+
+@pytest.mark.asyncio
+async def test_execute_create_context_duplicate_url_raises(mock_enums):
+    """Duplicate context URLs should raise with existing row details."""
+
+    pool = _PoolStub(fetchrow_rows=[{"id": "ctx-1", "title": "existing"}])
+
+    with pytest.raises(ValueError, match="already exists for URL"):
+        await executors.execute_create_context(
+            pool,
+            mock_enums,
+            {
+                "title": "alpha",
+                "url": "https://example.com",
+                "source_type": "note",
+                "scopes": ["public"],
+            },
+        )
+
+
+@pytest.mark.asyncio
+async def test_execute_create_context_returns_empty_dict_when_insert_missing(mock_enums):
+    """Create context should normalize missing insert rows to empty dict."""
+
+    pool = _PoolStub(fetchrow_rows=[None, None])
+    result = await executors.execute_create_context(
+        pool,
+        mock_enums,
+        {
+            "title": "alpha",
+            "url": None,
+            "source_type": "note",
+            "scopes": ["public"],
+        },
+    )
+
+    assert result == {}
 
 
 @pytest.mark.asyncio
