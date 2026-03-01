@@ -44,3 +44,18 @@ func TestJSONMapUnmarshalNullOrEmptyReturnsEmptyMap(t *testing.T) {
 		})
 	}
 }
+
+// TestJSONMapUnmarshalNumberFallsBackToEmptyMap handles numeric payload fallback.
+func TestJSONMapUnmarshalNumberFallsBackToEmptyMap(t *testing.T) {
+	var m JSONMap
+	require.NoError(t, json.Unmarshal([]byte(`42`), &m))
+	assert.NotNil(t, m)
+	assert.Len(t, m, 0)
+}
+
+// TestJSONMapUnmarshalInvalidJSONStringReturnsError handles invalid encoded JSON string.
+func TestJSONMapUnmarshalInvalidJSONStringReturnsError(t *testing.T) {
+	var m JSONMap
+	err := json.Unmarshal([]byte(`"not-json"`), &m)
+	require.Error(t, err)
+}
