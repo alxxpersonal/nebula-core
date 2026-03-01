@@ -82,6 +82,95 @@ func TestRelationshipsHandleCreateKeysSourceSelectBackAndEnter(t *testing.T) {
 	assert.Equal(t, "ent-2", updated.createSource.ID)
 }
 
+func TestRelationshipsHandleCreateKeysSourceSearchAdditionalBranches(t *testing.T) {
+	model := NewRelationshipsModel(nil)
+	model.view = relsViewCreateSourceSearch
+	model.createList.SetItems([]string{"alpha", "beta"})
+
+	// Query-empty ctrl-u exits to list.
+	updated, cmd := model.handleCreateKeys(tea.KeyMsg{Type: tea.KeyCtrlU})
+	require.Nil(t, cmd)
+	assert.Equal(t, relsViewList, updated.view)
+
+	// Query-present ctrl-u clears search state.
+	updated.view = relsViewCreateSourceSearch
+	updated.createQuery = "abc"
+	updated.createResults = []relationshipCreateCandidate{{ID: "ent-1"}}
+	updated.createLoading = true
+	updated.createList.SetItems([]string{"ent-1"})
+	updated, cmd = updated.handleCreateKeys(tea.KeyMsg{Type: tea.KeyCtrlU})
+	require.Nil(t, cmd)
+	assert.Equal(t, relsViewCreateSourceSearch, updated.view)
+	assert.Equal(t, "", updated.createQuery)
+	assert.Empty(t, updated.createResults)
+	assert.Empty(t, updated.createList.Items)
+	assert.False(t, updated.createLoading)
+
+	// Navigation branches.
+	updated.createList.SetItems([]string{"row-a", "row-b"})
+	updated, cmd = updated.handleCreateKeys(tea.KeyMsg{Type: tea.KeyDown})
+	require.Nil(t, cmd)
+	assert.Equal(t, 1, updated.createList.Selected())
+	updated, cmd = updated.handleCreateKeys(tea.KeyMsg{Type: tea.KeyUp})
+	require.Nil(t, cmd)
+	assert.Equal(t, 0, updated.createList.Selected())
+
+	// Enter with out-of-range selection does nothing.
+	updated.createList.Cursor = 5
+	updated.createResults = []relationshipCreateCandidate{{ID: "ent-1"}}
+	updated, cmd = updated.handleCreateKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	require.Nil(t, cmd)
+	assert.Nil(t, updated.createSource)
+	assert.Equal(t, relsViewCreateSourceSearch, updated.view)
+
+	// Backspace with empty query should no-op.
+	updated.createQuery = ""
+	updated, cmd = updated.handleCreateKeys(tea.KeyMsg{Type: tea.KeyBackspace})
+	require.Nil(t, cmd)
+	assert.Equal(t, "", updated.createQuery)
+}
+
+func TestRelationshipsHandleCreateKeysSelectViewNavigationBranches(t *testing.T) {
+	model := NewRelationshipsModel(nil)
+	model.createResults = []relationshipCreateCandidate{
+		{ID: "ent-1", NodeType: "entity", Name: "alpha"},
+		{ID: "ent-2", NodeType: "entity", Name: "beta"},
+	}
+	model.createList.SetItems([]string{"alpha", "beta"})
+
+	model.view = relsViewCreateSourceSelect
+	updated, cmd := model.handleCreateKeys(tea.KeyMsg{Type: tea.KeyDown})
+	require.Nil(t, cmd)
+	assert.Equal(t, 1, updated.createList.Selected())
+	updated, cmd = updated.handleCreateKeys(tea.KeyMsg{Type: tea.KeyUp})
+	require.Nil(t, cmd)
+	assert.Equal(t, 0, updated.createList.Selected())
+
+	// Out-of-range enter should not set source.
+	updated.createList.Cursor = 9
+	updated, cmd = updated.handleCreateKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	require.Nil(t, cmd)
+	assert.Nil(t, updated.createSource)
+	assert.Equal(t, relsViewCreateSourceSelect, updated.view)
+
+	model.view = relsViewCreateTargetSelect
+	model.createTypeResults = []string{"depends-on"}
+	model.typeOptions = []string{"depends-on"}
+	model.createList.Cursor = 0
+	updated, cmd = model.handleCreateKeys(tea.KeyMsg{Type: tea.KeyDown})
+	require.Nil(t, cmd)
+	assert.Equal(t, 1, updated.createList.Selected())
+	updated, cmd = updated.handleCreateKeys(tea.KeyMsg{Type: tea.KeyUp})
+	require.Nil(t, cmd)
+	assert.Equal(t, 0, updated.createList.Selected())
+
+	updated.createList.Cursor = 9
+	updated, cmd = updated.handleCreateKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	require.Nil(t, cmd)
+	assert.Nil(t, updated.createTarget)
+	assert.Equal(t, relsViewCreateTargetSelect, updated.view)
+}
+
 func TestRelationshipsHandleCreateKeysTargetSearchClearAndBack(t *testing.T) {
 	model := NewRelationshipsModel(nil)
 	model.view = relsViewCreateTargetSearch
@@ -101,6 +190,45 @@ func TestRelationshipsHandleCreateKeysTargetSearchClearAndBack(t *testing.T) {
 	updated, cmd = updated.handleCreateKeys(tea.KeyMsg{Type: tea.KeyEsc})
 	require.Nil(t, cmd)
 	assert.Equal(t, relsViewCreateSourceSearch, updated.view)
+}
+
+func TestRelationshipsHandleCreateKeysTargetSearchAdditionalBranches(t *testing.T) {
+	model := NewRelationshipsModel(nil)
+	model.view = relsViewCreateTargetSearch
+	model.createList.SetItems([]string{"target-a", "target-b"})
+	model.createSource = &relationshipCreateCandidate{ID: "ent-1", NodeType: "entity", Name: "alpha"}
+
+	updated, cmd := model.handleCreateKeys(tea.KeyMsg{Type: tea.KeyCtrlU})
+	require.Nil(t, cmd)
+	assert.Equal(t, relsViewCreateSourceSearch, updated.view)
+
+	updated.view = relsViewCreateTargetSearch
+	updated.createQuery = "abc"
+	updated.createResults = []relationshipCreateCandidate{{ID: "ent-2"}}
+	updated.createLoading = true
+	updated.createList.SetItems([]string{"ent-2"})
+	updated, cmd = updated.handleCreateKeys(tea.KeyMsg{Type: tea.KeyCtrlU})
+	require.Nil(t, cmd)
+	assert.Equal(t, relsViewCreateTargetSearch, updated.view)
+	assert.Equal(t, "", updated.createQuery)
+	assert.Empty(t, updated.createResults)
+	assert.Empty(t, updated.createList.Items)
+	assert.False(t, updated.createLoading)
+
+	updated.createList.SetItems([]string{"target-a", "target-b"})
+	updated, cmd = updated.handleCreateKeys(tea.KeyMsg{Type: tea.KeyDown})
+	require.Nil(t, cmd)
+	assert.Equal(t, 1, updated.createList.Selected())
+	updated, cmd = updated.handleCreateKeys(tea.KeyMsg{Type: tea.KeyUp})
+	require.Nil(t, cmd)
+	assert.Equal(t, 0, updated.createList.Selected())
+
+	updated.createResults = []relationshipCreateCandidate{{ID: "ent-2", NodeType: "entity", Name: "beta"}}
+	updated.createList.Cursor = 9
+	updated, cmd = updated.handleCreateKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	require.Nil(t, cmd)
+	assert.Nil(t, updated.createTarget)
+	assert.Equal(t, relsViewCreateTargetSearch, updated.view)
 }
 
 func TestRelationshipsHandleCreateKeysTargetSelectBackAndEnter(t *testing.T) {
@@ -146,6 +274,35 @@ func TestRelationshipsHandleCreateKeysTypeNavigationAndShortcuts(t *testing.T) {
 	updated, cmd = updated.handleCreateKeys(tea.KeyMsg{Type: tea.KeyCtrlU})
 	require.Nil(t, cmd)
 	assert.Equal(t, relsViewCreateTargetSearch, updated.view)
+}
+
+func TestRelationshipsHandleCreateKeysTypeInputBranches(t *testing.T) {
+	model := NewRelationshipsModel(nil)
+	model.view = relsViewCreateType
+	model.typeOptions = []string{"depends-on", "related-to"}
+	model.resetTypeSuggestions()
+
+	updated, cmd := model.handleCreateKeys(tea.KeyMsg{Type: tea.KeySpace})
+	require.Nil(t, cmd)
+	assert.Equal(t, "", updated.createType)
+
+	updated, cmd = updated.handleCreateKeys(tea.KeyMsg{Type: tea.KeyBackspace})
+	require.Nil(t, cmd)
+	assert.Equal(t, "", updated.createType)
+
+	updated, cmd = updated.handleCreateKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	require.Nil(t, cmd)
+	assert.Equal(t, "d", updated.createType)
+	assert.False(t, updated.createTypeNav)
+	require.NotEmpty(t, updated.createTypeResults)
+
+	updated.createSource = &relationshipCreateCandidate{ID: "ent-1", NodeType: "entity"}
+	updated.createTarget = &relationshipCreateCandidate{ID: "ent-2", NodeType: "entity"}
+	updated.createTypeNav = false
+	updated, cmd = updated.handleCreateKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	require.NotNil(t, cmd)
+	assert.Equal(t, relsViewList, updated.view)
+	assert.True(t, updated.loading)
 }
 
 func TestRelationshipsHandleCreateKeysTypeEnterRequiresState(t *testing.T) {

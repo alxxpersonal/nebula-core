@@ -49,6 +49,43 @@ func TestInboxLoadApprovalsLimitFallbackAndError(t *testing.T) {
 	assert.ErrorContains(t, errMsgOut.err, "FAILED")
 }
 
+func TestInboxLoadApprovalDiffSuccessAndError(t *testing.T) {
+	_, okClient := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/approvals/ap-1/diff" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{
+				"approval_id":  "ap-1",
+				"request_type": "update_entity",
+				"changes": map[string]any{
+					"status": map[string]any{"from": "pending", "to": "approved"},
+				},
+			},
+		}))
+	})
+
+	model := NewInboxModel(okClient)
+	cmd := model.loadApprovalDiff("ap-1")
+	require.NotNil(t, cmd)
+	msg := cmd()
+	loaded, ok := msg.(approvalDiffLoadedMsg)
+	require.True(t, ok)
+	assert.Equal(t, "ap-1", loaded.id)
+	require.NotNil(t, loaded.changes["status"])
+
+	_, errClient := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, `{"error":{"code":"DIFF_FAILED","message":"diff failed"}}`, http.StatusInternalServerError)
+	})
+	errModel := NewInboxModel(errClient)
+	cmd = errModel.loadApprovalDiff("ap-1")
+	require.NotNil(t, cmd)
+	errOut, ok := cmd().(errMsg)
+	require.True(t, ok)
+	assert.ErrorContains(t, errOut.err, "DIFF_FAILED")
+}
+
 func TestInboxHandleRejectPreviewBranches(t *testing.T) {
 	var rejected []string
 	var notesSeen []string
