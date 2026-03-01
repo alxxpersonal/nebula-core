@@ -73,6 +73,16 @@ func TestJobsHandleModeKeysAndToggle(t *testing.T) {
 	updated, cmd = updated.handleModeKeys(tea.KeyMsg{Type: tea.KeyEsc})
 	require.Nil(t, cmd)
 	assert.False(t, updated.modeFocus)
+
+	updated.modeFocus = true
+	updated, cmd = updated.handleModeKeys(tea.KeyMsg{Type: tea.KeyDown})
+	require.Nil(t, cmd)
+	assert.False(t, updated.modeFocus)
+
+	updated.modeFocus = true
+	updated, cmd = updated.handleModeKeys(tea.KeyMsg{Type: tea.KeyUp})
+	require.Nil(t, cmd)
+	assert.False(t, updated.modeFocus)
 }
 
 func TestJobsHandleAddKeysStatusPriorityAndMetadataBranches(t *testing.T) {

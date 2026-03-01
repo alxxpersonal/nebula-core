@@ -107,3 +107,18 @@ func TestStatusBarCentersHintsWhenWidthProvided(t *testing.T) {
 		assert.True(t, strings.HasPrefix(plain, " "), "line should be centered with left padding")
 	}
 }
+
+func TestStatusSegmentsWidthBranches(t *testing.T) {
+	assert.Equal(t, 0, statusSegmentsWidth(nil))
+	assert.Equal(t, 0, statusSegmentsWidth([]string{}))
+	assert.Equal(
+		t,
+		lipgloss.Width("abc"),
+		statusSegmentsWidth([]string{"abc"}),
+	)
+	assert.Equal(
+		t,
+		lipgloss.Width(lipgloss.JoinHorizontal(lipgloss.Top, "abc", "def")),
+		statusSegmentsWidth([]string{"abc", "def"}),
+	)
+}
