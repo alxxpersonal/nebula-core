@@ -265,3 +265,41 @@ func TestProtocolsViewOverlayBranches(t *testing.T) {
 	model.editMeta.Active = true
 	assert.NotEmpty(t, model.View())
 }
+
+func TestProtocolsHandleApplyInputAdditionalBranches(t *testing.T) {
+	model := NewProtocolsModel(nil)
+
+	model.addApplyBuf = "entity"
+	updated, cmd := model.handleApplyInput(tea.KeyMsg{Type: tea.KeyDelete}, true)
+	require.Nil(t, cmd)
+	assert.Equal(t, "entit", updated.addApplyBuf)
+
+	updated.editApplyBuf = "job"
+	updated, cmd = updated.handleApplyInput(tea.KeyMsg{Type: tea.KeyBackspace}, false)
+	require.Nil(t, cmd)
+	assert.Equal(t, "jo", updated.editApplyBuf)
+
+	updated.addApplyBuf = "context"
+	updated, cmd = updated.handleApplyInput(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{','}}, true)
+	require.Nil(t, cmd)
+	assert.Contains(t, updated.addApplies, "context")
+	assert.Equal(t, "", updated.addApplyBuf)
+
+	updated.editApplyBuf = "file"
+	updated, cmd = updated.handleApplyInput(tea.KeyMsg{Type: tea.KeySpace}, false)
+	require.Nil(t, cmd)
+	assert.Contains(t, updated.editApplies, "file")
+	assert.Equal(t, "", updated.editApplyBuf)
+
+	updated, cmd = updated.handleApplyInput(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}}, false)
+	require.Nil(t, cmd)
+	assert.Equal(t, "x", updated.editApplyBuf)
+
+	// Non-char keys should leave buffers unchanged.
+	beforeAdd := updated.addApplyBuf
+	beforeEdit := updated.editApplyBuf
+	updated, cmd = updated.handleApplyInput(tea.KeyMsg{Type: tea.KeyUp}, true)
+	require.Nil(t, cmd)
+	assert.Equal(t, beforeAdd, updated.addApplyBuf)
+	assert.Equal(t, beforeEdit, updated.editApplyBuf)
+}
