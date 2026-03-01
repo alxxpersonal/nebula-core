@@ -9,15 +9,29 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type inboxTestStringer string
+
+func (s inboxTestStringer) String() string { return string(s) }
+
 func TestFormatAnyInlineAndFormatAnyMatrix(t *testing.T) {
 	assert.Equal(t, "", formatAnyInline(nil))
 	assert.Equal(t, "", formatAnyInline("   "))
 	assert.Contains(t, formatAnyInline(map[string]any{"k": "v"}), "\"k\":\"v\"")
+	assert.Equal(t, "", formatAnyInline("<nil>"))
+	assert.Equal(t, "123", formatAnyInline(123))
+	assert.Equal(t, "", formatAnyInline(inboxTestStringer("--")))
+	assert.Equal(t, "", formatAnyInline(inboxTestStringer("-")))
+	assert.Contains(t, formatAnyInline(map[string]any{"bad": func() {}}), "map[bad:")
 
 	assert.Equal(t, "None", formatAny(nil))
 	assert.Equal(t, "None", formatAny("  "))
 	assert.Equal(t, "a, b", formatAny([]string{"a", "b"}))
 	assert.Equal(t, "None", formatAny([]any{nil, "", "  "}))
+	assert.Equal(t, "None", formatAny("-"))
+	assert.Equal(t, "None", formatAny("--"))
+	assert.Equal(t, "None", formatAny("<nil>"))
+	assert.Equal(t, "1, two", formatAny([]any{1, "two"}))
+	assert.Equal(t, "None", formatAny([]string{}))
 	assert.Contains(t, formatAny(map[string]any{"k": "v"}), "k")
 }
 
