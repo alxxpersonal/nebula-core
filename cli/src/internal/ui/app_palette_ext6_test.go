@@ -1,0 +1,116 @@
+package ui
+
+import (
+	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/gravitrone/nebula-core/cli/internal/api"
+	"github.com/gravitrone/nebula-core/cli/internal/config"
+	"github.com/gravitrone/nebula-core/cli/internal/ui/components"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestRenderPaletteStateAndFallbackBranches(t *testing.T) {
+	app := NewApp(nil, &config.Config{})
+	app.width = 18
+
+	app.paletteQuery = "/"
+	app.paletteFiltered = nil
+	app.paletteSearchLoading = false
+	out := components.SanitizeText(app.renderPalette())
+	assert.Contains(t, out, "Command")
+	assert.Contains(t, out, "No matching")
+
+	app.paletteQuery = ""
+	out = components.SanitizeText(app.renderPalette())
+	assert.Contains(t, out, "Search")
+	assert.Contains(t, out, "Type to")
+	assert.Contains(t, out, "search, or")
+
+	app.paletteQuery = "abc"
+	out = components.SanitizeText(app.renderPalette())
+	assert.Contains(t, out, "No search")
+	assert.Contains(t, out, "results")
+
+	app.paletteSearchLoading = true
+	out = components.SanitizeText(app.renderPalette())
+	assert.Contains(t, out, "Searching")
+}
+
+func TestRenderPaletteTableBranchesOnSmallWidth(t *testing.T) {
+	app := NewApp(nil, &config.Config{})
+	app.width = 22
+	app.paletteQuery = "plain"
+	app.paletteFiltered = []paletteAction{
+		{ID: "x", Label: "", Desc: ""},
+	}
+
+	out := components.SanitizeText(app.renderPalette())
+	assert.Contains(t, out, "Action")
+	assert.Contains(t, out, "Description")
+	assert.Contains(t, out, "-")
+}
+
+func TestRunStartupCheckCmdWithoutClientUsesDefaultPath(t *testing.T) {
+	app := NewApp(nil, nil)
+	app.client = nil
+	app.config = nil
+
+	cmd := app.runStartupCheckCmd()
+	require.NotNil(t, cmd)
+
+	msg, ok := cmd().(startupCheckedMsg)
+	require.True(t, ok)
+	assert.NotNil(t, msg)
+}
+
+func TestHandlePaletteKeysEdgeBranches(t *testing.T) {
+	app := NewApp(nil, &config.Config{})
+	app.paletteOpen = true
+	app.paletteFiltered = nil
+	app.paletteIndex = 0
+
+	model, cmd := app.handlePaletteKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	updated := model.(App)
+	assert.True(t, updated.paletteOpen)
+	assert.Nil(t, cmd)
+
+	model, cmd = updated.handlePaletteKeys(tea.KeyMsg{Type: tea.KeyEsc})
+	updated = model.(App)
+	assert.False(t, updated.paletteOpen)
+	assert.Nil(t, cmd)
+
+	updated.paletteOpen = true
+	updated.paletteQuery = "/x"
+	model, cmd = updated.handlePaletteKeys(tea.KeyMsg{Type: tea.KeyBackspace})
+	updated = model.(App)
+	assert.Equal(t, "/", updated.paletteQuery)
+	assert.Nil(t, cmd)
+}
+
+func TestBuildSearchPaletteActionsLabelFallbackBranch(t *testing.T) {
+	actions, selections := buildSearchPaletteActions(
+		"",
+		[]api.Entity{{ID: "", Name: "", Type: ""}},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	require.Len(t, actions, 1)
+	assert.Equal(t, "entity:", actions[0].ID)
+	assert.Equal(t, "", actions[0].Label)
+	selection, ok := selections["entity:"]
+	require.True(t, ok)
+	require.NotNil(t, selection.entity)
+}
+
+func TestCenterBlockUniformEarlyReturnBranches(t *testing.T) {
+	assert.Equal(t, "", centerBlockUniform("", 80))
+	assert.Equal(t, "abcd", centerBlockUniform("abcd", 3))
+	assert.Equal(t, "abcd", centerBlockUniform("abcd", 5))
+}
