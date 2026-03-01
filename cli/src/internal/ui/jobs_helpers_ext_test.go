@@ -144,6 +144,57 @@ func TestJobsHandleEditKeysStatusPriorityDescriptionMetadataAndBack(t *testing.T
 	assert.Equal(t, jobsViewDetail, updated.view)
 }
 
+func TestJobsHandleEditKeysAdditionalBranchMatrix(t *testing.T) {
+	desc := "hello"
+	model := NewJobsModel(nil)
+	model.view = jobsViewEdit
+	model.detail = &api.Job{ID: "job-1", Status: "pending", Description: &desc, Metadata: api.JSONMap{}}
+	model.startEdit()
+
+	model.editSaving = true
+	updated, cmd := model.handleEditKeys(tea.KeyMsg{Type: tea.KeyDown})
+	require.Nil(t, cmd)
+	assert.Equal(t, model.editFocus, updated.editFocus)
+	assert.True(t, updated.editSaving)
+
+	updated.editSaving = false
+	updated.editFocus = 0
+	updated, cmd = updated.handleEditKeys(tea.KeyMsg{Type: tea.KeyUp})
+	require.Nil(t, cmd)
+	assert.Equal(t, 0, updated.editFocus)
+
+	updated.editFocus = jobEditFieldStatus
+	updated.editStatusIdx = 0
+	updated, _ = updated.handleEditKeys(tea.KeyMsg{Type: tea.KeyLeft})
+	assert.Equal(t, len(jobStatusOptions)-1, updated.editStatusIdx)
+	updated, _ = updated.handleEditKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{' '}})
+	assert.Equal(t, 0, updated.editStatusIdx)
+
+	updated.editFocus = jobEditFieldPriority
+	updated.editPriorityIdx = 0
+	updated, _ = updated.handleEditKeys(tea.KeyMsg{Type: tea.KeyLeft})
+	assert.Equal(t, len(jobPriorityOptions)-1, updated.editPriorityIdx)
+	updated, _ = updated.handleEditKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{' '}})
+	assert.Equal(t, 0, updated.editPriorityIdx)
+
+	updated.editFocus = jobEditFieldMetadata
+	updated, _ = updated.handleEditKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	assert.True(t, updated.editMeta.Active)
+	updated.editMeta.Active = false
+
+	updated.editFocus = jobEditFieldDescription
+	updated.editDesc = "x"
+	updated, _ = updated.handleEditKeys(tea.KeyMsg{Type: tea.KeyBackspace})
+	assert.Equal(t, "", updated.editDesc)
+	updated, _ = updated.handleEditKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'z'}})
+	assert.Equal(t, "z", updated.editDesc)
+	updated, _ = updated.handleEditKeys(tea.KeyMsg{Type: tea.KeyTab})
+	assert.Equal(t, "z", updated.editDesc)
+
+	updated, _ = updated.handleEditKeys(tea.KeyMsg{Type: tea.KeyEsc})
+	assert.Equal(t, jobsViewDetail, updated.view)
+}
+
 func TestJobsHandleStatusInputBranches(t *testing.T) {
 	model := NewJobsModel(nil)
 	model.changingSt = true

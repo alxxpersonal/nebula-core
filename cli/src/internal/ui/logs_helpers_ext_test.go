@@ -220,6 +220,61 @@ func TestLogsHandleAddKeysAdditionalBranches(t *testing.T) {
 	assert.True(t, updated.modeFocus)
 }
 
+func TestLogsRenderAddBranchMatrix(t *testing.T) {
+	model := NewLogsModel(nil)
+	model.width = 96
+
+	model.addFocus = logFieldType
+	model.addType = "event"
+	out := stripANSI(model.renderAdd())
+	assert.Contains(t, out, "Type:")
+	assert.Contains(t, out, "event")
+
+	model.addFocus = logFieldTimestamp
+	model.addTimestamp = "2026-03-01T12:45Z"
+	out = stripANSI(model.renderAdd())
+	assert.Contains(t, out, "Timestamp:")
+	assert.Contains(t, out, "2026-03-01T12:45Z")
+
+	model.addFocus = logFieldStatus
+	model.addStatusIdx = 1
+	out = stripANSI(model.renderAdd())
+	assert.Contains(t, out, "Status:")
+	assert.Contains(t, out, logStatusOptions[1])
+
+	model.addFocus = logFieldTags
+	model.addTags = []string{"alpha"}
+	model.addTagBuf = "beta"
+	out = stripANSI(model.renderAdd())
+	assert.Contains(t, out, "[alpha]")
+	assert.Contains(t, out, "beta")
+
+	model.addFocus = logFieldValue
+	model.addValue.Buffer = "group | field | value"
+	out = stripANSI(model.renderAdd())
+	assert.Contains(t, out, "group | field | value")
+
+	model.addFocus = logFieldMeta
+	model.addMeta.Buffer = "meta | key | value"
+	out = stripANSI(model.renderAdd())
+	assert.Contains(t, out, "meta | key | value")
+
+	model.addErr = "bad metadata"
+	model.addSaved = true
+	out = stripANSI(model.renderAdd())
+	assert.Contains(t, out, "bad metadata")
+	assert.Contains(t, out, "Saved.")
+
+	empty := NewLogsModel(nil)
+	empty.width = 80
+	empty.addFocus = logFieldMeta
+	out = stripANSI(empty.renderAdd())
+	assert.Contains(t, out, "Type:")
+	assert.Contains(t, out, "Timestamp:")
+	assert.Contains(t, out, "Metadata:")
+	assert.Contains(t, out, "  -")
+}
+
 func TestLogsHandleEditKeysStatusAndTagMatrix(t *testing.T) {
 	model := NewLogsModel(nil)
 	model.view = logsViewEdit
