@@ -125,3 +125,33 @@ func TestTableGridWithActiveRowCanDisableHighlighting(t *testing.T) {
 	withSuppressedActive := TableGridWithActiveRow(columns, rows, 40, 0)
 	assert.Equal(t, withoutActive, withSuppressedActive)
 }
+
+// TestTableGridWithActiveRowGuardBranches handles width/column guards.
+func TestTableGridWithActiveRowGuardBranches(t *testing.T) {
+	columns := []TableColumn{{Header: "Name", Width: 8, Align: lipgloss.Left}}
+	rows := [][]string{{"alpha"}}
+
+	assert.Equal(t, "", TableGridWithActiveRow(columns, rows, 0, 0))
+	assert.Equal(t, "", TableGridWithActiveRow(columns, rows, -4, 0))
+	assert.Equal(t, "     ", TableGridWithActiveRow(nil, rows, 5, 0))
+}
+
+// TestRenderGridRuleAndCellFallbackBranches covers remaining fallback paths.
+func TestRenderGridRuleAndCellFallbackBranches(t *testing.T) {
+	cols := []TableColumn{
+		{Header: "A", Width: 0, Align: lipgloss.Left},
+		{Header: "B", Width: 2, Align: lipgloss.Left},
+	}
+
+	rule := renderGridRule(cols, "+", "", 16)
+	assert.NotEmpty(t, rule)
+	for _, line := range strings.Split(rule, "\n") {
+		assert.LessOrEqual(t, lipgloss.Width(line), 16)
+	}
+
+	// width<=0 branch in renderGridCell
+	assert.Equal(t, "", renderGridCell("abc", 0, lipgloss.Left))
+
+	// no marker branch in highlighter
+	assert.Equal(t, "plain text", highlightSelectionMarkers("plain text"))
+}
