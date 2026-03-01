@@ -1216,6 +1216,11 @@ func (m JobsModel) handleSubtaskInput(msg tea.KeyMsg) (JobsModel, tea.Cmd) {
 		if title == "" {
 			return m, nil
 		}
+		if m.detail == nil {
+			m.creatingSubtask = false
+			m.subtaskBuf = ""
+			return m, nil
+		}
 		id := m.detail.ID
 		m.creatingSubtask = false
 		m.subtaskBuf = ""
