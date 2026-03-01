@@ -237,6 +237,110 @@ func TestCanExitToTabNavProfileSections(t *testing.T) {
 	assert.False(t, app.canExitToTabNav())
 }
 
+func TestCanExitToTabNavAdditionalGuards(t *testing.T) {
+	app := NewApp(nil, &config.Config{})
+	app.tab = tabInbox
+	app.inbox.rejecting = true
+	assert.False(t, app.canExitToTabNav())
+	app.inbox.rejecting = false
+	app.inbox.confirming = true
+	assert.False(t, app.canExitToTabNav())
+	app.inbox.confirming = false
+	app.inbox.rejectPreview = true
+	assert.False(t, app.canExitToTabNav())
+	app.inbox.rejectPreview = false
+	app.inbox.list.SetItems([]string{"one", "two"})
+	app.inbox.list.Down()
+	assert.False(t, app.canExitToTabNav())
+
+	app = NewApp(nil, &config.Config{})
+	app.tab = tabEntities
+	app.entities.filtering = true
+	assert.False(t, app.canExitToTabNav())
+	app.entities.filtering = false
+	app.entities.view = entitiesViewAdd
+	assert.False(t, app.canExitToTabNav())
+
+	app = NewApp(nil, &config.Config{})
+	app.tab = tabRelations
+	app.rels.filtering = true
+	assert.False(t, app.canExitToTabNav())
+	app.rels.filtering = false
+	app.rels.view = relsViewDetail
+	assert.False(t, app.canExitToTabNav())
+
+	app = NewApp(nil, &config.Config{})
+	app.tab = tabKnow
+	app.know.view = contextViewList
+	app.know.filtering = true
+	assert.False(t, app.canExitToTabNav())
+	app.know.filtering = false
+	app.know.list.SetItems([]string{"one", "two"})
+	app.know.list.Down()
+	assert.False(t, app.canExitToTabNav())
+	app.know.view = contextViewAdd
+	app.know.modeFocus = false
+	app.know.focus = fieldNotes
+	assert.False(t, app.canExitToTabNav())
+	app.know.view = contextViewDetail
+	assert.False(t, app.canExitToTabNav())
+
+	app = NewApp(nil, &config.Config{})
+	app.tab = tabJobs
+	app.jobs.filtering = true
+	assert.False(t, app.canExitToTabNav())
+	app.jobs.filtering = false
+	app.jobs.detail = &api.Job{ID: "job-1"}
+	assert.False(t, app.canExitToTabNav())
+	app.jobs.detail = nil
+	app.jobs.changingSt = true
+	assert.False(t, app.canExitToTabNav())
+
+	app = NewApp(nil, &config.Config{})
+	app.tab = tabLogs
+	app.logs.filtering = true
+	assert.False(t, app.canExitToTabNav())
+	app.logs.filtering = false
+	app.logs.view = logsViewDetail
+	assert.False(t, app.canExitToTabNav())
+
+	app = NewApp(nil, &config.Config{})
+	app.tab = tabFiles
+	app.files.filtering = true
+	assert.False(t, app.canExitToTabNav())
+	app.files.filtering = false
+	app.files.view = filesViewDetail
+	assert.False(t, app.canExitToTabNav())
+
+	app = NewApp(nil, &config.Config{})
+	app.tab = tabProtocols
+	app.protocols.filtering = true
+	assert.False(t, app.canExitToTabNav())
+	app.protocols.filtering = false
+	app.protocols.view = protocolsViewDetail
+	assert.False(t, app.canExitToTabNav())
+
+	app = NewApp(nil, &config.Config{})
+	app.tab = tabHistory
+	app.history.filtering = true
+	assert.False(t, app.canExitToTabNav())
+	app.history.filtering = false
+	app.history.view = historyViewScopes
+	assert.False(t, app.canExitToTabNav())
+
+	app = NewApp(nil, &config.Config{})
+	app.tab = tabProfile
+	app.profile.createdKey = "nbl_created"
+	assert.False(t, app.canExitToTabNav())
+	app.profile.createdKey = ""
+	app.profile.agentDetail = &api.Agent{ID: "ag-1"}
+	assert.False(t, app.canExitToTabNav())
+
+	app = NewApp(nil, &config.Config{})
+	app.tab = 999
+	assert.False(t, app.canExitToTabNav())
+}
+
 func TestFocusModeLineForActiveTabMatrix(t *testing.T) {
 	app := NewApp(nil, &config.Config{})
 	app.tab = tabEntities

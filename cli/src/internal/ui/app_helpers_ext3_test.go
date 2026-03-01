@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -328,4 +329,49 @@ func TestLoadPaletteSearchReturnsLoadedMessage(t *testing.T) {
 	assert.Equal(t, "ent-1", loaded.entities[0].ID)
 	assert.Equal(t, "ctx-1", loaded.context[0].ID)
 	assert.True(t, strings.Contains(strings.ToLower(loaded.jobs[0].ID), "2026q1"))
+}
+
+func TestLoadPaletteSearchNilClientReturnsNil(t *testing.T) {
+	app := NewApp(nil, &config.Config{})
+	assert.Nil(t, app.loadPaletteSearch("alpha"))
+}
+
+func TestLoadPaletteSearchErrorPathMatrix(t *testing.T) {
+	cases := []string{
+		"/api/entities",
+		"/api/context",
+		"/api/jobs",
+		"/api/relationships",
+		"/api/logs",
+		"/api/files",
+		"/api/protocols",
+	}
+
+	for _, failPath := range cases {
+		t.Run(strings.TrimPrefix(failPath, "/api/"), func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				if r.URL.Path == failPath {
+					http.Error(
+						w,
+						fmt.Sprintf(`{"error":{"code":"QUERY_FAILED","message":"fail %s"}}`, failPath),
+						http.StatusInternalServerError,
+					)
+					return
+				}
+				_, _ = w.Write([]byte(`{"data":[]}`))
+			}))
+			defer srv.Close()
+
+			client := api.NewClient(srv.URL, "key")
+			app := NewApp(client, &config.Config{APIKey: "key", Username: "alxx"})
+			cmd := app.loadPaletteSearch("alpha")
+			require.NotNil(t, cmd)
+			msg := cmd()
+			errOut, ok := msg.(errMsg)
+			require.True(t, ok)
+			assert.ErrorContains(t, errOut.err, "QUERY_FAILED")
+			assert.ErrorContains(t, errOut.err, failPath)
+		})
+	}
 }
