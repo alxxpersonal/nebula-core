@@ -366,3 +366,45 @@ func TestInboxFilterTimeAndMatchExtraBranches(t *testing.T) {
 	old.CreatedAt = time.Now().Add(-24 * time.Hour)
 	assert.False(t, matchesApprovalFilter(old, filter))
 }
+
+func TestInboxHandleRejectInputDetailNilAndEnterBranches(t *testing.T) {
+	model := NewInboxModel(nil)
+	model.rejecting = true
+	model.rejectBuf = "stale"
+	model.bulkRejectIDs = []string{"ap-1"}
+
+	updated, cmd := model.handleRejectInput(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	assert.Nil(t, cmd)
+	assert.False(t, updated.rejecting)
+	assert.Equal(t, "", updated.rejectBuf)
+	assert.Nil(t, updated.bulkRejectIDs)
+
+	model = NewInboxModel(nil)
+	model.detail = &api.Approval{ID: "ap-2"}
+	model.rejecting = true
+	model.rejectBuf = "reason"
+
+	updated, cmd = model.handleRejectInput(tea.KeyMsg{Type: tea.KeyEnter})
+	assert.Nil(t, cmd)
+	assert.False(t, updated.rejecting)
+	assert.True(t, updated.rejectPreview)
+	assert.Equal(t, []string{"ap-2"}, updated.bulkRejectIDs)
+
+	updated.rejecting = true
+	updated.rejectPreview = false
+	updated.bulkRejectIDs = []string{"ap-2", "ap-3"}
+	updated.detail = &api.Approval{ID: "ap-2"}
+	updated, _ = updated.handleRejectInput(tea.KeyMsg{Type: tea.KeyEsc})
+	assert.Nil(t, updated.detail)
+	assert.False(t, updated.rejecting)
+	assert.Equal(t, "", updated.rejectBuf)
+	assert.Nil(t, updated.bulkRejectIDs)
+}
+
+func TestInboxSelectAllFilteredSkipsOutOfRangeEntries(t *testing.T) {
+	model := NewInboxModel(nil)
+	model.items = []api.Approval{{ID: "ap-1"}, {ID: "ap-2"}}
+	model.filtered = []int{-1, 0, 4, 1}
+	model.selectAllFiltered()
+	assert.Equal(t, map[string]bool{"ap-1": true, "ap-2": true}, model.selected)
+}

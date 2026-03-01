@@ -152,3 +152,11 @@ func TestParseAuditFilterAliases(t *testing.T) {
 	assert.Equal(t, "scope-1", filter.scopeID)
 	assert.Equal(t, "alxx", filter.actor)
 }
+
+func TestHumanizeAuditFieldMatrix(t *testing.T) {
+	assert.Equal(t, "", humanizeAuditField("   "))
+	assert.Equal(t, "Actor ID", humanizeAuditField("actor_id"))
+	assert.Equal(t, "Review Notes", humanizeAuditField("review-notes"))
+	assert.Equal(t, "ID", humanizeAuditField("id"))
+	assert.Equal(t, "Weird Field", humanizeAuditField("___weird_field___"))
+}

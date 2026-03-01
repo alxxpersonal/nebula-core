@@ -41,3 +41,38 @@ func TestSemanticSearch(t *testing.T) {
 	assert.Equal(t, "ent-1", items[0].ID)
 	assert.Equal(t, "entity", items[0].Kind)
 }
+
+// TestSemanticSearchDefaultLimit handles test semantic search default limit.
+func TestSemanticSearchDefaultLimit(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/api/search/semantic", r.URL.Path)
+		var payload map[string]any
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&payload))
+		assert.Equal(t, "agent memory", payload["query"])
+		assert.Equal(t, float64(20), payload["limit"])
+		assert.Equal(t, []any{"entity", "job"}, payload["kinds"])
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": []map[string]any{},
+		})
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "test-key")
+	items, err := client.SemanticSearch("agent memory", []string{"entity", "job"}, 0)
+	require.NoError(t, err)
+	assert.Empty(t, items)
+}
+
+// TestSemanticSearchError handles test semantic search error.
+func TestSemanticSearchError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, `{"error":{"code":"SEARCH_FAILED","message":"search unavailable"}}`, http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "test-key")
+	items, err := client.SemanticSearch("agent memory", []string{"entity"}, 5)
+	assert.Nil(t, items)
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "SEARCH_FAILED")
+}
