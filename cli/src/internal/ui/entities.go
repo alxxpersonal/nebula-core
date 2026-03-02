@@ -2688,10 +2688,6 @@ func (m EntitiesModel) renderRelate() string {
 		sideBySide := contentWidth >= minSideBySideContentWidth
 		if sideBySide {
 			tableWidth = contentWidth - previewWidth - gap
-			if tableWidth < 60 {
-				sideBySide = false
-				tableWidth = contentWidth
-			}
 		}
 
 		sepWidth := 1
@@ -2701,20 +2697,10 @@ func (m EntitiesModel) renderRelate() string {
 
 		// 3 columns -> 2 separators.
 		availableCols := tableWidth - (2 * sepWidth)
-		if availableCols < 30 {
-			availableCols = 30
-		}
 
 		typeWidth := 14
 		statusWidth := 11
 		nameWidth := availableCols - (typeWidth + statusWidth)
-		if nameWidth < 16 {
-			nameWidth = 16
-			typeWidth = availableCols - (nameWidth + statusWidth)
-			if typeWidth < 12 {
-				typeWidth = 12
-			}
-		}
 
 		cols := []components.TableColumn{
 			{Header: "Name", Width: nameWidth, Align: lipgloss.Left},

@@ -107,32 +107,19 @@ func relationshipSummaryColumnWidths(contentWidth int) (int, int, int) {
 		contentWidth = 32
 	}
 	usable := contentWidth - 2 // separators
-	if usable < 24 {
-		usable = 24
-	}
 
 	rel := usable * 28 / 100
 	dir := usable * 18 / 100
 	node := usable - rel - dir
 
-	if rel < 8 {
-		rel = 8
-	}
 	if dir < 9 {
 		dir = 9
-	}
-	if node < 10 {
-		node = 10
+		node = usable - rel - dir
 	}
 
 	used := rel + dir + node
-	if used < usable {
+	if used != usable {
 		node += usable - used
-	} else if used > usable {
-		overflow := used - usable
-		if node-overflow >= 10 {
-			node -= overflow
-		}
 	}
 	return rel, dir, node
 }
