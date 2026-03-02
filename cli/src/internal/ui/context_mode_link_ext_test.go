@@ -282,6 +282,20 @@ func TestContextRenderTagsAndEditTagsBranches(t *testing.T) {
 	assert.Contains(t, out, "█")
 }
 
+func TestContextRenderLinkedEntitiesFallbackAndFocusBranches(t *testing.T) {
+	model := NewContextModel(nil)
+	assert.Equal(t, "-", model.renderLinkedEntities(false))
+	assert.Equal(t, "", model.renderLinkedEntities(true))
+
+	model.linkEntities = []api.Entity{
+		{ID: "entity-long-id-1", Name: ""},
+		{ID: "entity-2", Name: "Alpha"},
+	}
+	out := components.SanitizeText(model.renderLinkedEntities(false))
+	assert.Contains(t, out, "[entity-l]")
+	assert.Contains(t, out, "[Alpha]")
+}
+
 func TestContextHandleLinkSearchBranchMatrix(t *testing.T) {
 	model := NewContextModel(nil)
 	model.startLinkSearch()
@@ -365,4 +379,26 @@ func TestContextRenderLinkEntityPreviewFallbacks(t *testing.T) {
 	assert.Contains(t, preview, "entity")
 	assert.Contains(t, preview, "Type")
 	assert.Contains(t, preview, "Status")
+}
+
+func TestContextRenderLinkSearchWideLayoutAndSelectionFallbackBranches(t *testing.T) {
+	model := NewContextModel(nil)
+	model.width = 220 // trigger side-by-side layout branch
+	model.linkQuery = "alpha"
+	model.linkResults = []api.Entity{
+		{ID: "ent-1", Name: "", Type: "", Status: ""},
+	}
+	// Intentionally provide more list rows than results and point cursor out of range
+	// to exercise absIdx guard and previewItem=nil branch.
+	model.linkList.SetItems([]string{"phantom-a", "phantom-b"})
+	model.linkList.Cursor = 9
+
+	view := components.SanitizeText(model.renderLinkSearch())
+	assert.Contains(t, view, "Link Entity")
+	assert.Contains(t, view, "1 results")
+	assert.Contains(t, view, "Name")
+	assert.Contains(t, view, "Type")
+	assert.Contains(t, view, "Status")
+	// No selected preview section because selection is out of range.
+	assert.NotContains(t, view, "Selected")
 }

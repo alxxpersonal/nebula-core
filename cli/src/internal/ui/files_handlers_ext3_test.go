@@ -148,3 +148,59 @@ func TestFilesHandleEditKeysExtendedBranches(t *testing.T) {
 	updated, _ = updated.handleEditKeys(tea.KeyMsg{Type: tea.KeyEsc})
 	assert.Equal(t, filesViewDetail, updated.view)
 }
+
+func TestFilesHandleEditKeysMetadataActiveAndUpGuardBranches(t *testing.T) {
+	model := NewFilesModel(nil)
+	model.view = filesViewEdit
+	model.detail = &api.File{ID: "file-1", Filename: "Alpha.txt", FilePath: "/tmp/a", Status: "active"}
+	model.startEdit()
+
+	model.editMeta.Active = true
+	updated, cmd := model.handleEditKeys(tea.KeyMsg{Type: tea.KeyDown})
+	require.Nil(t, cmd)
+	assert.True(t, updated.editMeta.Active)
+
+	updated.editMeta.Active = false
+	updated.editFocus = 0
+	updated, cmd = updated.handleEditKeys(tea.KeyMsg{Type: tea.KeyUp})
+	require.Nil(t, cmd)
+	assert.Equal(t, 0, updated.editFocus)
+}
+
+func TestFilesHandleEditKeysNavigationAndAppendBranches(t *testing.T) {
+	model := NewFilesModel(nil)
+	model.view = filesViewEdit
+	model.detail = &api.File{ID: "file-1", Filename: "Alpha.txt", FilePath: "/tmp/a", Status: "active"}
+	model.startEdit()
+
+	updated, cmd := model.handleEditKeys(tea.KeyMsg{Type: tea.KeyDown})
+	require.Nil(t, cmd)
+	assert.Equal(t, 1, updated.editFocus)
+
+	updated, cmd = updated.handleEditKeys(tea.KeyMsg{Type: tea.KeyUp})
+	require.Nil(t, cmd)
+	assert.Equal(t, 0, updated.editFocus)
+
+	updated.editFocus = fileFieldName
+	updated, _ = updated.handleEditKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	assert.Equal(t, "Alpha.txtx", updated.editName)
+
+	updated.editFocus = fileFieldPath
+	updated, _ = updated.handleEditKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
+	assert.Equal(t, "/tmp/ab", updated.editPath)
+
+	updated.editFocus = fileFieldMime
+	updated.editMime = ""
+	updated, _ = updated.handleEditKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+	assert.Equal(t, "t", updated.editMime)
+
+	updated.editFocus = fileFieldSize
+	updated.editSize = ""
+	updated, _ = updated.handleEditKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'1'}})
+	assert.Equal(t, "1", updated.editSize)
+
+	updated.editFocus = fileFieldChecksum
+	updated.editChecksum = ""
+	updated, _ = updated.handleEditKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
+	assert.Equal(t, "c", updated.editChecksum)
+}
