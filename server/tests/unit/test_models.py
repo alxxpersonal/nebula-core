@@ -8,36 +8,61 @@ import pytest
 from pydantic import ValidationError
 
 from nebula_mcp.models import (
+    AgentAuthAttachInput,
     AgentEnrollStartInput,
+    AgentEnrollRedeemInput,
+    AgentEnrollWaitInput,
     BaseMetadata,
+    BulkUpdateEntityTagsInput,
     ContextSegment,
+    CreateContextInput,
+    CreateLogInput,
     CreateJobInput,
     CreateFileInput,
+    CreateAPIKeyInput,
+    CreateProtocolInput,
     CourseMetadata,
     CreateEntityInput,
     CreateRelationshipInput,
     CreateTaxonomyInput,
     ExportDataInput,
     FrameworkMetadata,
+    GetAgentInput,
+    GetRelationshipsInput,
+    GraphNeighborsInput,
+    GraphShortestPathInput,
     IdeaMetadata,
     ListAgentsInput,
+    ListTaxonomyInput,
+    LoginInput,
     OrganizationMetadata,
     PaperMetadata,
     PersonMetadata,
     ProjectMetadata,
     QueryContextInput,
     QueryEntitiesInput,
+    QueryFilesInput,
     QueryJobsInput,
     QueryLogsInput,
+    QueryRelationshipsInput,
     RejectRequestInput,
     SemanticSearchInput,
     ToolMetadata,
     UniversityMetadata,
     UpdateContextInput,
+    UpdateAgentInput,
     UpdateEntityInput,
     UpdateFileInput,
     UpdateJobInput,
+    UpdateLogInput,
+    UpdateProtocolInput,
     UpdateTaxonomyInput,
+    ToggleTaxonomyInput,
+    _sanitize_metadata,
+    _sanitize_source_path,
+    _sanitize_tags,
+    _sanitize_text,
+    _validate_node_type,
     _strip_control,
     _validate_taxonomy_kind,
     parse_optional_datetime,
@@ -399,6 +424,12 @@ class TestModelSanitizerHelpers:
         with pytest.raises(ValueError, match="Metadata key 'visibility' is not supported"):
             validate_metadata_payload({"nested": {"visibility": "private"}})
 
+    def test_validate_metadata_payload_rejects_banned_key_inside_list_items(self):
+        """Banned metadata keys should be rejected even when nested in list values."""
+
+        with pytest.raises(ValueError, match="Metadata key 'constructor' is not allowed"):
+            validate_metadata_payload({"nested": [{"constructor": "bad"}]})
+
     def test_validate_taxonomy_kind_none_raises_required_error(self):
         """Taxonomy validator should reject missing kind values."""
 
@@ -420,6 +451,24 @@ class TestModelSanitizerHelpers:
             2026, 1, 1, 0, 0, tzinfo=timezone.utc
         )
         assert parse_optional_datetime("   ", "ts") is None
+
+    def test_parse_optional_datetime_handles_z_suffix_and_invalid_values(self):
+        """Datetime parser should normalize trailing Z and reject bad timestamps."""
+
+        parsed = parse_optional_datetime("2026-01-01T12:34:56Z", "ts")
+        assert parsed == datetime(2026, 1, 1, 12, 34, 56, tzinfo=timezone.utc)
+        with pytest.raises(ValueError, match="Invalid ts: expected ISO8601 datetime"):
+            parse_optional_datetime("not-a-timestamp", "ts")
+
+    def test_private_sanitizers_return_none_for_none_inputs(self):
+        """Private sanitizer helpers should preserve None values."""
+
+        assert _sanitize_text(None) is None
+        assert _sanitize_tags(None) is None
+        assert _validate_node_type(None) is None
+        assert _sanitize_metadata(None) is None
+        assert _sanitize_source_path(None) is None
+        assert parse_optional_datetime(None, "ts") is None
 
     def test_person_metadata_month_and_day_none_branches(self):
         """Month/day validators should return None when value is None."""
@@ -479,11 +528,66 @@ class TestModelEdgeInputs:
         )
         assert model.source_path is None
 
+    def test_create_entity_sanitizes_tags_when_provided(self):
+        """Create entity should sanitize provided tag lists."""
+
+        model = CreateEntityInput(
+            name="Alice",
+            type="person",
+            status="active",
+            scopes=["public"],
+            tags=["alpha", "", "beta"],
+        )
+        assert model.tags == ["alpha", "beta"]
+
+    def test_create_context_url_validator_handles_empty_and_invalid_values(self):
+        """Create context URL validator should allow empty values and reject non-http."""
+
+        model = CreateContextInput(
+            title="Notes",
+            source_type="article",
+            content="body",
+            scopes=["public"],
+            url="",
+        )
+        assert model.url == ""
+        with pytest.raises(ValidationError, match="URL must start with http:// or https://"):
+            CreateContextInput(
+                title="Notes",
+                source_type="article",
+                content="body",
+                scopes=["public"],
+                url="ftp://example.com",
+            )
+
     def test_update_context_rejects_non_http_url(self):
         """Update context should enforce http/https URL prefix."""
 
         with pytest.raises(ValidationError, match="URL must start with http:// or https://"):
             UpdateContextInput(context_id="ctx-1", url="ftp://example.com")
+
+    def test_update_context_sanitizes_title_tags_metadata_and_accepts_empty_url(self):
+        """Update context should sanitize optional fields and preserve empty URL values."""
+
+        model = UpdateContextInput(
+            context_id="ctx-1",
+            title="  Notes\u202e ",
+            source_type=" article ",
+            url="",
+            tags=["alpha", "", "beta"],
+            metadata={"ok": True},
+        )
+        assert model.title == "Notes"
+        assert model.source_type == "article"
+        assert model.url == ""
+        assert model.tags == ["alpha", "beta"]
+        assert model.metadata == {"ok": True}
+
+    def test_update_context_accepts_valid_http_url(self):
+        """Update context should keep valid http/https URLs."""
+
+        model = UpdateContextInput(context_id="ctx-1", url=" https://example.com/path ")
+        assert model.url == "https://example.com/path"
 
     def test_query_context_sanitizes_tags(self):
         """Context query should sanitize and keep non-empty tags."""
@@ -508,6 +612,13 @@ class TestModelEdgeInputs:
 
         with pytest.raises(ValidationError, match="uri or file_path is required"):
             CreateFileInput(filename="x.txt")
+
+    def test_create_file_syncs_uri_from_file_path(self):
+        """Create file should mirror file_path into uri when uri is missing."""
+
+        model = CreateFileInput(filename="x.txt", file_path="/tmp/x.txt")
+        assert model.uri == "/tmp/x.txt"
+        assert model.file_path == "/tmp/x.txt"
 
     def test_update_file_syncs_uri_from_file_path(self):
         """Update file should mirror file_path into uri when uri is missing."""
@@ -547,6 +658,13 @@ class TestModelEdgeInputs:
         with pytest.raises(ValidationError, match="Format must be json or csv"):
             ExportDataInput(resource="entities", format="yaml")
 
+    def test_export_data_normalizes_format_and_empty_params(self):
+        """Export model should normalize format and fallback params to an empty dict."""
+
+        model = ExportDataInput(resource="entities", format="CSV", params=None)
+        assert model.format == "csv"
+        assert model.params == {}
+
     def test_create_taxonomy_rejects_is_symmetric_for_non_relationship_kind(self):
         """Create taxonomy should gate is_symmetric to relationship-types."""
 
@@ -582,3 +700,256 @@ class TestModelEdgeInputs:
                 item_id="scope-1",
                 value_schema={"type": "object"},
             )
+
+    def test_semantic_search_kinds_deduplicates_and_filters_invalid_values(self):
+        """Semantic search kinds should dedupe and drop unsupported entries."""
+
+        model = SemanticSearchInput(
+            query="memory search",
+            kinds=["entity", "entity", "context", "bad", ""],
+        )
+        assert model.kinds == ["entity", "context"]
+
+    def test_update_entity_sanitizes_tags_and_metadata(self):
+        """Update entity should sanitize incoming tags and metadata."""
+
+        model = UpdateEntityInput(
+            entity_id="ent-1",
+            tags=["alpha", "", "beta"],
+            metadata={"ok": True},
+        )
+        assert model.tags == ["alpha", "beta"]
+        assert model.metadata == {"ok": True}
+
+    def test_context_log_and_relationship_models_sanitize_inputs(self):
+        """Context, log, and relationship models should sanitize text/list/json fields."""
+
+        context_model = CreateContextInput(
+            title="  Notes\u202e  ",
+            source_type=" article ",
+            url=" https://example.com ",
+            content="x",
+            scopes=["public"],
+            tags=["a", "", "b"],
+            metadata={"x": 1},
+        )
+        assert context_model.title == "Notes"
+        assert context_model.source_type == "article"
+        assert context_model.url == "https://example.com"
+        assert context_model.tags == ["a", "b"]
+        assert context_model.metadata == {"x": 1}
+
+        create_log = CreateLogInput(
+            log_type=" note ",
+            tags=["ops", "", "infra"],
+            metadata={"x": 1},
+        )
+        assert create_log.log_type == "note"
+        assert create_log.tags == ["ops", "infra"]
+        assert create_log.metadata == {"x": 1}
+
+        query_logs = QueryLogsInput(tags=["ops", "", "infra"])
+        assert query_logs.tags == ["ops", "infra"]
+
+        update_log = UpdateLogInput(id="log-1", tags=["a", "", "b"], metadata={"ok": True})
+        assert update_log.tags == ["a", "b"]
+        assert update_log.metadata == {"ok": True}
+
+        relationship = CreateRelationshipInput(
+            source_type="entity",
+            source_id="s1",
+            target_type="job",
+            target_id="t1",
+            relationship_type=" related-to ",
+            properties={"weight": 1},
+        )
+        assert relationship.relationship_type == "related-to"
+        assert relationship.properties == {"weight": 1}
+
+        get_rels = GetRelationshipsInput(source_type="entity", source_id="s1")
+        assert get_rels.source_type == "entity"
+
+        query_rels = QueryRelationshipsInput(source_type="entity", target_type="job")
+        assert query_rels.source_type == "entity"
+        assert query_rels.target_type == "job"
+
+    def test_graph_job_file_and_protocol_models_sanitize_inputs(self):
+        """Graph, job, file, and protocol models should sanitize typed fields."""
+
+        neighbors = GraphNeighborsInput(source_type="entity", source_id="s1")
+        assert neighbors.source_type == "entity"
+
+        shortest = GraphShortestPathInput(
+            source_type="entity",
+            source_id="s1",
+            target_type="job",
+            target_id="t1",
+        )
+        assert shortest.source_type == "entity"
+        assert shortest.target_type == "job"
+
+        create_job = CreateJobInput(
+            title="Queue task",
+            metadata={"safe": True},
+        )
+        assert create_job.metadata == {"safe": True}
+
+        update_job = UpdateJobInput(job_id="2026Q1-0001", metadata={"safe": True})
+        assert update_job.metadata == {"safe": True}
+
+        create_file = CreateFileInput(
+            filename="  report.txt  ",
+            uri=" file:///tmp/r.txt ",
+            tags=["ops", "", "infra"],
+            metadata={"safe": True},
+        )
+        assert create_file.filename == "report.txt"
+        assert create_file.uri == "file:///tmp/r.txt"
+        assert create_file.file_path == "file:///tmp/r.txt"
+        assert create_file.tags == ["ops", "infra"]
+        assert create_file.metadata == {"safe": True}
+
+        query_files = QueryFilesInput(tags=["ops", "", "infra"])
+        assert query_files.tags == ["ops", "infra"]
+
+        update_file = UpdateFileInput(
+            file_id="f-1",
+            filename="  report-v2.txt  ",
+            uri=" file:///tmp/r2.txt ",
+            tags=["a", "", "b"],
+            metadata={"safe": True},
+        )
+        assert update_file.filename == "report-v2.txt"
+        assert update_file.uri == "file:///tmp/r2.txt"
+        assert update_file.file_path == "file:///tmp/r2.txt"
+        assert update_file.tags == ["a", "b"]
+        assert update_file.metadata == {"safe": True}
+
+        create_protocol = CreateProtocolInput(
+            name=" proto-a ",
+            title=" Protocol A ",
+            content="body",
+            protocol_type=" guide ",
+            tags=["a", "", "b"],
+            metadata={"safe": True},
+            source_path=" /tmp/proto-a.md ",
+        )
+        assert create_protocol.name == "proto-a"
+        assert create_protocol.title == "Protocol A"
+        assert create_protocol.protocol_type == "guide"
+        assert create_protocol.tags == ["a", "b"]
+        assert create_protocol.metadata == {"safe": True}
+        assert create_protocol.source_path == "/tmp/proto-a.md"
+
+        update_protocol = UpdateProtocolInput(
+            name=" proto-a ",
+            title=" Protocol A2 ",
+            protocol_type=" guide ",
+            tags=["x", "", "y"],
+            metadata={"safe": True},
+            source_path=" /tmp/proto-a2.md ",
+        )
+        assert update_protocol.name == "proto-a"
+        assert update_protocol.title == "Protocol A2"
+        assert update_protocol.protocol_type == "guide"
+        assert update_protocol.tags == ["x", "y"]
+        assert update_protocol.metadata == {"safe": True}
+        assert update_protocol.source_path == "/tmp/proto-a2.md"
+
+    def test_agent_and_auth_models_sanitize_text_fields(self):
+        """Agent and auth-related models should sanitize text fields consistently."""
+
+        get_agent = GetAgentInput(agent_id="  agent-1  ")
+        assert get_agent.agent_id == "agent-1"
+
+        update_agent = UpdateAgentInput(agent_id="a-1", description="  helper\u202e ")
+        assert update_agent.description == "helper"
+
+        enroll_start = AgentEnrollStartInput(
+            name=" bot-a ",
+            description=" helper ",
+            requested_scopes=["public", "", "admin"],
+            capabilities=["read", "", "write"],
+        )
+        assert enroll_start.name == "bot-a"
+        assert enroll_start.description == "helper"
+        assert enroll_start.requested_scopes == ["public", "admin"]
+        assert enroll_start.capabilities == ["read", "write"]
+
+        wait_model = AgentEnrollWaitInput(
+            registration_id=" reg-1 ",
+            enrollment_token=" tok-1 ",
+        )
+        assert wait_model.registration_id == "reg-1"
+        assert wait_model.enrollment_token == "tok-1"
+
+        redeem_model = AgentEnrollRedeemInput(
+            registration_id=" reg-2 ",
+            enrollment_token=" tok-2 ",
+        )
+        assert redeem_model.registration_id == "reg-2"
+        assert redeem_model.enrollment_token == "tok-2"
+
+        auth_attach = AgentAuthAttachInput(api_key=" nbl_test ")
+        assert auth_attach.api_key == "nbl_test"
+
+        login = LoginInput(username="  alxx ")
+        assert login.username == "alxx"
+
+        create_key = CreateAPIKeyInput(name="  default key ")
+        assert create_key.name == "default key"
+
+    def test_taxonomy_and_bulk_models_sanitize_and_validate_positive_paths(self):
+        """Taxonomy and bulk update models should handle happy-path sanitization."""
+
+        bulk_tags = BulkUpdateEntityTagsInput(entity_ids=["e1"], tags=["a", "", "b"], op="add")
+        assert bulk_tags.tags == ["a", "b"]
+
+        list_taxonomy = ListTaxonomyInput(kind="scopes", search="  visibility ")
+        assert list_taxonomy.kind == "scopes"
+        assert list_taxonomy.search == "visibility"
+
+        create_taxonomy = CreateTaxonomyInput(
+            kind="relationship-types",
+            name=" related-to ",
+            description=" desc ",
+            metadata={"x": 1},
+            is_symmetric=True,
+        )
+        assert create_taxonomy.name == "related-to"
+        assert create_taxonomy.description == "desc"
+        assert create_taxonomy.metadata == {"x": 1}
+        assert create_taxonomy.is_symmetric is True
+
+        create_log_taxonomy = CreateTaxonomyInput(
+            kind="log-types",
+            name=" custom-log ",
+            value_schema={"type": "object"},
+        )
+        assert create_log_taxonomy.value_schema == {"type": "object"}
+
+        update_taxonomy = UpdateTaxonomyInput(
+            kind="relationship-types",
+            item_id=" rel-1 ",
+            name=" related-to ",
+            description=" desc ",
+            metadata={"x": 1},
+            is_symmetric=False,
+        )
+        assert update_taxonomy.item_id == "rel-1"
+        assert update_taxonomy.name == "related-to"
+        assert update_taxonomy.description == "desc"
+        assert update_taxonomy.metadata == {"x": 1}
+        assert update_taxonomy.is_symmetric is False
+
+        update_log_taxonomy = UpdateTaxonomyInput(
+            kind="log-types",
+            item_id=" log-1 ",
+            value_schema={"type": "object"},
+        )
+        assert update_log_taxonomy.item_id == "log-1"
+        assert update_log_taxonomy.value_schema == {"type": "object"}
+
+        toggle_taxonomy = ToggleTaxonomyInput(kind="scopes", item_id=" scope-1 ")
+        assert toggle_taxonomy.kind == "scopes"
+        assert toggle_taxonomy.item_id == "scope-1"
