@@ -204,3 +204,58 @@ func TestFilesHandleEditKeysNavigationAndAppendBranches(t *testing.T) {
 	updated, _ = updated.handleEditKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
 	assert.Equal(t, "c", updated.editChecksum)
 }
+
+func TestFilesHandleAddKeysModeFocusBackspaceAndRenderBranches(t *testing.T) {
+	model := NewFilesModel(nil)
+	model.view = filesViewAdd
+	model.modeFocus = true
+
+	updated, cmd := model.handleAddKeys(tea.KeyMsg{Type: tea.KeyRight})
+	require.Nil(t, cmd)
+	assert.False(t, updated.modeFocus)
+	assert.Equal(t, filesViewList, updated.view)
+
+	updated.view = filesViewAdd
+	updated.addFocus = fileFieldPath
+	updated.addPath = "/tmp/ab"
+	updated, _ = updated.handleAddKeys(tea.KeyMsg{Type: tea.KeyBackspace})
+	assert.Equal(t, "/tmp/a", updated.addPath)
+
+	updated.addFocus = fileFieldMime
+	updated.addMime = "text"
+	updated, _ = updated.handleAddKeys(tea.KeyMsg{Type: tea.KeyBackspace})
+	assert.Equal(t, "tex", updated.addMime)
+
+	updated.addFocus = fileFieldSize
+	updated.addSize = "12"
+	updated, _ = updated.handleAddKeys(tea.KeyMsg{Type: tea.KeyBackspace})
+	assert.Equal(t, "1", updated.addSize)
+
+	updated.addFocus = fileFieldChecksum
+	updated.addChecksum = "abcd"
+	updated, _ = updated.handleAddKeys(tea.KeyMsg{Type: tea.KeyBackspace})
+	assert.Equal(t, "abc", updated.addChecksum)
+
+	updated.addFocus = fileFieldMeta
+	updated.addMeta.Buffer = "k: v"
+	updated, _ = updated.handleAddKeys(tea.KeyMsg{Type: tea.KeyBackspace})
+	assert.Equal(t, "k: v", updated.addMeta.Buffer)
+
+	updated.addFocus = fileFieldPath
+	updated, _ = updated.handleAddKeys(tea.KeyMsg{Type: tea.KeyUp})
+	assert.Equal(t, fileFieldName, updated.addFocus)
+
+	updated.addName = "Alpha.txt"
+	updated.addPath = "/tmp/alpha.txt"
+	updated, _ = updated.handleAddKeys(tea.KeyMsg{Type: tea.KeyEsc})
+	assert.Equal(t, "", updated.addName)
+	assert.Equal(t, "", updated.addPath)
+
+	updated.addErr = "bad size"
+	out := updated.renderAdd()
+	assert.Contains(t, out, "bad size")
+
+	updated.addSaved = true
+	out = updated.renderAdd()
+	assert.Contains(t, out, "Saved.")
+}
