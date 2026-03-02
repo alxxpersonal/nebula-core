@@ -187,6 +187,21 @@ func TestStartupParsingHelpers(t *testing.T) {
 		"multi_api_conflict",
 		classifyStartupAuth("MULTIPLE_API_INSTANCES_DETECTED: duplicate processes", &config.Config{APIKey: "key"}),
 	)
+	assert.Equal(
+		t,
+		"multi_api_conflict",
+		classifyStartupAuth("listen tcp 127.0.0.1:8000: bind: address already in use", &config.Config{APIKey: "key"}),
+	)
+	assert.Equal(
+		t,
+		"multi_api_conflict",
+		classifyStartupAuth("socket error: EADDRINUSE", &config.Config{APIKey: "key"}),
+	)
+	assert.Equal(
+		t,
+		"multi_api_conflict",
+		classifyStartupAuth("errno 98 while binding socket", &config.Config{APIKey: "key"}),
+	)
 
 	assert.Equal(t, "ok", classifyStartupTaxonomy(""))
 	assert.Equal(t, "forbidden", classifyStartupTaxonomy("forbidden: scope"))
@@ -204,6 +219,10 @@ func TestStartupParsingHelpers(t *testing.T) {
 	level, copy = startupToastCopy(startupSummary{API: "ok", Auth: "missing", Taxonomy: "forbidden"})
 	assert.Equal(t, "warning", level)
 	assert.Contains(t, copy, "auth=missing")
+
+	level, copy = startupToastCopy(startupSummary{API: "ok", Auth: "multi_api_conflict", Taxonomy: "ok"})
+	assert.Equal(t, "error", level)
+	assert.Contains(t, strings.ToLower(copy), "multiple api instances detected")
 }
 
 // TestStartupCheckedMsgInvalidAuthEnablesRecoveryHints handles startup invalid auth recovery hints.
@@ -219,6 +238,22 @@ func TestStartupCheckedMsgInvalidAuthEnablesRecoveryHints(t *testing.T) {
 	assert.Equal(t, "INVALID_API_KEY", updated.lastErrCode)
 	assert.Equal(t, "Invalid API key", updated.lastErrMsg)
 	assert.True(t, updated.showRecoveryHints)
+	require.NotNil(t, cmd)
+}
+
+// TestStartupCheckedMsgRawConflictTextSetsMultiAPIConflict handles startup conflict text variants.
+func TestStartupCheckedMsgRawConflictTextSetsMultiAPIConflict(t *testing.T) {
+	app := NewApp(nil, &config.Config{APIKey: "bad-key"})
+	app.startupChecking = true
+
+	model, cmd := app.Update(startupCheckedMsg{authErr: "listen tcp 127.0.0.1:8000: bind: address already in use"})
+	updated := model.(App)
+
+	assert.False(t, updated.startupChecking)
+	assert.Equal(t, "multi_api_conflict", updated.startup.Auth)
+	assert.Equal(t, "MULTIPLE_API_INSTANCES_DETECTED: multiple api instances detected", updated.err)
+	assert.Equal(t, "MULTIPLE_API_INSTANCES_DETECTED", updated.lastErrCode)
+	assert.False(t, updated.showRecoveryHints)
 	require.NotNil(t, cmd)
 }
 

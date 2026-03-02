@@ -1802,7 +1802,11 @@ func classifyStartupAuth(errText string, cfg *config.Config) string {
 	lower := strings.ToLower(errText)
 	switch {
 	case strings.Contains(lower, "multiple api instances detected"),
-		strings.Contains(lower, "multiple_api_instances_detected"):
+		strings.Contains(lower, "multiple_api_instances_detected"),
+		strings.Contains(lower, "address already in use"),
+		strings.Contains(lower, "eaddrinuse"),
+		strings.Contains(lower, "errno 98"),
+		strings.Contains(lower, "errno 48"):
 		return "multi_api_conflict"
 	case strings.Contains(lower, "http 500"), strings.Contains(lower, "internal server error"):
 		return "multi_api_conflict"
