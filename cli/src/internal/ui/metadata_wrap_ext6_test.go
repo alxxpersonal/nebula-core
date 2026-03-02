@@ -20,6 +20,21 @@ func TestMetadataGridRowsWrappedFallbackAndBalancing(t *testing.T) {
 	assert.Equal(t, "line two", rows[1][2])
 }
 
+func TestMetadataGridRowsWrappedUsesLongestColumnLineCount(t *testing.T) {
+	rows := metadataGridRowsWrapped(
+		"group long value",
+		"field long value",
+		"v",
+		6,
+		6,
+		8,
+	)
+	require.Greater(t, len(rows), 1)
+	assert.Equal(t, "v", rows[0][2])
+	// Later rows come from wrapped group/field while value is exhausted.
+	assert.Equal(t, "", rows[len(rows)-1][2])
+}
+
 func TestMetadataValueWrappedLinesSanitizeAndKeepBlankRows(t *testing.T) {
 	lines := metadataValueWrappedLines(" \x1b[31mabc\x1b[0m \n\nsecond ", 10)
 	require.Len(t, lines, 3)

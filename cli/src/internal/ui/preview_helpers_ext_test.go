@@ -114,6 +114,17 @@ func TestWrapPreviewTextSkipsLeadingSpaceOnWrappedLine(t *testing.T) {
 	}
 }
 
+func TestWrapPreviewTextHandlesCombiningAndWideRunes(t *testing.T) {
+	// Combining mark path exercises rune width fallback (rw < 1 => rw = 1).
+	combining := wrapPreviewText("\u0301a", 1)
+	require.NotEmpty(t, combining)
+
+	// Wide rune at column 0 path (lineW == 0 while rune width > target width).
+	wide := wrapPreviewText("界x", 1)
+	require.NotEmpty(t, wide)
+	assert.Contains(t, wide[0], "界")
+}
+
 func TestPreviewStringAndListValueMatrix(t *testing.T) {
 	assert.Equal(t, "", previewStringValue(nil, "note"))
 	assert.Equal(t, "", previewListValue(nil, "tags"))
