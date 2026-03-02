@@ -145,3 +145,32 @@ func TestJobsToggleSelectAllNoItemsNoop(t *testing.T) {
 	model.toggleSelectAll()
 	assert.Equal(t, map[string]bool{"job-1": true}, model.selected)
 }
+
+func TestJobsHandleSubtaskInputBackAndNoopKey(t *testing.T) {
+	model := NewJobsModel(nil)
+	model.creatingSubtask = true
+	model.subtaskBuf = "child"
+
+	updated, cmd := model.handleSubtaskInput(tea.KeyMsg{Type: tea.KeyEsc})
+	require.Nil(t, cmd)
+	assert.False(t, updated.creatingSubtask)
+	assert.Equal(t, "", updated.subtaskBuf)
+
+	updated.creatingSubtask = true
+	updated.subtaskBuf = "x"
+	updated, cmd = updated.handleSubtaskInput(tea.KeyMsg{Type: tea.KeyTab})
+	require.Nil(t, cmd)
+	assert.True(t, updated.creatingSubtask)
+	assert.Equal(t, "x", updated.subtaskBuf)
+}
+
+func TestJobsHandleLinkInputNoopKeyKeepsBuffer(t *testing.T) {
+	model := NewJobsModel(nil)
+	model.linkingRel = true
+	model.linkBuf = "entity ent-1 owns"
+
+	updated, cmd := model.handleLinkInput(tea.KeyMsg{Type: tea.KeyTab})
+	require.Nil(t, cmd)
+	assert.True(t, updated.linkingRel)
+	assert.Equal(t, "entity ent-1 owns", updated.linkBuf)
+}
