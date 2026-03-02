@@ -1462,9 +1462,6 @@ func countViewLines(block string) int {
 // clampBodyForViewport handles clamp body for viewport.
 func clampBodyForViewport(body string, totalHeight, topLines, hintLines, scroll int) (string, bool) {
 	lines := strings.Split(body, "\n")
-	if len(lines) == 0 {
-		return body, false
-	}
 
 	// Layout is rendered as: top + blank + body + blank + hints.
 	const spacerLines = 2
@@ -1477,9 +1474,6 @@ func clampBodyForViewport(body string, totalHeight, topLines, hintLines, scroll 
 	}
 
 	maxScroll := len(lines) - budget
-	if maxScroll < 0 {
-		maxScroll = 0
-	}
 	if scroll < 0 {
 		scroll = 0
 	}
@@ -1488,22 +1482,13 @@ func clampBodyForViewport(body string, totalHeight, topLines, hintLines, scroll 
 	}
 	start := scroll
 	end := start + budget
-	if end > len(lines) {
-		end = len(lines)
-		start = end - budget
-		if start < 0 {
-			start = 0
-		}
-	}
 
 	trimmed := append([]string{}, lines[start:end]...)
-	if len(trimmed) > 0 {
-		if start > 0 {
-			trimmed[0] = MutedStyle.Render("... ↑ more")
-		}
-		if end < len(lines) {
-			trimmed[len(trimmed)-1] = MutedStyle.Render("... ↓ more")
-		}
+	if start > 0 {
+		trimmed[0] = MutedStyle.Render("... ↑ more")
+	}
+	if end < len(lines) {
+		trimmed[len(trimmed)-1] = MutedStyle.Render("... ↓ more")
 	}
 	return strings.Join(trimmed, "\n"), true
 }
