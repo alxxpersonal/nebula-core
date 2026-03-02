@@ -588,14 +588,7 @@ func (m *MetadataEditor) moveInspect(delta int) {
 
 // inspectPageSize handles inspect page size.
 func (m MetadataEditor) inspectPageSize() int {
-	page := 12
-	if page < 6 {
-		page = 6
-	}
-	if page > 20 {
-		page = 20
-	}
-	return page
+	return 12
 }
 
 // inspectValue handles inspect value.

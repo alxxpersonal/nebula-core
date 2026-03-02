@@ -120,6 +120,18 @@ func TestFilterMapForFacetInitializesMissingMaps(t *testing.T) {
 	assert.Empty(t, unknown)
 }
 
+func TestFilterOptionsForFacetRoutesSets(t *testing.T) {
+	model := NewEntitiesModel(nil)
+	model.filterTypeSet = []string{"person"}
+	model.filterStatSet = []string{"active"}
+	model.filterScopeSet = []string{"public"}
+
+	assert.Equal(t, []string{"person"}, model.filterOptionsForFacet(entitiesFilterFacetType))
+	assert.Equal(t, []string{"active"}, model.filterOptionsForFacet(entitiesFilterFacetStatus))
+	assert.Equal(t, []string{"public"}, model.filterOptionsForFacet(entitiesFilterFacetScope))
+	assert.Nil(t, model.filterOptionsForFacet(entitiesFilterFacet(99)))
+}
+
 func TestRefreshFilterSetsBuildsFacetOptionsAndRetainsSelection(t *testing.T) {
 	publicID := "scope-public"
 	privateID := "scope-private"

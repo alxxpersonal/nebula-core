@@ -154,3 +154,25 @@ func TestEntitiesMetaSelectionAndInspectBranchMatrix(t *testing.T) {
 	assert.False(t, model.metaInspect)
 	assert.Nil(t, model.metaInspectLines())
 }
+
+func TestEntitiesMetaInspectLinesWidthClampAndEmptyValueBranches(t *testing.T) {
+	model := NewEntitiesModel(nil)
+	model.width = 0 // force width clamp to minimum inspect width branch
+	model.metaInspect = true
+	model.metaInspectI = 0
+	model.metaRows = []metadataDisplayRow{
+		{field: "profile.note", value: "line 1\n\nline 3"},
+	}
+
+	lines := model.metaInspectLines()
+	require.NotEmpty(t, lines)
+	joined := strings.Join(lines, "\n")
+	assert.Contains(t, joined, "Group")
+	assert.Contains(t, joined, "Field")
+	assert.Contains(t, lines, "")
+
+	model.metaRows[0].value = "   "
+	lines = model.metaInspectLines()
+	require.NotEmpty(t, lines)
+	assert.Contains(t, strings.Join(lines, "\n"), "None")
+}

@@ -306,3 +306,156 @@ func TestEntitiesCommitEditTagScopeAndRenderEditTagsBranches(t *testing.T) {
 	assert.Equal(t, "-", model.renderEditTags(false))
 	assert.Contains(t, components.SanitizeText(model.renderEditTags(true)), "█")
 }
+
+func TestEntitiesHandleRelationshipsKeysBranchMatrix(t *testing.T) {
+	now := time.Now().UTC()
+	model := NewEntitiesModel(nil)
+	model.view = entitiesViewRelationships
+
+	// Back key exits relationship detail.
+	next, cmd := model.handleRelationshipsKeys(tea.KeyMsg{Type: tea.KeyEsc})
+	require.Nil(t, cmd)
+	assert.Equal(t, entitiesViewDetail, next.view)
+
+	// Enter relate flow and ensure startRelate reset is applied.
+	model.view = entitiesViewRelationships
+	model.relateQuery = "stale"
+	model.relateResults = []api.Entity{{ID: "ent-x"}}
+	model.relateTarget = &api.Entity{ID: "ent-y"}
+	model.relateType = "knows"
+	model.relateLoading = true
+	next, cmd = model.handleRelationshipsKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	require.Nil(t, cmd)
+	assert.Equal(t, entitiesViewRelateSearch, next.view)
+	assert.Equal(t, "", next.relateQuery)
+	assert.Nil(t, next.relateResults)
+	assert.Nil(t, next.relateTarget)
+	assert.Equal(t, "", next.relateType)
+	assert.False(t, next.relateLoading)
+
+	// Down/up branches on relationship list.
+	model.view = entitiesViewRelationships
+	model.rels = []api.Relationship{
+		{ID: "rel-1", Type: "uses", SourceID: "ent-1", TargetID: "ent-2", CreatedAt: now},
+		{ID: "rel-2", Type: "depends-on", SourceID: "ent-1", TargetID: "ent-3", CreatedAt: now},
+	}
+	model.relList.SetItems([]string{"uses", "depends-on"})
+	model.relList.Cursor = 0
+	next, _ = model.handleRelationshipsKeys(tea.KeyMsg{Type: tea.KeyDown})
+	assert.Equal(t, 1, next.relList.Selected())
+	next, _ = next.handleRelationshipsKeys(tea.KeyMsg{Type: tea.KeyUp})
+	assert.Equal(t, 0, next.relList.Selected())
+
+	// Edit with invalid selection remains in relationships view.
+	model.view = entitiesViewRelationships
+	model.relList.Cursor = 99
+	next, cmd = model.handleRelationshipsKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	require.Nil(t, cmd)
+	assert.Equal(t, entitiesViewRelationships, next.view)
+
+	// Delete with invalid selection remains in relationships view.
+	next, cmd = model.handleRelationshipsKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	require.Nil(t, cmd)
+	assert.Equal(t, entitiesViewRelationships, next.view)
+	assert.Equal(t, "", next.confirmKind)
+
+	// Edit with valid relationship enters edit view.
+	model.relList.Cursor = 0
+	next, cmd = model.handleRelationshipsKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	require.Nil(t, cmd)
+	assert.Equal(t, entitiesViewRelEdit, next.view)
+	assert.Equal(t, "rel-1", next.relEditID)
+
+	// Delete with valid relationship opens confirm flow.
+	model.view = entitiesViewRelationships
+	next, cmd = model.handleRelationshipsKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	require.Nil(t, cmd)
+	assert.Equal(t, entitiesViewConfirm, next.view)
+	assert.Equal(t, "rel-archive", next.confirmKind)
+	assert.Equal(t, "rel-1", next.confirmRelID)
+	assert.Equal(t, entitiesViewRelationships, next.confirmReturn)
+}
+
+func TestEntitiesLoadRelateResultsAndDetailRelationshipsMatrix(t *testing.T) {
+	now := time.Now().UTC()
+
+	t.Run("loadEntityDetailRelationships success", func(t *testing.T) {
+		_, client := testEntitiesClient(t, func(w http.ResponseWriter, r *http.Request) {
+			if strings.HasPrefix(r.URL.Path, "/api/relationships/") && r.Method == http.MethodGet {
+				require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+					"data": []map[string]any{
+						{
+							"id":                "rel-1",
+							"source_type":       "entity",
+							"source_id":         "ent-1",
+							"target_type":       "entity",
+							"target_id":         "ent-2",
+							"relationship_type": "uses",
+							"status":            "active",
+							"created_at":        now,
+						},
+					},
+				}))
+				return
+			}
+			w.WriteHeader(http.StatusNotFound)
+		})
+
+		model := NewEntitiesModel(client)
+		cmd := model.loadEntityDetailRelationships("ent-1")
+		require.NotNil(t, cmd)
+		msg := cmd()
+		loaded, ok := msg.(entityDetailRelationshipsLoadedMsg)
+		require.True(t, ok)
+		assert.Equal(t, "ent-1", loaded.id)
+		require.Len(t, loaded.items, 1)
+		assert.Equal(t, "rel-1", loaded.items[0].ID)
+	})
+
+	t.Run("loadRelateResults success forwards query and rows", func(t *testing.T) {
+		_, client := testEntitiesClient(t, func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/api/entities" && r.Method == http.MethodGet {
+				assert.Equal(t, "beta", r.URL.Query().Get("search_text"))
+				require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+					"data": []map[string]any{
+						{"id": "ent-2", "name": "Beta", "type": "tool", "status": "active"},
+					},
+				}))
+				return
+			}
+			w.WriteHeader(http.StatusNotFound)
+		})
+
+		model := NewEntitiesModel(client)
+		cmd := model.loadRelateResults("beta")
+		require.NotNil(t, cmd)
+		msg := cmd()
+		loaded, ok := msg.(relateResultsMsg)
+		require.True(t, ok)
+		require.Len(t, loaded.items, 1)
+		assert.Equal(t, "ent-2", loaded.items[0].ID)
+		assert.Equal(t, "Beta", loaded.items[0].Name)
+	})
+
+	t.Run("loadRelateResults error path returns errMsg", func(t *testing.T) {
+		_, client := testEntitiesClient(t, func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/api/entities" && r.Method == http.MethodGet {
+				w.WriteHeader(http.StatusInternalServerError)
+				require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+					"error": map[string]any{"code": "INTERNAL", "message": "query failed"},
+				}))
+				return
+			}
+			w.WriteHeader(http.StatusNotFound)
+		})
+
+		model := NewEntitiesModel(client)
+		cmd := model.loadRelateResults("beta")
+		require.NotNil(t, cmd)
+		msg := cmd()
+		em, ok := msg.(errMsg)
+		require.True(t, ok)
+		require.Error(t, em.err)
+		assert.Contains(t, strings.ToLower(em.err.Error()), "query failed")
+	})
+}

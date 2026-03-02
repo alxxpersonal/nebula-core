@@ -3,6 +3,7 @@ package ui
 import (
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/gravitrone/nebula-core/cli/internal/api"
@@ -268,4 +269,80 @@ func TestEntitiesDetailMetadataCopyRowsNormalizesEmptyValue(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, 1, copiedMsg.count)
 	assert.Equal(t, "None", copied)
+}
+
+// TestEntitiesRenderDetailOptionalFieldBranchMatrix covers optional field
+// rendering branches when detail data is sparse vs fully populated.
+func TestEntitiesRenderDetailOptionalFieldBranchMatrix(t *testing.T) {
+	now := time.Now().UTC()
+
+	t.Run("omits optional rows when values are empty", func(t *testing.T) {
+		model := NewEntitiesModel(nil)
+		model.width = 100
+		emptyPath := ""
+		model.detail = &api.Entity{
+			ID:         "ent-1",
+			Name:       "Alpha",
+			CreatedAt:  now,
+			SourcePath: &emptyPath,
+		}
+
+		out := components.SanitizeText(model.renderDetail())
+		assert.Contains(t, out, "Entity")
+		assert.Contains(t, out, "ID")
+		assert.Contains(t, out, "Name")
+		assert.Contains(t, out, "Created")
+		assert.NotContains(t, out, "Type")
+		assert.NotContains(t, out, "Status")
+		assert.NotContains(t, out, "Tags")
+		assert.NotContains(t, out, "Scopes")
+		assert.NotContains(t, out, "Updated")
+		assert.NotContains(t, out, "Source Path")
+		assert.NotContains(t, out, "Metadata")
+		assert.NotContains(t, out, "Relationships")
+	})
+
+	t.Run("includes optional rows and relationship summary when present", func(t *testing.T) {
+		model := NewEntitiesModel(nil)
+		model.width = 110
+		sourcePath := "/vault/entity.md"
+		model.scopeNames = map[string]string{"scope-1": "public"}
+		model.detail = &api.Entity{
+			ID:              "ent-2",
+			Name:            "Beta",
+			Type:            "project",
+			Status:          "active",
+			Tags:            []string{"core"},
+			PrivacyScopeIDs: []string{"scope-1"},
+			Metadata:        api.JSONMap{"topic": "build"},
+			CreatedAt:       now,
+			UpdatedAt:       now,
+			SourcePath:      &sourcePath,
+		}
+		model.detailRels = []api.Relationship{
+			{
+				ID:         "rel-1",
+				SourceType: "entity",
+				SourceID:   "ent-2",
+				SourceName: "Beta",
+				TargetType: "entity",
+				TargetID:   "ent-9",
+				TargetName: "Gamma",
+				Type:       "depends-on",
+				Status:     "active",
+				CreatedAt:  now,
+			},
+		}
+
+		out := components.SanitizeText(model.renderDetail())
+		assert.Contains(t, out, "Type")
+		assert.Contains(t, out, "Status")
+		assert.Contains(t, out, "Tags")
+		assert.Contains(t, out, "Scopes")
+		assert.Contains(t, out, "Updated")
+		assert.Contains(t, out, "Source Path")
+		assert.Contains(t, out, "Metadata")
+		assert.Contains(t, out, "Relationships")
+		assert.Contains(t, out, "depends-on")
+	})
 }

@@ -44,6 +44,66 @@ func TestLogsLoadScopeOptionsNilClient(t *testing.T) {
 	assert.Nil(t, model.loadScopeOptions())
 }
 
+func TestLogsLoadLogsSuccessAndError(t *testing.T) {
+	now := time.Now().UTC()
+
+	t.Run("success path includes active status filter", func(t *testing.T) {
+		_, client := testLogsClient(t, func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/api/logs" && r.Method == http.MethodGet {
+				assert.Equal(t, "active", r.URL.Query().Get("status_category"))
+				require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+					"data": []map[string]any{
+						{
+							"id":         "log-1",
+							"log_type":   "workout",
+							"timestamp":  now,
+							"value":      map[string]any{"note": "x"},
+							"status":     "active",
+							"tags":       []string{"core"},
+							"metadata":   map[string]any{},
+							"created_at": now,
+							"updated_at": now,
+						},
+					},
+				}))
+				return
+			}
+			w.WriteHeader(http.StatusNotFound)
+		})
+
+		model := NewLogsModel(client)
+		cmd := model.loadLogs()
+		require.NotNil(t, cmd)
+		msg := cmd()
+		loaded, ok := msg.(logsLoadedMsg)
+		require.True(t, ok)
+		require.Len(t, loaded.items, 1)
+		assert.Equal(t, "log-1", loaded.items[0].ID)
+	})
+
+	t.Run("error path returns errMsg", func(t *testing.T) {
+		_, client := testLogsClient(t, func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/api/logs" && r.Method == http.MethodGet {
+				w.WriteHeader(http.StatusInternalServerError)
+				require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+					"error": map[string]any{"code": "INTERNAL", "message": "logs failed"},
+				}))
+				return
+			}
+			w.WriteHeader(http.StatusNotFound)
+		})
+
+		model := NewLogsModel(client)
+		cmd := model.loadLogs()
+		require.NotNil(t, cmd)
+		msg := cmd()
+		em, ok := msg.(errMsg)
+		require.True(t, ok)
+		require.Error(t, em.err)
+		assert.Contains(t, strings.ToLower(em.err.Error()), "logs failed")
+	})
+}
+
 func TestLogsLoadDetailRelationshipsSuccessAndError(t *testing.T) {
 	now := time.Now()
 	_, client := testLogsClient(t, func(w http.ResponseWriter, r *http.Request) {

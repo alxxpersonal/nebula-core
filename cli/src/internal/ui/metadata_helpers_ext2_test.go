@@ -6,6 +6,10 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+type metadataNilStringer struct{}
+
+func (metadataNilStringer) String() string { return "<nil>" }
+
 func TestParseStringSliceMatrix(t *testing.T) {
 	assert.Equal(t, []string{"public", "admin"}, parseStringSlice([]string{" public ", "#admin", "PUBLIC"}))
 	assert.Equal(
@@ -45,4 +49,13 @@ func TestMetadataPreviewFallbackAndValuePreviewBranches(t *testing.T) {
 
 	mapPreview := metadataValuePreview(map[string]any{"a": "1", "b": "2"}, 30)
 	assert.Contains(t, mapPreview, "a")
+}
+
+func TestFormatMetadataInlineDefaultAndSanitizeBranches(t *testing.T) {
+	assert.Equal(t, "42", formatMetadataInline(42))
+	assert.Equal(t, "None", formatMetadataInline(metadataNilStringer{}))
+
+	sanitized := formatMetadataInline("\x1b[31mred\x1b[0m")
+	assert.NotContains(t, sanitized, "\x1b[31m")
+	assert.Contains(t, sanitized, "red")
 }

@@ -847,15 +847,8 @@ func metadataValueWrappedLines(value string, width int) []string {
 	raw := strings.Split(value, "\n")
 	out := make([]string, 0, len(raw))
 	for _, line := range raw {
-		wrapped := wrapMetadataDisplayLine(line, width)
-		if len(wrapped) == 0 {
-			out = append(out, "")
-			continue
-		}
-		out = append(out, wrapped...)
-	}
-	if len(out) == 0 {
-		return []string{"None"}
+		// wrapMetadataDisplayLine always returns at least one line.
+		out = append(out, wrapMetadataDisplayLine(line, width)...)
 	}
 	return out
 }

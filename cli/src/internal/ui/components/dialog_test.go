@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -68,4 +69,44 @@ func TestRenderSummaryRowsBranchMatrix(t *testing.T) {
 	assert.Contains(t, tightClean, "labe")
 	assert.Contains(t, tightClean, "ok")
 	assert.NotContains(t, tightClean, "label-label-label-label-label-label-label-label-")
+}
+
+func TestConfirmPreviewDialogEmptySectionsMatrix(t *testing.T) {
+	out := ConfirmPreviewDialog("Confirm", nil, nil, 72)
+	clean := SanitizeText(out)
+	assert.Contains(t, clean, "Confirm")
+	assert.NotContains(t, clean, "Summary")
+	assert.NotContains(t, clean, "Changes")
+}
+
+func TestRenderDiffRowsBranchMatrix(t *testing.T) {
+	assert.Equal(t, "", renderDiffRows(nil, 80))
+
+	rows := []DiffRow{
+		{Label: "\x1b[31mstatus\x1b[0m", From: "active\nold", To: "archived\nnew"},
+		{Label: "owner", From: "  ", To: "--"},
+	}
+	out := renderDiffRows(rows, 0) // contentWidth fallback branch
+	clean := SanitizeText(out)
+
+	assert.Contains(t, clean, "status")
+	assert.Contains(t, clean, "owner")
+	assert.Contains(t, clean, "- active")
+	assert.Contains(t, clean, "+ archived")
+	assert.Contains(t, clean, "None")
+	assert.Equal(t, 1, strings.Count(clean, "\n\nowner"))
+}
+
+func TestRenderDiffValuePlaceholderAndMultilineBranches(t *testing.T) {
+	style := lipgloss.NewStyle()
+
+	none := SanitizeText(renderDiffValue(style, "  - ", "<nil>", 12))
+	assert.Contains(t, none, "- None")
+
+	none = SanitizeText(renderDiffValue(style, "  + ", "-", 12))
+	assert.Contains(t, none, "+ None")
+
+	multi := SanitizeText(renderDiffValue(style, "  + ", "line1\nline2", 12))
+	assert.Contains(t, multi, "+ line1")
+	assert.Contains(t, multi, "\n    line2")
 }
