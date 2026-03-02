@@ -460,6 +460,29 @@ class TestModelSanitizerHelpers:
         with pytest.raises(ValueError, match="Invalid ts: expected ISO8601 datetime"):
             parse_optional_datetime("not-a-timestamp", "ts")
 
+    def test_parse_optional_datetime_handles_iso_date_and_offset_datetime(self):
+        """Datetime parser should accept date-only strings and explicit offsets."""
+
+        date_only = parse_optional_datetime("2026-01-02", "ts")
+        assert date_only == datetime(2026, 1, 2, 0, 0)
+
+        offset = parse_optional_datetime("2026-01-02T09:30:00+02:30", "ts")
+        assert offset == datetime.fromisoformat("2026-01-02T09:30:00+02:30")
+
+    def test_private_sanitizers_normalize_control_only_source_and_node_type(self):
+        """Source-path and node-type sanitizers should strip control chars safely."""
+
+        assert _sanitize_source_path(" \u202e\x00 ") is None
+        assert _validate_node_type(" entity\u202e ") == "entity"
+
+    def test_validate_metadata_payload_rejects_other_banned_keys(self):
+        """Metadata payload should reject __proto__ and prototype keys recursively."""
+
+        with pytest.raises(ValueError, match="Metadata key '__proto__' is not allowed"):
+            validate_metadata_payload({"nested": {"__proto__": {"x": 1}}})
+        with pytest.raises(ValueError, match="Metadata key 'prototype' is not allowed"):
+            validate_metadata_payload({"items": [{"prototype": "bad"}]})
+
     def test_private_sanitizers_return_none_for_none_inputs(self):
         """Private sanitizer helpers should preserve None values."""
 

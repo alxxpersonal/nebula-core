@@ -57,6 +57,12 @@ class TestRequireStatus:
         with pytest.raises(ValueError, match="Status required"):
             require_status("", mock_enums)
 
+    def test_none_status_raises(self, mock_enums):
+        """Raise ValueError for None status input."""
+
+        with pytest.raises(ValueError, match="Status required"):
+            require_status(None, mock_enums)  # type: ignore[arg-type]
+
     def test_archived_alias_maps_to_terminal_status(self, mock_enums):
         """Map archived alias to a known terminal status UUID."""
 
@@ -127,6 +133,12 @@ class TestRequireEntityType:
         with pytest.raises(ValueError, match="Entity type required"):
             require_entity_type("", mock_enums)
 
+    def test_none_entity_type_raises(self, mock_enums):
+        """Raise ValueError for None entity type input."""
+
+        with pytest.raises(ValueError, match="Entity type required"):
+            require_entity_type(None, mock_enums)  # type: ignore[arg-type]
+
     def test_entity_type_case_sensitive_unknown_raises(self, mock_enums):
         """Entity type validator should reject mismatched case."""
 
@@ -157,6 +169,12 @@ class TestRequireRelationshipType:
 
         with pytest.raises(ValueError, match="Relationship type required"):
             require_relationship_type("", mock_enums)
+
+    def test_none_relationship_type_raises(self, mock_enums):
+        """Raise ValueError for None relationship type input."""
+
+        with pytest.raises(ValueError, match="Relationship type required"):
+            require_relationship_type(None, mock_enums)  # type: ignore[arg-type]
 
 
 # --- require_scopes ---
@@ -200,6 +218,12 @@ class TestRequireScopes:
         with pytest.raises(ValueError, match="Unknown scope"):
             require_scopes([" public "], mock_enums)
 
+    def test_none_scope_value_raises_unknown_scope(self, mock_enums):
+        """None values should fail scope lookup with clear unknown-scope error."""
+
+        with pytest.raises(ValueError, match="Unknown scope: None"):
+            require_scopes(["public", None], mock_enums)  # type: ignore[list-item]
+
 
 # --- require_log_type ---
 
@@ -218,6 +242,12 @@ class TestRequireLogType:
 
         with pytest.raises(ValueError, match="Log type required"):
             require_log_type("", mock_enums)
+
+    def test_none_log_type_raises(self, mock_enums):
+        """Raise ValueError for None log type input."""
+
+        with pytest.raises(ValueError, match="Log type required"):
+            require_log_type(None, mock_enums)  # type: ignore[arg-type]
 
     def test_unknown_log_type_raises(self, mock_enums):
         """Unknown log type values should raise clear validation errors."""
@@ -248,6 +278,18 @@ class TestLoadEnums:
         assert section.name_to_id == {"active": active_id, "inactive": inactive_id}
         assert section.id_to_name == {active_id: "active", inactive_id: "inactive"}
         pool.fetch.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_load_section_handles_empty_rows(self):
+        """_load_section should return empty maps when query has no rows."""
+
+        pool = AsyncMock()
+        pool.fetch = AsyncMock(return_value=[])
+
+        section = await _load_section(pool, "enums/statuses")
+
+        assert section.name_to_id == {}
+        assert section.id_to_name == {}
 
     @pytest.mark.asyncio
     async def test_load_section_last_row_wins_on_duplicate_name_and_id(self):
