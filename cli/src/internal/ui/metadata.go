@@ -940,12 +940,12 @@ func splitMetadataPath(path string) []string {
 
 // metadataColumnWidths handles metadata column widths.
 func metadataColumnWidths(contentWidth int) (int, int, int) {
-	if contentWidth < 34 {
-		contentWidth = 34
+	if contentWidth < 40 {
+		contentWidth = 40
 	}
 	usable := contentWidth - 2 // separators
-	if usable < 24 {
-		usable = 24
+	if usable < 38 {
+		usable = 38
 	}
 
 	groupWidth := usable * 22 / 100

@@ -43,7 +43,22 @@ func TestMetadataColumnWidthsClampSmallContentWidth(t *testing.T) {
 	group, field, value := metadataColumnWidths(20)
 	assert.Equal(t, 10, group)
 	assert.Equal(t, 14, field)
-	assert.Equal(t, 16, value)
+	assert.Equal(t, 14, value)
+}
+
+func TestMetadataColumnWidthsNeverExceedUsableWidth(t *testing.T) {
+	for _, contentWidth := range []int{0, 10, 20, 34, 40, 48, 80} {
+		group, field, value := metadataColumnWidths(contentWidth)
+		effectiveContent := contentWidth
+		if effectiveContent < 40 {
+			effectiveContent = 40
+		}
+		usable := effectiveContent - 2
+		if usable < 38 {
+			usable = 38
+		}
+		assert.LessOrEqual(t, group+field+value, usable)
+	}
 }
 
 func TestMetadataColumnWidthsScalesForLargerWidth(t *testing.T) {
