@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/gravitrone/nebula-core/cli/internal/api"
+	"github.com/gravitrone/nebula-core/cli/internal/ui/components"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -34,4 +35,24 @@ func TestRelationshipSummaryColumnWidthsAlwaysRebalanced(t *testing.T) {
 
 	rel, dir, node = relationshipSummaryColumnWidths(220)
 	assert.Equal(t, 218, rel+dir+node)
+}
+
+func TestRenderRelationshipSummaryTableTinyWidthStillRendersRows(t *testing.T) {
+	rels := []api.Relationship{
+		{
+			Type:       "depends-on",
+			SourceType: "entity",
+			SourceID:   "ent-1",
+			SourceName: "Alpha",
+			TargetType: "entity",
+			TargetID:   "ent-2",
+			TargetName: "Beta",
+		},
+	}
+
+	out := components.SanitizeText(renderRelationshipSummaryTable("entity", "ent-1", rels, 5, 24))
+	assert.Contains(t, out, "Relationships")
+	assert.Contains(t, out, "depen")
+	assert.Contains(t, out, "Direction")
+	assert.Contains(t, out, "Node")
 }
