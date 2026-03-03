@@ -318,7 +318,7 @@ func TestRunStopCmdCleansLockWithoutPID(t *testing.T) {
 	require.NoError(t, os.MkdirAll(runtimeDir(), 0o700))
 
 	lock := apiLockState{
-		OwnerPID:  os.Getpid(),
+		OwnerPID:  999999,
 		APIPID:    0,
 		CreatedAt: time.Now().UTC(),
 	}
@@ -331,6 +331,28 @@ func TestRunStopCmdCleansLockWithoutPID(t *testing.T) {
 	assert.Contains(t, strings.ToLower(out.String()), "stale lock cleaned")
 	_, statErr := os.Stat(apiLockPath())
 	assert.ErrorIs(t, statErr, os.ErrNotExist)
+}
+
+// TestRunStopCmdKeepsLockWhenStartupOwnerAlive ensures stop does not steal an in-flight startup lock.
+func TestRunStopCmdKeepsLockWhenStartupOwnerAlive(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	require.NoError(t, os.MkdirAll(runtimeDir(), 0o700))
+
+	lock := apiLockState{
+		OwnerPID:  os.Getpid(),
+		APIPID:    0,
+		CreatedAt: time.Now().UTC(),
+	}
+	rawLock, err := json.Marshal(lock)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(apiLockPath(), rawLock, 0o600))
+
+	var out bytes.Buffer
+	require.NoError(t, runStopCmd(&out))
+	assert.Contains(t, strings.ToLower(out.String()), "startup is in progress")
+
+	_, statErr := os.Stat(apiLockPath())
+	require.NoError(t, statErr)
 }
 
 // TestIsPortConflictLogMatchesKnownPatterns handles explicit port-conflict log detection.

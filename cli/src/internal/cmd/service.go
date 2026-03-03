@@ -261,6 +261,14 @@ func runStopCmd(out io.Writer) error {
 		}
 	}
 	if pid <= 0 {
+		if lock.OwnerPID > 0 && processAlive(lock.OwnerPID) {
+			renderCommandMessage(
+				out,
+				"Nebula API",
+				"api startup is in progress. wait a moment and retry `nebula stop`.",
+			)
+			return nil
+		}
 		_ = cleanupAPIState()
 		_ = os.Remove(apiLockPath())
 		renderCommandMessage(out, "Nebula API", "stale lock cleaned.")
