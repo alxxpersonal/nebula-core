@@ -176,6 +176,15 @@ func TestExtractAPIErrorBodyEnvelopeAndPayloadMatrix(t *testing.T) {
 			ok:   true,
 		},
 		{
+			name: "empty envelope error falls back to detail",
+			body: map[string]any{
+				"error":  map[string]any{},
+				"detail": "token expired",
+			},
+			want: "token expired",
+			ok:   true,
+		},
+		{
 			name: "no recognized shape",
 			body: map[string]any{
 				"status": "error",
@@ -252,8 +261,10 @@ func TestNormalizeAPIErrorMatrix(t *testing.T) {
 
 func TestNormalizeAPIErrorFallbacks(t *testing.T) {
 	assert.Equal(t, "", normalizeAPIError(401, ""))
+	assert.Equal(t, "", normalizeAPIError(401, "   "))
 	assert.Equal(t, "raw-error", normalizeAPIError(500, "raw-error"))
 	assert.Equal(t, "INVALID_API_KEY: invalid api key", normalizeAPIError(401, "FORBIDDEN"))
+	assert.Equal(t, "INVALID_API_KEY: invalid api key", normalizeAPIError(500, "INVALID_API_KEY"))
 }
 
 func TestParseErrorCodeAndAuthDetailMatrix(t *testing.T) {

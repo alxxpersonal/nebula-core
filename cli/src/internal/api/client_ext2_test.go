@@ -69,9 +69,9 @@ func TestExtractAPIErrorBodyParsesTopLevelErrorString(t *testing.T) {
 	assert.Equal(t, "service exploded", msg)
 }
 
-func TestNormalizeAPIErrorBlankMessageKeepsOriginalBlank(t *testing.T) {
+func TestNormalizeAPIErrorBlankMessageReturnsEmpty(t *testing.T) {
 	assert.Equal(t, "", normalizeAPIError(http.StatusUnauthorized, ""))
-	assert.Equal(t, "  ", normalizeAPIError(http.StatusUnauthorized, "  "))
+	assert.Equal(t, "", normalizeAPIError(http.StatusUnauthorized, "  "))
 }
 
 func TestParseErrorValueRejectsUnsupportedTypes(t *testing.T) {

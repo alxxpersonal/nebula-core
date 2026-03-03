@@ -100,7 +100,7 @@ func (c *Client) do(method, path string, body any) ([]byte, int, error) {
 func normalizeAPIError(statusCode int, msg string) string {
 	trimmed := strings.TrimSpace(msg)
 	if trimmed == "" {
-		return msg
+		return ""
 	}
 	lower := strings.ToLower(trimmed)
 	if isMultiAPIConflictText(lower) {
@@ -250,7 +250,9 @@ func extractAPIErrorBody(body []byte) (string, bool) {
 
 	var envelope apiResponse[any]
 	if err := json.Unmarshal(body, &envelope); err == nil && envelope.Error != nil {
-		return formatAPIError(envelope.Error.Code, envelope.Error.Message)
+		if msg, ok := formatAPIError(envelope.Error.Code, envelope.Error.Message); ok {
+			return msg, true
+		}
 	}
 
 	var payload map[string]any
