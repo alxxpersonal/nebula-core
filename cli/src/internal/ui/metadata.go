@@ -146,9 +146,6 @@ func parseMetadataPipeLine(content string, lineNum int) (string, string, error) 
 // setMetadataPath sets set metadata path.
 func setMetadataPath(root map[string]any, path string, value any, lineNum int) error {
 	segments := strings.Split(path, ".")
-	if len(segments) == 0 {
-		return fmt.Errorf("line %d: empty metadata path", lineNum)
-	}
 	current := root
 	for idx, raw := range segments {
 		segment := strings.TrimSpace(raw)
