@@ -64,6 +64,10 @@ func TestProtocolsRenderModeLineReflectsState(t *testing.T) {
 	assert.Contains(t, line, "Add")
 	assert.Contains(t, line, "Library")
 
+	model.modeFocus = true
+	line = model.renderModeLine()
+	assert.Contains(t, line, "Library")
+
 	model.view = protocolsViewAdd
 	model.modeFocus = true
 	line = model.renderModeLine()

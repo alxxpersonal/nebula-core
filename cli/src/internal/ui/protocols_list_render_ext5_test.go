@@ -118,6 +118,28 @@ func TestProtocolsRenderListLoadingEmptyAndOutOfRangeSelection(t *testing.T) {
 	assert.NotContains(t, out, "Selected")
 }
 
+func TestProtocolsRenderListTinyWidthStillRenders(t *testing.T) {
+	now := time.Now().UTC()
+	model := NewProtocolsModel(nil)
+	model.width = 32
+	model.items = []api.Protocol{
+		{
+			ID:        "proto-1",
+			Name:      "alpha",
+			Title:     "A",
+			Status:    "active",
+			CreatedAt: now,
+		},
+	}
+	model.list.SetItems([]string{"alpha"})
+	model.list.Cursor = 0
+
+	out := components.SanitizeText(model.renderList())
+	assert.Contains(t, out, "Protocols")
+	assert.Contains(t, out, "alpha")
+	assert.Contains(t, out, "At")
+}
+
 func TestProtocolsHandleAddKeysAdditionalBranches(t *testing.T) {
 	model := NewProtocolsModel(nil)
 	model.view = protocolsViewAdd
