@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"bytes"
+	"os/exec"
+	"runtime"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -85,4 +87,29 @@ func TestRunStartCmdReturnsExitedErrorWhenProcessDiesBeforeHealth(t *testing.T) 
 	assert.True(t, os.IsNotExist(stateErr))
 	_, lockErr := loadAPILock()
 	assert.True(t, os.IsNotExist(lockErr))
+}
+
+func TestProcessZombieDetectsExitedChildAndProcessAliveTreatsItAsDead(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix zombie-state semantics required")
+	}
+
+	cmd := exec.Command("sh", "-c", "exit 0")
+	require.NoError(t, cmd.Start())
+	pid := cmd.Process.Pid
+	t.Cleanup(func() {
+		_ = cmd.Wait()
+	})
+
+	require.Eventually(t, func() bool {
+		return processZombie(pid)
+	}, 2*time.Second, 20*time.Millisecond)
+	assert.False(t, processAlive(pid))
+}
+
+func TestProcessZombieReturnsFalseWhenPIDNotFound(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix ps behavior required")
+	}
+	assert.False(t, processZombie(2147483647))
 }

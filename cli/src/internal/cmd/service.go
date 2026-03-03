@@ -513,10 +513,7 @@ func processAlive(pid int) bool {
 	}
 	err = proc.Signal(syscall.Signal(0))
 	if err == nil {
-		if processZombie(pid) {
-			return false
-		}
-		return true
+		return !processZombie(pid)
 	}
 	return errors.Is(err, syscall.EPERM)
 }
