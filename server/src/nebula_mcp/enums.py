@@ -41,8 +41,21 @@ async def _load_section(pool: Pool, query_name: str) -> EnumSection:
     id_to_name: dict[UUID, str] = {}
 
     for row in rows:
-        name = row["name"]
-        value_id = row["id"]
+        try:
+            raw_name = row["name"]
+            value_id = row["id"]
+        except KeyError as exc:
+            raise ValueError(
+                f"invalid enum row in {query_name}: missing {exc.args[0]}"
+            ) from exc
+
+        if not isinstance(raw_name, str):
+            raise ValueError(f"invalid enum name in {query_name}: {raw_name!r}")
+        name = raw_name.strip()
+        if not name:
+            raise ValueError(f"invalid enum name in {query_name}: {raw_name!r}")
+        if not isinstance(value_id, UUID):
+            raise ValueError(f"invalid enum id in {query_name}: {value_id!r}")
 
         if name in name_to_id:
             raise ValueError(f"duplicate enum name in {query_name}: {name}")

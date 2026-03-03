@@ -384,6 +384,62 @@ class TestLoadEnums:
             await _load_section(pool, "enums/statuses")
 
     @pytest.mark.asyncio
+    async def test_load_section_rejects_blank_enum_name(self):
+        """Blank enum names should fail fast."""
+
+        pool = AsyncMock()
+        pool.fetch = AsyncMock(
+            return_value=[
+                {"name": "   ", "id": UUID(int=41)},
+            ]
+        )
+
+        with pytest.raises(ValueError, match="invalid enum name"):
+            await _load_section(pool, "enums/statuses")
+
+    @pytest.mark.asyncio
+    async def test_load_section_rejects_non_string_enum_name(self):
+        """Non-string enum names should fail fast."""
+
+        pool = AsyncMock()
+        pool.fetch = AsyncMock(
+            return_value=[
+                {"name": 123, "id": UUID(int=42)},
+            ]
+        )
+
+        with pytest.raises(ValueError, match="invalid enum name"):
+            await _load_section(pool, "enums/statuses")
+
+    @pytest.mark.asyncio
+    async def test_load_section_rejects_non_uuid_enum_id(self):
+        """Non-UUID enum IDs should fail fast."""
+
+        pool = AsyncMock()
+        pool.fetch = AsyncMock(
+            return_value=[
+                {"name": "active", "id": "not-a-uuid"},
+            ]
+        )
+
+        with pytest.raises(ValueError, match="invalid enum id"):
+            await _load_section(pool, "enums/statuses")
+
+    @pytest.mark.asyncio
+    async def test_load_section_rejects_missing_required_columns(self):
+        """Missing expected row columns should raise a clear validation error."""
+
+        pool = AsyncMock()
+        pool.fetch = AsyncMock(
+            return_value=[
+                {"id": UUID(int=51)},
+            ]
+        )
+
+        with pytest.raises(ValueError, match="missing name"):
+            await _load_section(pool, "enums/statuses")
+
+    @pytest.mark.asyncio
     async def test_load_enums_calls_all_sections_in_order(self, monkeypatch):
         """load_enums should request all five enum sections."""
 
