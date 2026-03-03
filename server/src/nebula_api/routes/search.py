@@ -32,7 +32,7 @@ class SemanticSearchBody(BaseModel):
 
     @field_validator("query", mode="before")
     @classmethod
-    def _clean_query(cls, value: str) -> str:
+    def _clean_query(cls, value: str | None) -> str:
         """Handle clean query.
 
         Args:
@@ -42,7 +42,9 @@ class SemanticSearchBody(BaseModel):
             Result value from the operation.
         """
 
-        return str(value or "").strip()
+        if not isinstance(value, str):
+            raise ValueError("Query must be a string")
+        return value.strip()
 
     @field_validator("kinds", mode="before")
     @classmethod
@@ -56,7 +58,11 @@ class SemanticSearchBody(BaseModel):
             Result value from the operation.
         """
 
-        if not value:
+        if value is None:
+            return list(DEFAULT_SEMANTIC_KINDS)
+        if not isinstance(value, list):
+            raise ValueError("Kinds must be a list")
+        if len(value) == 0:
             return list(DEFAULT_SEMANTIC_KINDS)
         out: list[str] = []
         for item in value:
