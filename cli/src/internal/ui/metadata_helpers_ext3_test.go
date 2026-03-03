@@ -133,10 +133,18 @@ func TestParseJSONStructuredStringHandlesQuotedJSONAndRejectsScalars(t *testing.
 func TestParseStringSliceHandlesAnySliceAndDefaultBranch(t *testing.T) {
 	assert.Equal(
 		t,
-		[]string{"public", "1", "<nil>"},
+		[]string{"public"},
 		parseStringSlice([]any{" Public ", "", 1, nil}),
 	)
 	assert.Nil(t, parseStringSlice(123))
+}
+
+func TestParseStringSliceSkipsNonStringEntriesInAnySlice(t *testing.T) {
+	assert.Equal(
+		t,
+		[]string{"public", "admin"},
+		parseStringSlice([]any{"public", map[string]any{"x": 1}, true, " admin "}),
+	)
 }
 
 func TestScopeBadgesTextSkipsBlankEntries(t *testing.T) {

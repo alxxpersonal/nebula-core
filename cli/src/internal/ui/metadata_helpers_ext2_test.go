@@ -14,7 +14,7 @@ func TestParseStringSliceMatrix(t *testing.T) {
 	assert.Equal(t, []string{"public", "admin"}, parseStringSlice([]string{" public ", "#admin", "PUBLIC"}))
 	assert.Equal(
 		t,
-		[]string{"private", "sensitive", "<nil>"},
+		[]string{"private", "sensitive"},
 		parseStringSlice([]any{"private", "", "sensitive", nil}),
 	)
 	assert.Equal(t, []string{"public", "private"}, parseStringSlice("public, #private, public"))

@@ -1427,7 +1427,11 @@ func parseStringSlice(value any) []string {
 	case []any:
 		out := make([]string, 0, len(typed))
 		for _, item := range typed {
-			text := strings.TrimSpace(fmt.Sprintf("%v", item))
+			strItem, ok := item.(string)
+			if !ok {
+				continue
+			}
+			text := strings.TrimSpace(strItem)
 			if text != "" {
 				out = append(out, text)
 			}
