@@ -454,6 +454,9 @@ func acquireAPILock() error {
 
 // updateAPILockPID handles update api lock pid.
 func updateAPILockPID(pid int) error {
+	if pid <= 0 {
+		return fmt.Errorf("invalid api pid: %d", pid)
+	}
 	lock := apiLockState{
 		OwnerPID:  os.Getpid(),
 		APIPID:    pid,

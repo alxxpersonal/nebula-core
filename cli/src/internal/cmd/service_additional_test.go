@@ -330,6 +330,22 @@ func TestUpdateAPILockPIDReturnsWriteErrorWhenPathIsDir(t *testing.T) {
 	assert.Contains(t, err.Error(), "write api lock")
 }
 
+// TestUpdateAPILockPIDRejectsNonPositivePID ensures invalid process IDs are rejected.
+func TestUpdateAPILockPIDRejectsNonPositivePID(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	err := updateAPILockPID(0)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid api pid")
+
+	err = updateAPILockPID(-7)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid api pid")
+
+	_, statErr := os.Stat(apiLockPath())
+	assert.ErrorIs(t, statErr, os.ErrNotExist)
+}
+
 // TestUpdateAPILockPIDWritesValidLockState covers the successful lock-file write branch.
 func TestUpdateAPILockPIDWritesValidLockState(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
