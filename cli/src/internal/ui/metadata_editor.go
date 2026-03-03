@@ -619,10 +619,6 @@ func (m MetadataEditor) inspectLines() []string {
 	raw := strings.Split(value, "\n")
 	for _, line := range raw {
 		wrapped := wrapMetadataDisplayLine(line, width)
-		if len(wrapped) == 0 {
-			lines = append(lines, "")
-			continue
-		}
 		lines = append(lines, wrapped...)
 	}
 	return lines

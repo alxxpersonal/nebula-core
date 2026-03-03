@@ -1266,13 +1266,6 @@ func (m JobsModel) handleLinkInput(msg tea.KeyMsg) (JobsModel, tea.Cmd) {
 		targetType := strings.TrimSpace(parts[0])
 		targetID := strings.TrimSpace(parts[1])
 		relType := strings.TrimSpace(strings.Join(parts[2:], " "))
-		if targetType == "" || targetID == "" || relType == "" {
-			m.linkingRel = false
-			m.linkBuf = ""
-			return m, func() tea.Msg {
-				return errMsg{err: fmt.Errorf("link format: target_type target_id relationship_type")}
-			}
-		}
 		jobID := m.detail.ID
 		m.linkingRel = false
 		m.linkBuf = ""

@@ -35,6 +35,19 @@ var waitForAPIHealthProbe = func() (string, error) {
 
 var startHealthTimeout = 8 * time.Second
 
+type apiLockWriter interface {
+	Write([]byte) (int, error)
+	Close() error
+}
+
+var marshalServiceJSON = json.Marshal
+
+var openAPILockForCreate = func() (apiLockWriter, error) {
+	return os.OpenFile(apiLockPath(), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+}
+
+var findProcessByPID = os.FindProcess
+
 type apiRuntimeState struct {
 	PID       int       `json:"pid"`
 	Port      int       `json:"port"`
@@ -419,13 +432,13 @@ func acquireAPILock() error {
 	}
 
 	for attempt := 0; attempt < 2; attempt++ {
-		fd, err := os.OpenFile(apiLockPath(), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		fd, err := openAPILockForCreate()
 		if err == nil {
 			lock := apiLockState{
 				OwnerPID:  os.Getpid(),
 				CreatedAt: time.Now(),
 			}
-			raw, marshalErr := json.Marshal(lock)
+			raw, marshalErr := marshalServiceJSON(lock)
 			if marshalErr != nil {
 				_ = fd.Close()
 				return fmt.Errorf("marshal api lock: %w", marshalErr)
@@ -485,7 +498,7 @@ func updateAPILockPID(pid int) error {
 		APIPID:    pid,
 		CreatedAt: time.Now(),
 	}
-	raw, err := json.Marshal(lock)
+	raw, err := marshalServiceJSON(lock)
 	if err != nil {
 		return fmt.Errorf("marshal api lock: %w", err)
 	}
@@ -507,7 +520,7 @@ func processAlive(pid int) bool {
 	if pid <= 0 {
 		return false
 	}
-	proc, err := os.FindProcess(pid)
+	proc, err := findProcessByPID(pid)
 	if err != nil {
 		return false
 	}
