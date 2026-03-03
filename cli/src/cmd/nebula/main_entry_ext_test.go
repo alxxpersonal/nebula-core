@@ -22,15 +22,24 @@ func TestMainHelpPathDoesNotExit(t *testing.T) {
 
 	r, w, err := os.Pipe()
 	require.NoError(t, err)
+	defer func() {
+		_ = r.Close()
+	}()
 	os.Stdout = w
 	os.Args = []string{"nebula", "--help"}
+
+	var out bytes.Buffer
+	readDone := make(chan error, 1)
+	go func() {
+		_, copyErr := io.Copy(&out, r)
+		readDone <- copyErr
+	}()
 
 	main()
 
 	require.NoError(t, w.Close())
-	out, err := io.ReadAll(r)
-	require.NoError(t, err)
-	assert.Contains(t, string(out), "Nebula")
+	require.NoError(t, <-readDone)
+	assert.Contains(t, out.String(), "Nebula")
 }
 
 func TestMainExecuteErrorExitsWithCodeOne(t *testing.T) {
