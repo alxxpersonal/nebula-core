@@ -1590,9 +1590,6 @@ func (m EntitiesModel) handleBulkPromptKeys(msg tea.KeyMsg) (EntitiesModel, tea.
 		if err != nil {
 			return m, func() tea.Msg { return errMsg{err} }
 		}
-		if spec.op != "set" && len(spec.values) == 0 {
-			return m, func() tea.Msg { return errMsg{fmt.Errorf("add values or use set: to clear")} }
-		}
 		m.bulkPrompt = ""
 		m.bulkBuf = ""
 		m.bulkRunning = true
@@ -2212,9 +2209,6 @@ func (m EntitiesModel) renderEdit() string {
 	}
 	b.WriteString("\n")
 	meta := renderMetadataEditorPreview(m.editMeta.Buffer, m.editMeta.Scopes, m.width, 6)
-	if strings.TrimSpace(meta) == "" {
-		meta = "-"
-	}
 	b.WriteString(NormalStyle.Render("  " + meta))
 
 	if m.editSaving {

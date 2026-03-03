@@ -26,9 +26,15 @@ func TestEntitiesRenderModeLineStates(t *testing.T) {
 	lineFocus := stripANSI(model.renderModeLine())
 	assert.Contains(t, lineFocus, "Add")
 	assert.Contains(t, lineFocus, "Library")
+
+	model.view = entitiesViewList
+	lineListFocus := stripANSI(model.renderModeLine())
+	assert.Contains(t, lineListFocus, "Add")
+	assert.Contains(t, lineListFocus, "Library")
 	assert.NotEqual(t, "", lineList)
 	assert.NotEqual(t, "", lineAdd)
 	assert.NotEqual(t, "", lineFocus)
+	assert.NotEqual(t, "", lineListFocus)
 }
 
 func TestEntitiesHandleListKeysBranchMatrix(t *testing.T) {
@@ -125,10 +131,22 @@ func TestEntitiesHandleListKeysBranchMatrix(t *testing.T) {
 		require.NotNil(t, cmd)
 		assert.Equal(t, "x ", next.searchBuf)
 
+		next.searchBuf = "query"
+		next.searchSuggest = "query-suggest"
+		next, cmd = next.handleListKeys(tea.KeyMsg{Type: tea.KeyCtrlU})
+		require.NotNil(t, cmd)
+		assert.Equal(t, "", next.searchBuf)
+		assert.Equal(t, "", next.searchSuggest)
+
 		next.searchBuf = ""
 		next, cmd = next.handleListKeys(tea.KeyMsg{Type: tea.KeySpace})
 		assert.Nil(t, cmd)
 		assert.True(t, next.isBulkSelected(next.list.Selected()))
+
+		next.searchBuf = ""
+		next, cmd = next.handleListKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{' '}})
+		assert.Nil(t, cmd)
+		assert.Equal(t, "", next.searchBuf)
 	})
 
 	t.Run("bulk action prompt and clear branches", func(t *testing.T) {

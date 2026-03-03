@@ -161,6 +161,8 @@ func TestRefreshFilterSetsBuildsFacetOptionsAndRetainsSelection(t *testing.T) {
 }
 
 func TestRetainEntityFilterSelectionAndSortedKeysHelpers(t *testing.T) {
+	assert.Empty(t, retainEntityFilterSelection(nil, []string{"public"}))
+
 	current := map[string]bool{
 		"public":  true,
 		"private": false,

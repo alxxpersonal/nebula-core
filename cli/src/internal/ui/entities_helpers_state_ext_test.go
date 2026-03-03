@@ -110,7 +110,7 @@ func TestEntitiesMetaSelectionAndInspectBranchMatrix(t *testing.T) {
 		{field: "profile.note", value: strings.Repeat("line\n", 20)},
 		{field: "profile.tz", value: "UTC"},
 	}
-	model.metaSelected = map[int]bool{}
+	model.metaSelected = nil
 
 	model.toggleMetaSelection(-1)
 	assert.Empty(t, model.metaSelected)
@@ -124,6 +124,12 @@ func TestEntitiesMetaSelectionAndInspectBranchMatrix(t *testing.T) {
 	model.toggleMetaSelection(0)
 	assert.False(t, model.metaSelected[0])
 	assert.False(t, model.metaSelectMode)
+
+	emptyRows := NewEntitiesModel(nil)
+	emptyRows.metaRows = nil
+	emptyRows.metaSelected = map[int]bool{0: true}
+	emptyRows.toggleMetaSelectAll()
+	assert.Equal(t, map[int]bool{0: true}, emptyRows.metaSelected)
 
 	model.metaSelected = map[int]bool{1: true, 0: true}
 	assert.Equal(t, []int{0, 1}, model.selectedMetaIndices())

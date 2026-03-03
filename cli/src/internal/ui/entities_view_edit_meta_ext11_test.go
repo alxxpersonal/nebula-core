@@ -36,10 +36,10 @@ func TestEntitiesRenderEditTagsAndRenderEditBranches(t *testing.T) {
 	model = NewEntitiesModel(nil)
 	model.width = 90
 	model.detail = &api.Entity{
-		ID:             "ent-1",
-		Name:           "Alpha",
-		Status:         "active",
-		Tags:           []string{"alpha"},
+		ID:              "ent-1",
+		Name:            "Alpha",
+		Status:          "active",
+		Tags:            []string{"alpha"},
 		PrivacyScopeIDs: []string{"scope-1"},
 	}
 	model.scopeNames = map[string]string{"scope-1": "public"}
@@ -66,6 +66,11 @@ func TestEntitiesRenderEditTagsAndRenderEditBranches(t *testing.T) {
 	assert.Contains(t, out, "public")
 
 	model.editScopeSelecting = false
+	model.editFocus = editFieldScopes
+	out = components.SanitizeText(model.renderEdit())
+	assert.Contains(t, out, "Scopes:")
+	assert.Contains(t, out, "public")
+
 	model.editMeta.Buffer = ""
 	model.editFocus = editFieldMetadata
 	model.editSaving = true

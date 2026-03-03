@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/gravitrone/nebula-core/cli/internal/api"
@@ -195,4 +196,27 @@ func TestEntitiesFormMetadataUsesStructuredPreviewTable(t *testing.T) {
 
 	editView := components.SanitizeText(model.renderEdit())
 	assert.Contains(t, editView, "ops | board | nebula-core")
+}
+
+func TestEntitiesRenderEntityPreviewEdgeBranches(t *testing.T) {
+	model := NewEntitiesModel(nil)
+	model.width = 80
+
+	assert.Equal(t, "", model.renderEntityPreview(api.Entity{}, 0))
+
+	entity := api.Entity{
+		ID:        "ent-1",
+		Name:      "Alpha",
+		Type:      "",
+		Status:    "active",
+		CreatedAt: time.Date(2026, 3, 3, 10, 0, 0, 0, time.UTC),
+	}
+	model.detail = &api.Entity{ID: "ent-1"}
+	model.detailRels = []api.Relationship{{ID: "rel-1"}, {ID: "rel-2"}}
+
+	preview := components.SanitizeText(model.renderEntityPreview(entity, 42))
+	assert.Contains(t, preview, "Type")
+	assert.Contains(t, preview, "?")
+	assert.Contains(t, preview, "Links")
+	assert.Contains(t, preview, "2")
 }

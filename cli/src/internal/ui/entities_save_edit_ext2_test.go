@@ -76,6 +76,32 @@ func TestEntitiesSaveEditGuardAndScopeErrorBranches(t *testing.T) {
 		assert.Equal(t, "set", bulkInput.Op)
 	})
 
+	t.Run("update entity error branch", func(t *testing.T) {
+		_, client := testEntitiesClient(t, func(w http.ResponseWriter, r *http.Request) {
+			if strings.HasPrefix(r.URL.Path, "/api/entities/") && r.Method == http.MethodPatch {
+				http.Error(w, `{"error":{"code":"UPDATE_ENTITY_FAILED","message":"update failed"}}`, http.StatusInternalServerError)
+				return
+			}
+			w.WriteHeader(http.StatusNotFound)
+		})
+
+		model := NewEntitiesModel(client)
+		model.detail = &api.Entity{ID: "ent-1", Status: "active"}
+		model.editStatusIdx = 0
+		model.editTags = []string{"alpha"}
+		model.editMeta.Buffer = ""
+		model.editScopesDirty = false
+
+		updated, cmd := model.saveEdit()
+		require.NotNil(t, cmd)
+		assert.True(t, updated.editSaving)
+
+		msg := cmd()
+		errOut, ok := msg.(errMsg)
+		require.True(t, ok)
+		assert.ErrorContains(t, errOut.err, "UPDATE_ENTITY_FAILED")
+	})
+
 	t.Run("get entity error after bulk update", func(t *testing.T) {
 		_, client := testEntitiesClient(t, func(w http.ResponseWriter, r *http.Request) {
 			switch {
