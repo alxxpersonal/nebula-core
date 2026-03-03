@@ -683,6 +683,8 @@ class SemanticSearchInput(BaseModel):
 
         if not v:
             return ["entity", "context"]
+        if not isinstance(v, list):
+            raise ValueError("Kinds must be a list")
         out: list[str] = []
         for item in v:
             name = str(item or "").strip().lower()

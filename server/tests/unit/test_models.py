@@ -746,6 +746,33 @@ class TestModelEdgeInputs:
         model = SemanticSearchInput(query="agent memory", kinds=None)
         assert model.kinds == ["entity", "context"]
 
+    def test_semantic_search_rejects_non_list_kinds_payload(self):
+        """Semantic search should reject non-list kinds payloads."""
+
+        with pytest.raises(ValidationError, match="Kinds must be a list"):
+            SemanticSearchInput(query="agent memory", kinds="entity")  # type: ignore[arg-type]
+
+    def test_semantic_search_defaults_kinds_when_empty_list(self):
+        """Semantic search should restore default kinds for empty-list input."""
+
+        model = SemanticSearchInput(query="agent memory", kinds=[])
+        assert model.kinds == ["entity", "context"]
+
+    def test_semantic_search_defaults_when_kinds_are_all_invalid(self):
+        """Semantic search should restore defaults when all kinds are unsupported."""
+
+        model = SemanticSearchInput(query="agent memory", kinds=["bad", "", "  "])
+        assert model.kinds == ["entity", "context"]
+
+    def test_semantic_search_normalizes_kind_case_and_whitespace(self):
+        """Semantic search should normalize kind casing and trim whitespace."""
+
+        model = SemanticSearchInput(
+            query="agent memory",
+            kinds=[" Entity ", "CONTEXT", "entity"],
+        )
+        assert model.kinds == ["entity", "context"]
+
     def test_export_data_rejects_invalid_resource(self):
         """Export model should reject unknown resources."""
 
