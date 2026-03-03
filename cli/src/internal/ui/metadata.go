@@ -944,9 +944,6 @@ func metadataColumnWidths(contentWidth int) (int, int, int) {
 		contentWidth = 40
 	}
 	usable := contentWidth - 2 // separators
-	if usable < 38 {
-		usable = 38
-	}
 
 	groupWidth := usable * 22 / 100
 	fieldWidth := usable * 30 / 100
@@ -958,19 +955,9 @@ func metadataColumnWidths(contentWidth int) (int, int, int) {
 	if fieldWidth < 14 {
 		fieldWidth = 14
 	}
-	if valueWidth < 14 {
-		valueWidth = 14
-	}
 	used := groupWidth + fieldWidth + valueWidth
-	if used < usable {
-		valueWidth += usable - used
-	} else if used > usable {
-		overflow := used - usable
-		if valueWidth-overflow >= 14 {
-			valueWidth -= overflow
-		} else if fieldWidth-overflow >= 14 {
-			fieldWidth -= overflow
-		}
+	if used > usable {
+		valueWidth -= used - usable
 	}
 	return groupWidth, fieldWidth, valueWidth
 }
