@@ -44,6 +44,49 @@ func TestLogsLoadScopeOptionsNilClient(t *testing.T) {
 	assert.Nil(t, model.loadScopeOptions())
 }
 
+func TestLogsLoadScopeOptionsSuccessAndError(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		_, client := testLogsClient(t, func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/api/audit/scopes" || r.Method != http.MethodGet {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]any{
+					{"id": "scope-2", "name": "private"},
+					{"id": "scope-1", "name": "public"},
+				},
+			}))
+		})
+
+		model := NewLogsModel(client)
+		cmd := model.loadScopeOptions()
+		require.NotNil(t, cmd)
+		msg := cmd()
+		loaded, ok := msg.(logsScopesLoadedMsg)
+		require.True(t, ok)
+		assert.Equal(t, []string{"private", "public"}, loaded.options)
+	})
+
+	t.Run("error", func(t *testing.T) {
+		_, client := testLogsClient(t, func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/api/audit/scopes" && r.Method == http.MethodGet {
+				http.Error(w, `{"error":{"code":"SCOPES_FAILED","message":"scope fetch failed"}}`, http.StatusInternalServerError)
+				return
+			}
+			w.WriteHeader(http.StatusNotFound)
+		})
+
+		model := NewLogsModel(client)
+		cmd := model.loadScopeOptions()
+		require.NotNil(t, cmd)
+		msg := cmd()
+		errOut, ok := msg.(errMsg)
+		require.True(t, ok)
+		assert.ErrorContains(t, errOut.err, "SCOPES_FAILED")
+	})
+}
+
 func TestLogsLoadLogsSuccessAndError(t *testing.T) {
 	now := time.Now().UTC()
 
@@ -424,6 +467,17 @@ func TestLogsSearchHelpersAndFormatLine(t *testing.T) {
 	assert.Contains(t, clean, "log")
 	assert.Contains(t, clean, "2026-02-27")
 	assert.True(t, strings.Contains(clean, "active"))
+
+	noStatus := components.SanitizeText(formatLogLine(api.Log{
+		LogType:   "audit",
+		Status:    "",
+		Timestamp: time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC),
+		Metadata:  api.JSONMap{"owner": "alxx"},
+	}))
+	assert.Contains(t, noStatus, "audit")
+	assert.Contains(t, noStatus, "2026-03-01")
+	assert.NotContains(t, noStatus, " ·  · ")
+	assert.Contains(t, strings.ToLower(noStatus), "alxx")
 }
 
 func TestParseLogTimestampWithMinuteLayout(t *testing.T) {

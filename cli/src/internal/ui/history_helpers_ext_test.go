@@ -16,6 +16,10 @@ func TestFormatAuditActorFallbackMatrix(t *testing.T) {
 	entry := api.AuditEntry{ChangedByType: &actorType, ChangedByID: &actorID}
 	assert.Equal(t, "agent:"+shortID(actorID), formatAuditActor(entry))
 
+	emptyName := ""
+	entry = api.AuditEntry{ActorName: &emptyName, ChangedByType: &actorType}
+	assert.Equal(t, "agent", formatAuditActor(entry))
+
 	actorID = "  "
 	entry = api.AuditEntry{ChangedByType: &actorType, ChangedByID: &actorID}
 	assert.Equal(t, "agent", formatAuditActor(entry))
@@ -164,11 +168,11 @@ func TestHumanizeAuditFieldMatrix(t *testing.T) {
 func TestFormatScopeLineMatrix(t *testing.T) {
 	desc := "public-safe"
 	scope := api.AuditScope{
-		Name:        "public",
-		AgentCount:  2,
-		EntityCount: 3,
+		Name:         "public",
+		AgentCount:   2,
+		EntityCount:  3,
 		ContextCount: 1,
-		Description: &desc,
+		Description:  &desc,
 	}
 	line := formatScopeLine(scope)
 	assert.Contains(t, line, "public")

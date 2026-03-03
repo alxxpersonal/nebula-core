@@ -40,6 +40,7 @@ func TestDetailLabelAndHumanizeApprovalType(t *testing.T) {
 	assert.Equal(t, "API URL", detailLabel("api_url"))
 	assert.Equal(t, "MCP ID", detailLabel("mcp_id"))
 	assert.Equal(t, "", detailLabel("   "))
+	assert.Equal(t, "__", detailLabel("__"))
 
 	assert.Equal(t, "Create Entity", humanizeApprovalType("create_entity"))
 	assert.Equal(t, "", humanizeApprovalType(""))
@@ -56,13 +57,13 @@ func TestApprovalTitleFallbackMatrix(t *testing.T) {
 	assert.Equal(t, "Entity A", approvalTitle(approval))
 
 	approval = api.Approval{
-		RequestType:  "create_relationship",
+		RequestType:   "create_relationship",
 		ChangeDetails: api.JSONMap{"relationship_type": "owns", "source_name": "A", "target_name": "B"},
 	}
 	assert.Equal(t, "owns (A -> B)", approvalTitle(approval))
 
 	approval = api.Approval{
-		RequestType:  "bulk_update_entity_tags",
+		RequestType:   "bulk_update_entity_tags",
 		ChangeDetails: api.JSONMap{"entity_names": []any{"A", "B", "C"}},
 	}
 	assert.Contains(t, approvalTitle(approval), "Bulk Update Entity Tags")

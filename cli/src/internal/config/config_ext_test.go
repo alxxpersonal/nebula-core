@@ -34,3 +34,19 @@ func TestLoadConfigReturnsReadErrorWhenConfigPathIsDirectory(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "read config")
 }
+
+func TestSaveConfigSetsDefaultPendingLimitWhenMissing(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	cfg := &Config{
+		APIKey:       "nbl_test",
+		PendingLimit: 0,
+	}
+	require.NoError(t, cfg.Save())
+	assert.Equal(t, 500, cfg.PendingLimit)
+
+	loaded, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, 500, loaded.PendingLimit)
+}
