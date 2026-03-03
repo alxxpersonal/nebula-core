@@ -1006,15 +1006,9 @@ func (m LogsModel) renderEdit() string {
 			}
 		case logEditFieldValue:
 			value := renderMetadataEditorPreview(m.editValue.Buffer, m.editValue.Scopes, m.width, 6)
-			if strings.TrimSpace(value) == "" {
-				value = "-"
-			}
 			b.WriteString(NormalStyle.Render("  " + value))
 		case logEditFieldMeta:
 			meta := renderMetadataEditorPreview(m.editMeta.Buffer, m.editMeta.Scopes, m.width, 6)
-			if strings.TrimSpace(meta) == "" {
-				meta = "-"
-			}
 			b.WriteString(NormalStyle.Render("  " + meta))
 		}
 		if i < logEditFieldCount-1 {

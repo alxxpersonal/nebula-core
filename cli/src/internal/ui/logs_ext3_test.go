@@ -88,6 +88,19 @@ func TestLogsViewCoversEditorAndFilterBranches(t *testing.T) {
 	model.searchBuf = "type:workout"
 	assert.Contains(t, components.SanitizeText(model.View()), "Filter Logs")
 	assert.Contains(t, components.SanitizeText(model.View()), "type:workout")
+
+	model.filtering = false
+	model.view = logsViewAdd
+	addView := components.SanitizeText(model.View())
+	assert.Contains(t, addView, "Type:")
+	assert.Contains(t, addView, "Timestamp:")
+
+	model.view = logsViewEdit
+	model.detail = &api.Log{ID: "log-1", LogType: "workout", Status: "active", Timestamp: time.Now().UTC()}
+	model.startEdit()
+	editView := components.SanitizeText(model.View())
+	assert.Contains(t, editView, "Status:")
+	assert.Contains(t, editView, "Metadata:")
 }
 
 func TestLogsUpdateMessageBranchesAndNoopRelationshipMismatch(t *testing.T) {

@@ -446,6 +446,35 @@ func TestLogsSaveAddAndEditValidationBranches(t *testing.T) {
 	assert.NotEmpty(t, updated.errText)
 }
 
+func TestLogsStartEditNilDetailAndSaveEditRequestError(t *testing.T) {
+	model := NewLogsModel(nil)
+	model.editType = "keep"
+	model.startEdit()
+	assert.Equal(t, "keep", model.editType)
+
+	_, client := testLogsClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/logs/log-1" && r.Method == http.MethodPatch {
+			http.Error(w, `{"error":{"code":"LOG_UPDATE_FAILED","message":"update failed"}}`, http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	})
+
+	model = NewLogsModel(client)
+	model.detail = &api.Log{ID: "log-1", LogType: "workout", Status: "active", Timestamp: time.Now().UTC()}
+	model.startEdit()
+	model.editMeta.Buffer = ""
+	model.editValue.Buffer = ""
+	updated, cmd := model.saveEdit()
+	require.NotNil(t, cmd)
+	assert.True(t, updated.editSaving)
+
+	msg := cmd()
+	errOut, ok := msg.(errMsg)
+	require.True(t, ok)
+	assert.ErrorContains(t, errOut.err, "LOG_UPDATE_FAILED")
+}
+
 func TestLogsSearchHelpersAndFormatLine(t *testing.T) {
 	model := NewLogsModel(nil)
 	model.allItems = []api.Log{
