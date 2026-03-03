@@ -200,6 +200,12 @@ class TestRequireRelationshipType:
         with pytest.raises(ValueError, match="Relationship type required"):
             require_relationship_type(None, mock_enums)  # type: ignore[arg-type]
 
+    def test_unhashable_relationship_type_raises_value_error(self, mock_enums):
+        """Unhashable relationship payloads should be normalized to ValueError."""
+
+        with pytest.raises(ValueError, match=r"Unknown relationship type: \{.*\}"):
+            require_relationship_type({"bad": "type"}, mock_enums)  # type: ignore[arg-type]
+
 
 # --- require_scopes ---
 
@@ -225,6 +231,12 @@ class TestRequireScopes:
 
         with pytest.raises(ValueError, match="Scopes must be a list"):
             require_scopes("public", mock_enums)  # type: ignore[arg-type]
+
+    def test_tuple_scopes_payload_raises_non_list_error(self, mock_enums):
+        """Tuple scope payloads should fail the explicit list-only contract."""
+
+        with pytest.raises(ValueError, match="Scopes must be a list"):
+            require_scopes(("public",), mock_enums)  # type: ignore[arg-type]
 
     def test_one_unknown_in_list_raises(self, mock_enums):
         """Raise ValueError when one scope in the list is unknown."""
@@ -296,6 +308,12 @@ class TestRequireLogType:
 
         with pytest.raises(ValueError, match="Unknown log type"):
             require_log_type("incident", mock_enums)
+
+    def test_unhashable_log_type_raises_value_error(self, mock_enums):
+        """Unhashable log-type payloads should be normalized to ValueError."""
+
+        with pytest.raises(ValueError, match=r"Unknown log type: \{.*\}"):
+            require_log_type({"bad": "log"}, mock_enums)  # type: ignore[arg-type]
 
 
 class TestLoadEnums:
