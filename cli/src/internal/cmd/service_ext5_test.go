@@ -66,3 +66,23 @@ func TestResolveServerDirStopsParentWalkAtFilesystemRoot(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "could not locate server dir")
 }
+
+func TestRunStartCmdReturnsExitedErrorWhenProcessDiesBeforeHealth(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	serverDir := createFakeServerDirWithUvicornScript(
+		t,
+		"#!/bin/sh\nexit 1\n",
+	)
+	t.Setenv("NEBULA_SERVER_DIR", serverDir)
+	setWaitForAPIProbe(t, func() (string, error) { return "", assert.AnError })
+	setStartHealthTimeout(t, 100*time.Millisecond)
+
+	var out bytes.Buffer
+	err := runStartCmd(&out)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "api failed to start")
+	_, stateErr := loadAPIState()
+	assert.True(t, os.IsNotExist(stateErr))
+	_, lockErr := loadAPILock()
+	assert.True(t, os.IsNotExist(lockErr))
+}

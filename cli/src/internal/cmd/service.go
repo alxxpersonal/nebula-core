@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -512,9 +513,29 @@ func processAlive(pid int) bool {
 	}
 	err = proc.Signal(syscall.Signal(0))
 	if err == nil {
+		if processZombie(pid) {
+			return false
+		}
 		return true
 	}
 	return errors.Is(err, syscall.EPERM)
+}
+
+// processZombie reports whether a process exists in zombie state. This lets
+// startup checks treat short-lived crashed workers as exited instead of alive.
+func processZombie(pid int) bool {
+	if pid <= 0 || runtime.GOOS == "windows" {
+		return false
+	}
+	out, err := exec.Command("ps", "-o", "stat=", "-p", strconv.Itoa(pid)).Output()
+	if err != nil {
+		return false
+	}
+	state := strings.TrimSpace(string(out))
+	if state == "" {
+		return false
+	}
+	return strings.Contains(strings.Fields(state)[0], "Z")
 }
 
 // stopProcessIfAlive terminates a process when it is still alive.
