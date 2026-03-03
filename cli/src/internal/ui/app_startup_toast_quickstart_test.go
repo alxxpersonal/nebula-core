@@ -71,6 +71,72 @@ func TestReloginCmdCallsLoginAndReturnsAPIKey(t *testing.T) {
 	assert.Equal(t, "nbl_testkey", done.apiKey)
 }
 
+// TestReloginCmdTrimsUsernameBeforeLogin handles username normalization before re-auth.
+func TestReloginCmdTrimsUsernameBeforeLogin(t *testing.T) {
+	var seenUsername string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/keys/login" && r.Method == http.MethodPost {
+			var payload map[string]string
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&payload))
+			seenUsername = payload["username"]
+			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"api_key":   "nbl_trimmed_key",
+					"entity_id": "ent-1",
+					"username":  "alxx",
+				},
+			}))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	t.Cleanup(srv.Close)
+
+	client := api.NewClient(srv.URL, "oldkey")
+	app := NewApp(client, &config.Config{APIKey: "oldkey", Username: "  alxx  "})
+
+	cmd := app.reloginCmd()
+	require.NotNil(t, cmd)
+	msg := cmd()
+
+	done, ok := msg.(reloginDoneMsg)
+	require.True(t, ok)
+	require.NoError(t, done.err)
+	assert.Equal(t, "nbl_trimmed_key", done.apiKey)
+	assert.Equal(t, "alxx", seenUsername)
+}
+
+// TestReloginCmdReturnsErrorMsgOnLoginFailure handles login failure mapping in re-auth command.
+func TestReloginCmdReturnsErrorMsgOnLoginFailure(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/keys/login" && r.Method == http.MethodPost {
+			w.WriteHeader(http.StatusUnauthorized)
+			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+				"error": map[string]any{
+					"code":    "INVALID_API_KEY",
+					"message": "token expired",
+				},
+			}))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	t.Cleanup(srv.Close)
+
+	client := api.NewClient(srv.URL, "oldkey")
+	app := NewApp(client, &config.Config{APIKey: "oldkey", Username: "alxx"})
+
+	cmd := app.reloginCmd()
+	require.NotNil(t, cmd)
+	msg := cmd()
+
+	done, ok := msg.(reloginDoneMsg)
+	require.True(t, ok)
+	require.Error(t, done.err)
+	assert.Equal(t, "", done.apiKey)
+	assert.Contains(t, strings.ToLower(done.err.Error()), "invalid_api_key")
+}
+
 // TestToastSanitizesTextAndRendersBranches handles test toast sanitizes text and renders branches.
 func TestToastSanitizesTextAndRendersBranches(t *testing.T) {
 	app := NewApp(nil, &config.Config{})
@@ -217,6 +283,12 @@ func TestStartupParsingHelpers(t *testing.T) {
 	assert.Equal(t, "forbidden", classifyStartupTaxonomy("forbidden: scope"))
 	assert.Equal(t, "schema_error", classifyStartupTaxonomy("relation does not exist"))
 	assert.Equal(t, "failed", classifyStartupTaxonomy("unknown error"))
+	assert.True(t, shouldShowMultiAPIRecoveryHint("MULTIPLE_API_INSTANCES_DETECTED", "", ""))
+	assert.True(t, shouldShowMultiAPIRecoveryHint("", "", "listen tcp 127.0.0.1:8000: bind: address already in use"))
+	assert.True(t, shouldShowMultiAPIRecoveryHint("", "", "socket error: EADDRINUSE"))
+	assert.True(t, shouldShowMultiAPIRecoveryHint("", "", "bind failure errno 98"))
+	assert.True(t, shouldShowMultiAPIRecoveryHint("", "multiple_api_instances_detected", ""))
+	assert.False(t, shouldShowMultiAPIRecoveryHint("INVALID_API_KEY", "bad token", "auth failure"))
 
 	level, copy := startupToastCopy(startupSummary{API: "ok", Auth: "ok", Taxonomy: "ok"})
 	assert.Equal(t, "success", level)

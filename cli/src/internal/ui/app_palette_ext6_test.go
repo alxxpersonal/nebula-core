@@ -65,6 +65,18 @@ func TestRunStartupCheckCmdWithoutClientUsesDefaultPath(t *testing.T) {
 	assert.NotNil(t, msg)
 }
 
+func TestRunStartupCheckCmdWithoutClientUsesConfiguredKeyPath(t *testing.T) {
+	app := NewApp(nil, &config.Config{APIKey: "branch-key"})
+	app.client = nil
+
+	cmd := app.runStartupCheckCmd()
+	require.NotNil(t, cmd)
+
+	msg, ok := cmd().(startupCheckedMsg)
+	require.True(t, ok)
+	assert.NotNil(t, msg)
+}
+
 func TestHandlePaletteKeysEdgeBranches(t *testing.T) {
 	app := NewApp(nil, &config.Config{})
 	app.paletteOpen = true
