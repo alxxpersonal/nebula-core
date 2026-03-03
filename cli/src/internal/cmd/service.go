@@ -133,11 +133,7 @@ func runStartCmd(out io.Writer) error {
 	startedPID := 0
 	defer func() {
 		if !startSucceeded {
-			if startedPID > 0 {
-				if proc, err := os.FindProcess(startedPID); err == nil {
-					_ = proc.Signal(syscall.SIGTERM)
-				}
-			}
+			stopProcessIfAlive(startedPID)
 			_ = cleanupAPIState()
 			_ = os.Remove(apiLockPath())
 		}
@@ -199,6 +195,7 @@ func runStartCmd(out io.Writer) error {
 	if !ready {
 		portConflict, processExited := detectStartupFailure(logPath, pid, 900*time.Millisecond)
 		if portConflict {
+			stopProcessIfAlive(pid)
 			_ = cleanupAPIState()
 			_ = os.Remove(apiLockPath())
 			return fmt.Errorf(
@@ -497,6 +494,26 @@ func processAlive(pid int) bool {
 		return true
 	}
 	return errors.Is(err, syscall.EPERM)
+}
+
+// stopProcessIfAlive terminates a process when it is still alive.
+func stopProcessIfAlive(pid int) {
+	if pid <= 0 || !processAlive(pid) {
+		return
+	}
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return
+	}
+	_ = proc.Signal(syscall.SIGTERM)
+	deadline := time.Now().Add(1500 * time.Millisecond)
+	for processAlive(pid) && time.Now().Before(deadline) {
+		time.Sleep(50 * time.Millisecond)
+	}
+	if processAlive(pid) {
+		_ = proc.Signal(syscall.SIGKILL)
+		time.Sleep(100 * time.Millisecond)
+	}
 }
 
 // waitForAPIHealth handles wait for apihealth.

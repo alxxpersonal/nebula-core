@@ -104,6 +104,41 @@ func TestRunStartCmdKillsProcessWhenSaveStateFails(t *testing.T) {
 	assert.True(t, os.IsNotExist(lockErr))
 }
 
+func TestRunStartCmdKillsProcessWhenPortConflictDetected(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	serverDir := createFakeServerDirWithUvicornScript(
+		t,
+		"#!/bin/sh\necho 'ERROR: [Errno 98] Address already in use' >&2\nsleep 30\n",
+	)
+	t.Setenv("NEBULA_SERVER_DIR", serverDir)
+	setWaitForAPIProbe(t, func() (string, error) { return "", assert.AnError })
+	setStartHealthTimeout(t, 100*time.Millisecond)
+	uvicornPath := filepath.Join(serverDir, ".venv", "bin", "uvicorn")
+
+	var out bytes.Buffer
+	err := runStartCmd(&out)
+	require.Error(t, err)
+	assert.Contains(t, strings.ToLower(err.Error()), "multiple api instances detected")
+
+	require.Eventually(t, func() bool {
+		out, psErr := exec.Command("ps", "-axo", "command").Output()
+		if psErr != nil {
+			return false
+		}
+		for _, line := range strings.Split(string(out), "\n") {
+			if strings.Contains(line, uvicornPath) && strings.Contains(line, "nebula_api.app:app") {
+				return false
+			}
+		}
+		return true
+	}, 3*time.Second, 50*time.Millisecond)
+
+	_, stateErr := os.Stat(apiStatePath())
+	assert.True(t, os.IsNotExist(stateErr))
+	_, lockErr := os.Stat(apiLockPath())
+	assert.True(t, os.IsNotExist(lockErr))
+}
+
 func TestRunStopCmdUsesStatePIDWhenLockAPIPIDMissing(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	require.NoError(t, os.MkdirAll(runtimeDir(), 0o700))
