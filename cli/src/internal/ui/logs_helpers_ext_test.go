@@ -382,6 +382,12 @@ func TestLogsSaveAddAndEditValidationBranches(t *testing.T) {
 	assert.Nil(t, cmd)
 	assert.NotEmpty(t, updated.addErr)
 
+	model.addValue.Buffer = "meta | field | value"
+	model.addMeta.Buffer = "invalid"
+	updated, cmd = model.saveAdd()
+	assert.Nil(t, cmd)
+	assert.NotEmpty(t, updated.addErr)
+
 	model = NewLogsModel(nil)
 	model.detail = &api.Log{ID: "log-1", Timestamp: time.Now()}
 	model.startEdit()
