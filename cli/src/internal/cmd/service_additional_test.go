@@ -330,6 +330,21 @@ func TestDetectStartupFailureReturnsExitedWhenProcessDies(t *testing.T) {
 	assert.True(t, exited)
 }
 
+// TestDetectStartupFailureHandlesUnreadableLogPath ensures log read failures do
+// not produce false conflict signals.
+func TestDetectStartupFailureHandlesUnreadableLogPath(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "api.log")
+	require.NoError(t, os.MkdirAll(logPath, 0o700))
+
+	conflictAlive, exitedAlive := detectStartupFailure(logPath, os.Getpid(), 80*time.Millisecond)
+	assert.False(t, conflictAlive)
+	assert.False(t, exitedAlive)
+
+	conflictDead, exitedDead := detectStartupFailure(logPath, 999999, 80*time.Millisecond)
+	assert.False(t, conflictDead)
+	assert.True(t, exitedDead)
+}
+
 // TestSaveAPIStateRejectsNilState handles nil input validation branch.
 func TestSaveAPIStateRejectsNilState(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
