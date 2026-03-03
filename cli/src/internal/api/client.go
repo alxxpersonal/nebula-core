@@ -289,13 +289,35 @@ func parseErrorValue(raw any) (string, bool) {
 			return "", false
 		}
 		return msg, true
+	case []any:
+		msgs := make([]string, 0, len(value))
+		for _, item := range value {
+			msg, ok := parseErrorValue(item)
+			if !ok {
+				continue
+			}
+			msgs = append(msgs, msg)
+		}
+		if len(msgs) == 0 {
+			return "", false
+		}
+		return strings.Join(msgs, "; "), true
 	case map[string]any:
 		if nested, ok := parseErrorValue(value["error"]); ok {
 			return nested, true
 		}
 		code, _ := value["code"].(string)
 		message, _ := value["message"].(string)
-		return formatAPIError(code, message)
+		if formatted, ok := formatAPIError(code, message); ok {
+			return formatted, true
+		}
+		if msg, ok := parseErrorValue(value["msg"]); ok {
+			return msg, true
+		}
+		if detail, ok := parseErrorValue(value["detail"]); ok {
+			return detail, true
+		}
+		return "", false
 	}
 	return "", false
 }

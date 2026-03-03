@@ -86,6 +86,33 @@ func TestParseErrorValueMapMatrix(t *testing.T) {
 			ok:   true,
 		},
 		{
+			name: "fastapi msg field",
+			raw: map[string]any{
+				"msg": "Input should be a valid string",
+			},
+			want: "Input should be a valid string",
+			ok:   true,
+		},
+		{
+			name: "detail fallback field",
+			raw: map[string]any{
+				"detail": "token expired",
+			},
+			want: "token expired",
+			ok:   true,
+		},
+		{
+			name: "detail fallback list field",
+			raw: map[string]any{
+				"detail": []any{
+					map[string]any{"msg": "Field required"},
+					map[string]any{"msg": "Invalid token"},
+				},
+			},
+			want: "Field required; Invalid token",
+			ok:   true,
+		},
+		{
 			name: "code only",
 			raw: map[string]any{
 				"code": "AUTH_REQUIRED",
@@ -112,6 +139,24 @@ func TestParseErrorValueMapMatrix(t *testing.T) {
 		{
 			name: "unsupported type",
 			raw:  123,
+			want: "",
+			ok:   false,
+		},
+		{
+			name: "list detail entries",
+			raw: []any{
+				map[string]any{"msg": "Input should be a valid string"},
+				map[string]any{"msg": "Field required"},
+			},
+			want: "Input should be a valid string; Field required",
+			ok:   true,
+		},
+		{
+			name: "list with no parseable entries",
+			raw: []any{
+				123,
+				map[string]any{},
+			},
 			want: "",
 			ok:   false,
 		},
@@ -191,6 +236,17 @@ func TestExtractAPIErrorBodyEnvelopeAndPayloadMatrix(t *testing.T) {
 			},
 			want: "",
 			ok:   false,
+		},
+		{
+			name: "detail list with validation messages",
+			body: map[string]any{
+				"detail": []any{
+					map[string]any{"msg": "Input should be a valid string"},
+					map[string]any{"msg": "Field required"},
+				},
+			},
+			want: "Input should be a valid string; Field required",
+			ok:   true,
 		},
 	}
 

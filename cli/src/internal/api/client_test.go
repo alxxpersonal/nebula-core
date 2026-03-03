@@ -340,6 +340,25 @@ func TestDoNormalizesMultiAPIConflict(t *testing.T) {
 	assert.Contains(t, err.Error(), "multiple api instances detected")
 }
 
+// TestDoParsesValidationDetailList keeps FastAPI validation errors readable for CLI.
+func TestDoParsesValidationDetailList(t *testing.T) {
+	_, client := testServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"detail": []map[string]any{
+				{"msg": "Input should be a valid string"},
+				{"msg": "Field required"},
+			},
+		})
+	})
+
+	_, err := client.QueryEntities(nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "Input should be a valid string")
+	assert.Contains(t, err.Error(), "Field required")
+	assert.NotContains(t, err.Error(), "HTTP 422:")
+}
+
 // TestHealth handles test health.
 func TestHealth(t *testing.T) {
 	_, client := testServer(t, func(w http.ResponseWriter, r *http.Request) {
