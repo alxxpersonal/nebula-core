@@ -91,6 +91,33 @@ func TestProtocolsRenderListFallbackAndPreviewLayout(t *testing.T) {
 	assert.Contains(t, out, "Status")
 }
 
+func TestProtocolsRenderListLoadingEmptyAndOutOfRangeSelection(t *testing.T) {
+	now := time.Now().UTC()
+	model := NewProtocolsModel(nil)
+	model.width = 120
+
+	model.loading = true
+	loading := components.SanitizeText(model.renderList())
+	assert.Contains(t, loading, "Loading protocols...")
+
+	model.loading = false
+	empty := components.SanitizeText(model.renderList())
+	assert.Contains(t, empty, "No protocols found.")
+
+	model.items = []api.Protocol{
+		{ID: "proto-1", Name: "alpha", Title: "Alpha", Status: "active", CreatedAt: now},
+	}
+	// Extra visible item ensures one RelToAbs path exceeds item bounds.
+	model.list.SetItems([]string{"alpha", "orphan-row"})
+	model.list.Cursor = 1 // selected index is out of range for m.items
+
+	out := components.SanitizeText(model.renderList())
+	assert.Contains(t, out, "1 total")
+	assert.Contains(t, out, "alpha")
+	// No selected preview should render when selected index is out of range.
+	assert.NotContains(t, out, "Selected")
+}
+
 func TestProtocolsHandleAddKeysAdditionalBranches(t *testing.T) {
 	model := NewProtocolsModel(nil)
 	model.view = protocolsViewAdd
