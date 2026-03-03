@@ -221,6 +221,25 @@ func TestEntitiesRenderEntityPreviewEdgeBranches(t *testing.T) {
 	assert.Contains(t, preview, "2")
 }
 
+func TestEntitiesRenderListClampsColumnsOnNarrowWidth(t *testing.T) {
+	model := NewEntitiesModel(nil)
+	model.width = 22
+
+	model, _ = model.Update(entitiesLoadedMsg{items: []api.Entity{
+		{
+			ID:     "ent-1",
+			Name:   "Alpha with a long display name",
+			Type:   "person",
+			Status: "active",
+		},
+	}})
+
+	out := components.SanitizeText(model.renderList())
+	assert.Contains(t, out, "Alpha")
+	assert.Contains(t, out, "Name")
+	assert.Contains(t, out, "Status")
+}
+
 func TestEntitiesRenderDetailFallsBackToListWhenDetailMissing(t *testing.T) {
 	model := NewEntitiesModel(nil)
 	model.width = 80

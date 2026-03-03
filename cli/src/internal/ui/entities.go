@@ -1139,9 +1139,6 @@ func (m EntitiesModel) renderAdd() string {
 			}
 			b.WriteString("\n")
 			meta := renderMetadataEditorPreview(m.addMeta.Buffer, m.addMeta.Scopes, m.width, 6)
-			if strings.TrimSpace(meta) == "" {
-				meta = "-"
-			}
 			b.WriteString(NormalStyle.Render("  " + meta))
 		default:
 			if m.addFocus == i {

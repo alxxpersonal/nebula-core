@@ -219,6 +219,34 @@ func TestEntitiesHandleDetailKeysBranchMatrix(t *testing.T) {
 		assert.Empty(t, next.metaSelected)
 	})
 
+	t.Run("selection mode exits when toggles clear all rows", func(t *testing.T) {
+		next := model
+		next.metaInspect = false
+		next.metaExpanded = true
+		next.syncDetailMetadataRows()
+		require.Greater(t, len(next.metaRows), 0)
+		next.metaList = components.NewList(8)
+		syncMetadataList(next.metaList, next.metaRows, metadataPanelPageSize(true))
+		next.metaList.Cursor = 0
+
+		next.metaSelectMode = true
+		next.metaSelected = map[int]bool{0: true}
+		afterSpace, cmd := next.handleDetailKeys(tea.KeyMsg{Type: tea.KeySpace})
+		assert.Nil(t, cmd)
+		assert.False(t, afterSpace.metaSelectMode)
+		assert.Empty(t, afterSpace.metaSelected)
+
+		afterSpace.metaSelectMode = true
+		afterSpace.metaSelected = make(map[int]bool, len(afterSpace.metaRows))
+		for i := range afterSpace.metaRows {
+			afterSpace.metaSelected[i] = true
+		}
+		afterBulk, cmd := afterSpace.handleDetailKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
+		assert.Nil(t, cmd)
+		assert.False(t, afterBulk.metaSelectMode)
+		assert.Empty(t, afterBulk.metaSelected)
+	})
+
 	t.Run("expanded metadata list arrows and inspect open", func(t *testing.T) {
 		next := model
 		next.metaInspect = false

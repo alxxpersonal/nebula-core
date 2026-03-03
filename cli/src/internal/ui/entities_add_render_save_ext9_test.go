@@ -41,6 +41,9 @@ func TestEntitiesRenderAddBranchMatrix(t *testing.T) {
 	assert.Contains(t, out, "Scopes:")
 	assert.Contains(t, out, "public")
 	model.addScopeSelecting = false
+	out = components.SanitizeText(model.renderAdd())
+	assert.Contains(t, out, "Scopes:")
+	assert.Contains(t, out, "public")
 
 	model.addFocus = addFieldMetadata
 	out = components.SanitizeText(model.renderAdd())
