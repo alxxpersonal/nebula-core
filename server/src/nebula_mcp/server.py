@@ -2034,9 +2034,14 @@ async def create_context(payload: CreateContextInput, ctx: Context) -> dict:
     requested_scopes = enforce_scope_subset(payload.scopes, allowed_scopes)
     data = payload.model_dump()
     data["scopes"] = requested_scopes
-    if data.get("url"):
-        url = data["url"].strip()
-        if not (url.startswith("http://") or url.startswith("https://")):
+    if data.get("url") is not None:
+        raw_url = data["url"]
+        if not isinstance(raw_url, str):
+            raise ValueError("URL must be a string")
+        url = raw_url.strip()
+        if raw_url != "" and url == "":
+            raise ValueError("URL must start with http:// or https://")
+        if url and not (url.startswith("http://") or url.startswith("https://")):
             raise ValueError("URL must start with http:// or https://")
         data["url"] = url
 
@@ -2071,9 +2076,14 @@ async def update_context(payload: UpdateContextInput, ctx: Context) -> dict:
         requested_scopes = enforce_scope_subset(data["scopes"], allowed_scopes)
         require_scopes(requested_scopes, enums)
         data["scopes"] = requested_scopes
-    if data.get("url"):
-        url = str(data["url"]).strip()
-        if not (url.startswith("http://") or url.startswith("https://")):
+    if data.get("url") is not None:
+        raw_url = data["url"]
+        if not isinstance(raw_url, str):
+            raise ValueError("URL must be a string")
+        url = raw_url.strip()
+        if raw_url != "" and url == "":
+            raise ValueError("URL must start with http:// or https://")
+        if url and not (url.startswith("http://") or url.startswith("https://")):
             raise ValueError("URL must start with http:// or https://")
         data["url"] = url
 

@@ -641,6 +641,33 @@ async def test_create_context_invalid_url_guard_via_model_construct(
 
 
 @pytest.mark.asyncio
+async def test_create_context_non_string_url_guard_via_model_construct(
+    monkeypatch, mock_enums
+):
+    """Server-level create guard should reject non-string URL payloads."""
+
+    pool = _PoolStub()
+    agent = _public_agent(mock_enums)
+    payload = CreateContextInput.model_construct(
+        title="ctx",
+        source_type="note",
+        scopes=["public"],
+        tags=[],
+        metadata={},
+        content=None,
+        url=123,  # type: ignore[arg-type]
+    )
+
+    monkeypatch.setattr(
+        "nebula_mcp.server.require_context",
+        AsyncMock(return_value=(pool, mock_enums, agent)),
+    )
+
+    with pytest.raises(ValueError, match="URL must be a string"):
+        await create_context(payload, _ctx(pool, mock_enums, agent))
+
+
+@pytest.mark.asyncio
 async def test_create_context_approval_short_circuit(monkeypatch, mock_enums):
     """create_context should return approval payload without calling executor."""
 
@@ -698,6 +725,43 @@ async def test_update_context_invalid_url_guard_via_model_construct(
     monkeypatch.setattr("nebula_mcp.server.execute_update_context", AsyncMock(return_value={"id": payload.context_id}))
 
     with pytest.raises(ValueError, match="URL must start with http:// or https://"):
+        await update_context(payload, _ctx(pool, mock_enums, agent))
+
+
+@pytest.mark.asyncio
+async def test_update_context_non_string_url_guard_via_model_construct(
+    monkeypatch, mock_enums
+):
+    """Server-level update guard should reject non-string URL payloads."""
+
+    pool = _PoolStub()
+    agent = _public_agent(mock_enums)
+    payload = UpdateContextInput.model_construct(
+        context_id=str(uuid4()),
+        url=False,  # type: ignore[arg-type]
+        status=None,
+        scopes=None,
+        title=None,
+        source_type=None,
+        content=None,
+        tags=None,
+        metadata=None,
+    )
+
+    monkeypatch.setattr(
+        "nebula_mcp.server.require_context",
+        AsyncMock(return_value=(pool, mock_enums, agent)),
+    )
+    monkeypatch.setattr("nebula_mcp.server._validate_relationship_node", AsyncMock())
+    monkeypatch.setattr(
+        "nebula_mcp.server.maybe_require_approval", AsyncMock(return_value=None)
+    )
+    monkeypatch.setattr(
+        "nebula_mcp.server.execute_update_context",
+        AsyncMock(return_value={"id": payload.context_id}),
+    )
+
+    with pytest.raises(ValueError, match="URL must be a string"):
         await update_context(payload, _ctx(pool, mock_enums, agent))
 
 
@@ -767,6 +831,32 @@ async def test_create_context_valid_url_trim_direct_path(monkeypatch, mock_enums
 
 
 @pytest.mark.asyncio
+async def test_create_context_whitespace_url_rejected_via_model_construct(
+    monkeypatch, mock_enums
+):
+    """create_context should reject whitespace-only URL when validation is bypassed."""
+
+    pool = _PoolStub()
+    agent = _public_agent(mock_enums)
+    payload = CreateContextInput.model_construct(
+        title="ctx",
+        source_type="note",
+        scopes=["public"],
+        url="   ",
+        tags=[],
+        metadata={},
+        content=None,
+    )
+
+    monkeypatch.setattr(
+        "nebula_mcp.server.require_context",
+        AsyncMock(return_value=(pool, mock_enums, agent)),
+    )
+    with pytest.raises(ValueError, match="URL must start with http:// or https://"):
+        await create_context(payload, _ctx(pool, mock_enums, agent))
+
+
+@pytest.mark.asyncio
 async def test_update_context_valid_url_trim_direct_path(monkeypatch, mock_enums):
     """update_context should trim valid URLs and return direct executor row."""
 
@@ -799,6 +889,45 @@ async def test_update_context_valid_url_trim_direct_path(monkeypatch, mock_enums
     result = await update_context(payload, _ctx(pool, mock_enums, agent))
 
     assert result["url"] == "https://example.com/u"
+
+
+@pytest.mark.asyncio
+async def test_update_context_whitespace_url_rejected_via_model_construct(
+    monkeypatch, mock_enums
+):
+    """update_context should reject whitespace-only URL when validation is bypassed."""
+
+    context_id = str(uuid4())
+    pool = _PoolStub()
+    agent = _public_agent(mock_enums)
+    payload = UpdateContextInput.model_construct(
+        context_id=context_id,
+        url="   ",
+        status=None,
+        scopes=None,
+        title=None,
+        source_type=None,
+        content=None,
+        tags=None,
+        metadata=None,
+    )
+
+    monkeypatch.setattr(
+        "nebula_mcp.server.require_context",
+        AsyncMock(return_value=(pool, mock_enums, agent)),
+    )
+    monkeypatch.setattr("nebula_mcp.server._validate_relationship_node", AsyncMock())
+    monkeypatch.setattr(
+        "nebula_mcp.server.maybe_require_approval",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        "nebula_mcp.server.execute_update_context",
+        AsyncMock(return_value={"id": context_id, "url": ""}),
+    )
+
+    with pytest.raises(ValueError, match="URL must start with http:// or https://"):
+        await update_context(payload, _ctx(pool, mock_enums, agent))
 
 
 @pytest.mark.asyncio
