@@ -697,7 +697,11 @@ func parseMetadataScopesInline(value any) string {
 	case []any:
 		clean := make([]string, 0, len(typed))
 		for _, item := range typed {
-			s := strings.TrimSpace(SanitizeOneLine(fmt.Sprintf("%v", item)))
+			strItem, ok := item.(string)
+			if !ok {
+				continue
+			}
+			s := strings.TrimSpace(SanitizeOneLine(strItem))
 			if s != "" {
 				clean = append(clean, s)
 			}

@@ -57,3 +57,22 @@ func TestRenderMetadataValueLinesTextWithoutScopesAndMapFormatting(t *testing.T)
 	formatted := formatMetadataValue(map[string]any{"k": "v"})
 	assert.True(t, strings.Contains(formatted, `"k":"v"`))
 }
+
+func TestParseMetadataScopesInlineSkipsNonStringEntries(t *testing.T) {
+	out := parseMetadataScopesInline([]any{" public ", nil, 42, "admin", "   "})
+	assert.Equal(t, "public, admin", out)
+}
+
+func TestRenderMetadataValueLinesScopeBadgeSkipsInvalidScopeEntries(t *testing.T) {
+	lines := renderMetadataValueLines(
+		[]any{
+			map[string]any{
+				"text":   "hello",
+				"scopes": []any{"public", nil, 99, " admin "},
+			},
+		},
+		2,
+	)
+
+	assert.Equal(t, []string{"  - [public, admin] hello"}, lines)
+}
