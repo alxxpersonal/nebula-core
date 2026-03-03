@@ -436,12 +436,18 @@ func acquireAPILock() error {
 
 		lock, lockErr := loadAPILock()
 		pid := 0
+		ownerPID := 0
 		if lockErr == nil && lock != nil {
 			pid = lock.APIPID
+			ownerPID = lock.OwnerPID
 		}
 		// If lock metadata points to a dead process, fall back to runtime state.
 		if pid > 0 && !processAlive(pid) {
 			pid = 0
+		}
+		// If API PID is not set yet, an alive lock owner still means startup is in-flight.
+		if pid <= 0 && ownerPID > 0 && processAlive(ownerPID) {
+			pid = ownerPID
 		}
 		if pid <= 0 {
 			state, stateErr := loadAPIState()

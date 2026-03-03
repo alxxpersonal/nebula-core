@@ -443,6 +443,32 @@ func TestAcquireAPILockRecoversFromCorruptStateWhenLockHasNoPID(t *testing.T) {
 	assert.Zero(t, loaded.APIPID)
 }
 
+// TestAcquireAPILockTreatsLiveOwnerWithoutAPIPIDAsHeld prevents lock stealing during startup races.
+func TestAcquireAPILockTreatsLiveOwnerWithoutAPIPIDAsHeld(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	require.NoError(t, os.MkdirAll(runtimeDir(), 0o700))
+
+	lock := apiLockState{
+		OwnerPID:  os.Getpid(),
+		APIPID:    0,
+		CreatedAt: time.Now().UTC(),
+	}
+	raw, err := json.Marshal(lock)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(apiLockPath(), raw, 0o600))
+
+	err = acquireAPILock()
+	require.Error(t, err)
+	var held *apiLockHeldError
+	require.ErrorAs(t, err, &held)
+	assert.Equal(t, os.Getpid(), held.PID)
+
+	loaded, loadErr := loadAPILock()
+	require.NoError(t, loadErr)
+	assert.Equal(t, os.Getpid(), loaded.OwnerPID)
+	assert.Zero(t, loaded.APIPID)
+}
+
 // TestAcquireAPILockCorruptLockButLiveRuntimeStateReturnsHeldError ensures runtime-state fallback blocks duplicate starts.
 func TestAcquireAPILockCorruptLockButLiveRuntimeStateReturnsHeldError(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
