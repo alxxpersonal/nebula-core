@@ -161,3 +161,24 @@ func TestStopProcessIfAliveEscalatesToKillWhenProcessIgnoresTerm(t *testing.T) {
 		return !processAlive(pid)
 	}, 3*time.Second, 20*time.Millisecond)
 }
+
+func TestStopProcessIfAliveNoopForNonPositivePID(t *testing.T) {
+	// Should not panic or do any work on invalid pids.
+	stopProcessIfAlive(0)
+	stopProcessIfAlive(-7)
+}
+
+func TestStopProcessIfAliveNoopWhenProcessAlreadyExited(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("signal semantics required")
+	}
+
+	cmd := exec.Command("sh", "-c", "exit 0")
+	require.NoError(t, cmd.Start())
+	pid := cmd.Process.Pid
+	require.NoError(t, cmd.Wait())
+	require.False(t, processAlive(pid))
+
+	stopProcessIfAlive(pid)
+	assert.False(t, processAlive(pid))
+}
