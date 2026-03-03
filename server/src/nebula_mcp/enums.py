@@ -41,6 +41,9 @@ async def _load_section(pool: Pool, query_name: str) -> EnumSection:
     id_to_name: dict[UUID, str] = {}
 
     for row in rows:
+        if not hasattr(row, "__getitem__"):
+            raise ValueError(f"invalid enum row in {query_name}: {row!r}")
+
         try:
             raw_name = row["name"]
             value_id = row["id"]
@@ -48,6 +51,8 @@ async def _load_section(pool: Pool, query_name: str) -> EnumSection:
             raise ValueError(
                 f"invalid enum row in {query_name}: missing {exc.args[0]}"
             ) from exc
+        except TypeError as exc:
+            raise ValueError(f"invalid enum row in {query_name}: {row!r}") from exc
 
         if not isinstance(raw_name, str):
             raise ValueError(f"invalid enum name in {query_name}: {raw_name!r}")

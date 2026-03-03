@@ -440,6 +440,57 @@ class TestLoadEnums:
             await _load_section(pool, "enums/statuses")
 
     @pytest.mark.asyncio
+    async def test_load_section_rejects_missing_id_column(self):
+        """Missing id column should raise a clear validation error."""
+
+        pool = AsyncMock()
+        pool.fetch = AsyncMock(
+            return_value=[
+                {"name": "active"},
+            ]
+        )
+
+        with pytest.raises(ValueError, match="missing id"):
+            await _load_section(pool, "enums/statuses")
+
+    @pytest.mark.asyncio
+    async def test_load_section_rejects_non_mapping_row(self):
+        """Non-mapping row payloads should fail fast with clear errors."""
+
+        pool = AsyncMock()
+        pool.fetch = AsyncMock(return_value=[42])
+
+        with pytest.raises(ValueError, match="invalid enum row"):
+            await _load_section(pool, "enums/statuses")
+
+    @pytest.mark.asyncio
+    async def test_load_section_rejects_index_only_row_payload(self):
+        """Index-based rows should fail with a clear invalid-row error."""
+
+        pool = AsyncMock()
+        pool.fetch = AsyncMock(return_value=[["active", UUID(int=60)]])
+
+        with pytest.raises(ValueError, match="invalid enum row"):
+            await _load_section(pool, "enums/statuses")
+
+    @pytest.mark.asyncio
+    async def test_load_section_rejects_trim_colliding_names(self):
+        """Names that only differ by surrounding whitespace should collide."""
+
+        first_id = UUID(int=61)
+        second_id = UUID(int=62)
+        pool = AsyncMock()
+        pool.fetch = AsyncMock(
+            return_value=[
+                {"name": "active", "id": first_id},
+                {"name": " active ", "id": second_id},
+            ]
+        )
+
+        with pytest.raises(ValueError, match="duplicate enum name"):
+            await _load_section(pool, "enums/statuses")
+
+    @pytest.mark.asyncio
     async def test_load_enums_calls_all_sections_in_order(self, monkeypatch):
         """load_enums should request all five enum sections."""
 
