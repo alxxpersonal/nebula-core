@@ -352,8 +352,8 @@ class TestLoadEnums:
         assert section.id_to_name == {}
 
     @pytest.mark.asyncio
-    async def test_load_section_last_row_wins_on_duplicate_name_and_id(self):
-        """Duplicate names or IDs should resolve to the last seen row."""
+    async def test_load_section_rejects_duplicate_enum_names(self):
+        """Duplicate enum names should fail fast instead of silently overriding."""
 
         first_id = UUID(int=21)
         second_id = UUID(int=22)
@@ -362,14 +362,26 @@ class TestLoadEnums:
             return_value=[
                 {"name": "active", "id": first_id},
                 {"name": "active", "id": second_id},
-                {"name": "inactive", "id": second_id},
             ]
         )
 
-        section = await _load_section(pool, "enums/statuses")
+        with pytest.raises(ValueError, match="duplicate enum name"):
+            await _load_section(pool, "enums/statuses")
 
-        assert section.name_to_id["active"] == second_id
-        assert section.id_to_name[second_id] == "inactive"
+    @pytest.mark.asyncio
+    async def test_load_section_rejects_duplicate_enum_ids(self):
+        """Duplicate enum IDs should fail fast instead of silently overriding."""
+
+        pool = AsyncMock()
+        pool.fetch = AsyncMock(
+            return_value=[
+                {"name": "active", "id": UUID(int=31)},
+                {"name": "inactive", "id": UUID(int=31)},
+            ]
+        )
+
+        with pytest.raises(ValueError, match="duplicate enum id"):
+            await _load_section(pool, "enums/statuses")
 
     @pytest.mark.asyncio
     async def test_load_enums_calls_all_sections_in_order(self, monkeypatch):

@@ -37,8 +37,20 @@ async def _load_section(pool: Pool, query_name: str) -> EnumSection:
     """Load one enum section using a named SQL query."""
 
     rows = await pool.fetch(QUERIES[query_name])
-    name_to_id = {r["name"]: r["id"] for r in rows}
-    id_to_name = {r["id"]: r["name"] for r in rows}
+    name_to_id: dict[str, UUID] = {}
+    id_to_name: dict[UUID, str] = {}
+
+    for row in rows:
+        name = row["name"]
+        value_id = row["id"]
+
+        if name in name_to_id:
+            raise ValueError(f"duplicate enum name in {query_name}: {name}")
+        if value_id in id_to_name:
+            raise ValueError(f"duplicate enum id in {query_name}: {value_id}")
+
+        name_to_id[name] = value_id
+        id_to_name[value_id] = name
 
     return EnumSection(name_to_id=name_to_id, id_to_name=id_to_name)
 
