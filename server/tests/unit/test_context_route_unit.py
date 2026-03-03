@@ -8,6 +8,7 @@ from uuid import uuid4
 # Third-Party
 import pytest
 from fastapi import HTTPException
+from pydantic import ValidationError
 
 # Local
 from nebula_api.routes.context import (
@@ -192,3 +193,35 @@ def test_update_context_body_url_empty_string_roundtrips():
 
     payload = UpdateContextBody(url="")
     assert payload.url == ""
+
+
+def test_create_context_body_url_none_roundtrips():
+    """Create context payload should allow omitted URL values."""
+
+    payload = CreateContextBody(title="note", scopes=["public"], url=None)
+    assert payload.url is None
+
+
+def test_update_context_body_url_none_roundtrips():
+    """Update context payload should allow null URL values."""
+
+    payload = UpdateContextBody(url=None)
+    assert payload.url is None
+
+
+def test_create_context_body_url_rejects_non_string_payload():
+    """Create context payload should reject non-string URL values."""
+
+    with pytest.raises(ValidationError, match="URL must be a string"):
+        CreateContextBody(
+            title="note",
+            scopes=["public"],
+            url=123,  # type: ignore[arg-type]
+        )
+
+
+def test_update_context_body_url_rejects_non_string_payload():
+    """Update context payload should reject non-string URL values."""
+
+    with pytest.raises(ValidationError, match="URL must be a string"):
+        UpdateContextBody(url=123)  # type: ignore[arg-type]
