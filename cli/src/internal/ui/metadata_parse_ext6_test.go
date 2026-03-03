@@ -58,6 +58,16 @@ func TestParseMetadataInputEdgeErrorMatrix(t *testing.T) {
 			want: "expected at least 'field | value'",
 		},
 		{
+			name: "pipe row has empty middle key segment",
+			in:   "profile | | timezone",
+			want: "empty key segment in pipe row",
+		},
+		{
+			name: "pipe row has empty leading key segment",
+			in:   "| owner | alxx",
+			want: "empty key segment in pipe row",
+		},
+		{
 			name: "pipe path collides with scalar",
 			in: strings.Join([]string{
 				"profile: alpha",

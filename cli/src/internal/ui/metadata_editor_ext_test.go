@@ -166,7 +166,7 @@ func TestMetadataEditorCommitEntryRejectsInvalidPipeLine(t *testing.T) {
 	ed := MetadataEditor{entryBuf: " | value"}
 	err := ed.commitEntry()
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "expected at least")
+	assert.Contains(t, err.Error(), "empty key segment")
 }
 
 func TestMetadataEditorRebuildBufferHandlesValueParseErrors(t *testing.T) {

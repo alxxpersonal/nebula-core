@@ -110,20 +110,22 @@ func parseMetadataValue(raw string, lineNum int) (any, error) {
 // parseMetadataPipeLine parses parse metadata pipe line.
 func parseMetadataPipeLine(content string, lineNum int) (string, string, error) {
 	parts := strings.Split(content, "|")
-	trimmed := make([]string, 0, len(parts))
-	for _, p := range parts {
-		s := strings.TrimSpace(p)
-		if s != "" {
-			trimmed = append(trimmed, s)
-		}
-	}
-	if len(trimmed) < 2 {
+	if len(parts) < 2 {
 		return "", "", fmt.Errorf("line %d: expected at least 'field | value'", lineNum)
 	}
+
+	trimmed := make([]string, len(parts))
+	for idx, p := range parts {
+		trimmed[idx] = strings.TrimSpace(p)
+	}
+	if trimmed[len(trimmed)-1] == "" {
+		return "", "", fmt.Errorf("line %d: expected at least 'field | value'", lineNum)
+	}
+
 	value := trimmed[len(trimmed)-1]
 	pathParts := trimmed[:len(trimmed)-1]
 	for _, part := range pathParts {
-		if strings.TrimSpace(part) == "" {
+		if part == "" {
 			return "", "", fmt.Errorf("line %d: empty key segment in pipe row", lineNum)
 		}
 	}
