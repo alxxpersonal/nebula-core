@@ -1342,10 +1342,6 @@ func (m EntitiesModel) renderList() string {
 	sideBySide := contentWidth >= minSideBySideContentWidth
 	if sideBySide {
 		tableWidth = contentWidth - previewWidth - gap
-		if tableWidth < 60 {
-			sideBySide = false
-			tableWidth = contentWidth
-		}
 	}
 
 	sepWidth := 1
@@ -1713,20 +1709,14 @@ func (m EntitiesModel) handleDetailKeys(msg tea.KeyMsg) (EntitiesModel, tea.Cmd)
 	if m.metaExpanded && len(m.metaRows) > 0 {
 		switch {
 		case isDown(msg):
-			if m.metaList != nil {
-				m.metaList.Down()
-			}
+			m.metaList.Down()
 			return m, nil
 		case isUp(msg):
-			if m.metaList != nil {
-				m.metaList.Up()
-			}
+			m.metaList.Up()
 			return m, nil
 		case isSpace(msg):
-			if m.metaList != nil {
-				m.metaSelectMode = true
-				m.toggleMetaSelection(m.metaList.Selected())
-			}
+			m.metaSelectMode = true
+			m.toggleMetaSelection(m.metaList.Selected())
 			if len(m.metaSelected) == 0 {
 				m.metaSelectMode = false
 			}
@@ -1739,9 +1729,7 @@ func (m EntitiesModel) handleDetailKeys(msg tea.KeyMsg) (EntitiesModel, tea.Cmd)
 			}
 			return m, nil
 		case isEnter(msg):
-			if m.metaList != nil {
-				m.openMetaInspect(m.metaList.Selected())
-			}
+			m.openMetaInspect(m.metaList.Selected())
 			return m, nil
 		case isKey(msg, "c"):
 			return m, m.copySelectedMetadataRows()
@@ -1920,10 +1908,6 @@ func (m EntitiesModel) renderHistory() string {
 	sideBySide := contentWidth >= minSideBySideContentWidth
 	if sideBySide {
 		tableWidth = contentWidth - previewWidth - gap
-		if tableWidth < 60 {
-			sideBySide = false
-			tableWidth = contentWidth
-		}
 	}
 
 	sepWidth := 1

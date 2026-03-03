@@ -56,11 +56,18 @@ func TestEntitiesHandleAddKeysBranchMatrix(t *testing.T) {
 		next.addScopeSelecting = true
 		next.addScopeIdx = 0
 
-		next, _ = next.handleAddKeys(tea.KeyMsg{Type: tea.KeyRight})
+		next, _ = next.handleAddKeys(tea.KeyMsg{Type: tea.KeyLeft})
 		assert.Equal(t, 1, next.addScopeIdx)
 
+		next, _ = next.handleAddKeys(tea.KeyMsg{Type: tea.KeyRight})
+		assert.Equal(t, 0, next.addScopeIdx)
+
 		next, _ = next.handleAddKeys(tea.KeyMsg{Type: tea.KeySpace})
-		assert.Equal(t, []string{"private"}, next.addScopes)
+		assert.Equal(t, []string{"public"}, next.addScopes)
+
+		next.scopeOptions = nil
+		next, _ = next.handleAddKeys(tea.KeyMsg{Type: tea.KeyLeft})
+		assert.Equal(t, 0, next.addScopeIdx)
 
 		next, _ = next.handleAddKeys(tea.KeyMsg{Type: tea.KeyEnter})
 		assert.False(t, next.addScopeSelecting)
@@ -206,6 +213,35 @@ func TestEntitiesHandleDetailKeysBranchMatrix(t *testing.T) {
 		require.True(t, ok)
 		assert.Equal(t, len(next.metaRows), copied.count)
 
+		next, cmd = next.handleDetailKeys(tea.KeyMsg{Type: tea.KeyEsc})
+		assert.Nil(t, cmd)
+		assert.False(t, next.metaSelectMode)
+		assert.Empty(t, next.metaSelected)
+	})
+
+	t.Run("expanded metadata list arrows and inspect open", func(t *testing.T) {
+		next := model
+		next.metaInspect = false
+		next.metaExpanded = true
+		next.metaSelectMode = true
+		next.metaSelected = map[int]bool{}
+		next.syncDetailMetadataRows()
+
+		next, cmd := next.handleDetailKeys(tea.KeyMsg{Type: tea.KeyDown})
+		assert.Nil(t, cmd)
+		assert.GreaterOrEqual(t, next.metaList.Selected(), 0)
+
+		next, cmd = next.handleDetailKeys(tea.KeyMsg{Type: tea.KeyUp})
+		assert.Nil(t, cmd)
+		assert.GreaterOrEqual(t, next.metaList.Selected(), 0)
+
+		next, cmd = next.handleDetailKeys(tea.KeyMsg{Type: tea.KeyEnter})
+		assert.Nil(t, cmd)
+		assert.True(t, next.metaInspect)
+
+		next.metaInspect = false
+		next.metaSelectMode = true
+		next.metaSelected = map[int]bool{}
 		next, cmd = next.handleDetailKeys(tea.KeyMsg{Type: tea.KeyEsc})
 		assert.Nil(t, cmd)
 		assert.False(t, next.metaSelectMode)

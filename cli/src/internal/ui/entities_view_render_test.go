@@ -220,3 +220,34 @@ func TestEntitiesRenderEntityPreviewEdgeBranches(t *testing.T) {
 	assert.Contains(t, preview, "Links")
 	assert.Contains(t, preview, "2")
 }
+
+func TestEntitiesRenderDetailFallsBackToListWhenDetailMissing(t *testing.T) {
+	model := NewEntitiesModel(nil)
+	model.width = 80
+
+	out := components.SanitizeText(model.renderDetail())
+	assert.Contains(t, out, "No entities found.")
+}
+
+func TestEntitiesRenderDetailShowsMetadataInspectorPanel(t *testing.T) {
+	model := NewEntitiesModel(nil)
+	model.width = 96
+	model.height = 30
+	model.detail = &api.Entity{
+		ID:   "ent-1",
+		Name: "Alpha",
+		Metadata: api.JSONMap{
+			"profile": map[string]any{
+				"bio": "line one\nline two\nline three",
+			},
+		},
+	}
+	model.metaExpanded = true
+	model.syncDetailMetadataRows()
+	model.metaInspect = true
+	model.metaInspectI = 0
+
+	out := components.SanitizeText(model.renderDetail())
+	assert.Contains(t, out, "Metadata Value")
+	assert.Contains(t, out, "Lines")
+}

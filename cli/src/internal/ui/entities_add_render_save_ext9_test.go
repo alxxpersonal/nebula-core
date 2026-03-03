@@ -132,4 +132,41 @@ func TestEntitiesSaveAddValidationAndDefaults(t *testing.T) {
 		assert.Equal(t, "inactive", captured.Status)
 		assert.Equal(t, []string{"alpha"}, captured.Tags)
 	})
+
+	t.Run("api create error returns errMsg", func(t *testing.T) {
+		_, client := testEntitiesClient(t, func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/api/entities" && r.Method == http.MethodPost {
+				w.WriteHeader(http.StatusInternalServerError)
+				require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+					"error": map[string]any{
+						"code":    "INTERNAL_ERROR",
+						"message": "db down",
+					},
+				}))
+				return
+			}
+			w.WriteHeader(http.StatusNotFound)
+		})
+
+		model := NewEntitiesModel(client)
+		model.addFields[addFieldName].value = "Alpha"
+		model.addFields[addFieldType].value = "person"
+
+		next, cmd := model.saveAdd()
+		require.NotNil(t, cmd)
+		assert.True(t, next.addSaving)
+
+		msg := cmd()
+		_, ok := msg.(errMsg)
+		assert.True(t, ok)
+	})
+}
+
+func TestEntitiesRenderAddTagsMultipleUnfocusedSpacing(t *testing.T) {
+	model := NewEntitiesModel(nil)
+	model.addTags = []string{"alpha", "beta"}
+
+	rendered := components.SanitizeText(model.renderAddTags(false))
+	assert.Contains(t, rendered, "alpha")
+	assert.Contains(t, rendered, "beta")
 }
