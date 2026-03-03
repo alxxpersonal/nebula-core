@@ -130,8 +130,15 @@ func runStartCmd(out io.Writer) error {
 	}
 
 	startSucceeded := false
+	startedPID := 0
 	defer func() {
 		if !startSucceeded {
+			if startedPID > 0 {
+				if proc, err := os.FindProcess(startedPID); err == nil {
+					_ = proc.Signal(syscall.SIGTERM)
+				}
+			}
+			_ = cleanupAPIState()
 			_ = os.Remove(apiLockPath())
 		}
 	}()
@@ -170,6 +177,7 @@ func runStartCmd(out io.Writer) error {
 		return fmt.Errorf("start api: %w", err)
 	}
 	pid := cmd.Process.Pid
+	startedPID = pid
 	_ = cmd.Process.Release()
 
 	state = &apiRuntimeState{

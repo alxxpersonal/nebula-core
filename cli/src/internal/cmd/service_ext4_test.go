@@ -3,10 +3,12 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"os/exec"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gravitrone/nebula-core/cli/internal/api"
 	"github.com/stretchr/testify/assert"
@@ -66,6 +68,40 @@ func TestRunStartCmdReturnsSaveStateErrorWhenRuntimeStatePathIsDirectory(t *test
 	err := runStartCmd(&out)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "write runtime state")
+}
+
+func TestRunStartCmdKillsProcessWhenSaveStateFails(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	serverDir := createFakeServerDirWithUvicornScript(
+		t,
+		"#!/bin/sh\nsleep 30\n",
+	)
+	t.Setenv("NEBULA_SERVER_DIR", serverDir)
+	uvicornPath := filepath.Join(serverDir, ".venv", "bin", "uvicorn")
+
+	require.NoError(t, os.MkdirAll(runtimeDir(), 0o700))
+	require.NoError(t, os.Mkdir(apiStatePath(), 0o700))
+
+	var out bytes.Buffer
+	err := runStartCmd(&out)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "write runtime state")
+
+	require.Eventually(t, func() bool {
+		out, psErr := exec.Command("ps", "-axo", "command").Output()
+		if psErr != nil {
+			return false
+		}
+		for _, line := range strings.Split(string(out), "\n") {
+			if strings.Contains(line, uvicornPath) && strings.Contains(line, "nebula_api.app:app") {
+				return false
+			}
+		}
+		return true
+	}, 3*time.Second, 50*time.Millisecond)
+
+	_, lockErr := os.Stat(apiLockPath())
+	assert.True(t, os.IsNotExist(lockErr))
 }
 
 func TestRunStopCmdUsesStatePIDWhenLockAPIPIDMissing(t *testing.T) {
