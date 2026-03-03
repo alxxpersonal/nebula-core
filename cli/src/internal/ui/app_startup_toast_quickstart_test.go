@@ -202,6 +202,16 @@ func TestStartupParsingHelpers(t *testing.T) {
 		"multi_api_conflict",
 		classifyStartupAuth("errno 98 while binding socket", &config.Config{APIKey: "key"}),
 	)
+	assert.Equal(
+		t,
+		"multi_api_conflict",
+		classifyStartupAuth("socket bind failed: errno 48", &config.Config{APIKey: "key"}),
+	)
+	assert.Equal(
+		t,
+		"multi_api_conflict",
+		classifyStartupAuth("ADDRESS ALREADY IN USE", &config.Config{APIKey: "key"}),
+	)
 
 	assert.Equal(t, "ok", classifyStartupTaxonomy(""))
 	assert.Equal(t, "forbidden", classifyStartupTaxonomy("forbidden: scope"))
@@ -247,6 +257,22 @@ func TestStartupCheckedMsgRawConflictTextSetsMultiAPIConflict(t *testing.T) {
 	app.startupChecking = true
 
 	model, cmd := app.Update(startupCheckedMsg{authErr: "listen tcp 127.0.0.1:8000: bind: address already in use"})
+	updated := model.(App)
+
+	assert.False(t, updated.startupChecking)
+	assert.Equal(t, "multi_api_conflict", updated.startup.Auth)
+	assert.Equal(t, "MULTIPLE_API_INSTANCES_DETECTED: multiple api instances detected", updated.err)
+	assert.Equal(t, "MULTIPLE_API_INSTANCES_DETECTED", updated.lastErrCode)
+	assert.False(t, updated.showRecoveryHints)
+	require.NotNil(t, cmd)
+}
+
+// TestStartupCheckedMsgErrno48SetsMultiAPIConflict handles macOS bind conflict errno text.
+func TestStartupCheckedMsgErrno48SetsMultiAPIConflict(t *testing.T) {
+	app := NewApp(nil, &config.Config{APIKey: "bad-key"})
+	app.startupChecking = true
+
+	model, cmd := app.Update(startupCheckedMsg{authErr: "socket bind failed: errno 48"})
 	updated := model.(App)
 
 	assert.False(t, updated.startupChecking)

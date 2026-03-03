@@ -222,7 +222,9 @@ func TestUpdateQuitConfirmCancelsOnNoAndBack(t *testing.T) {
 
 func TestShouldShowMultiAPIRecoveryHintMatrix(t *testing.T) {
 	assert.True(t, shouldShowMultiAPIRecoveryHint("MULTIPLE_API_INSTANCES_DETECTED", "", ""))
+	assert.True(t, shouldShowMultiAPIRecoveryHint("multiple_api_instances_detected", "", ""))
 	assert.True(t, shouldShowMultiAPIRecoveryHint("", "address already in use", ""))
+	assert.True(t, shouldShowMultiAPIRecoveryHint("", "errno 48 while binding", ""))
 	assert.True(t, shouldShowMultiAPIRecoveryHint("", "", "ERROR: [Errno 98] Address already in use"))
 	assert.True(t, shouldShowMultiAPIRecoveryHint("", "listen failed", "EADDRINUSE"))
 	assert.False(t, shouldShowMultiAPIRecoveryHint("", "unauthorized", "invalid api key"))
