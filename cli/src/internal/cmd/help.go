@@ -117,11 +117,8 @@ func visibleFlags(command *cobra.Command) []components.TableRow {
 	flagRows := make([]components.TableRow, 0, 8)
 	seen := make(map[string]struct{})
 	collect := func(flags *pflag.FlagSet) {
-		if flags == nil {
-			return
-		}
 		flags.VisitAll(func(flag *pflag.Flag) {
-			if flag == nil || flag.Hidden {
+			if flag.Hidden {
 				return
 			}
 			key := flag.Name
