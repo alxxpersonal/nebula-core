@@ -399,6 +399,62 @@ func TestResolveServerDirSkipsDuplicateCandidatesWhenRootsOverlap(t *testing.T) 
 	assert.Contains(t, err.Error(), "could not locate server dir")
 }
 
+func TestResolveServerDirSkipsTrimmedEmptyRootAndStopsAtExecutableRoot(t *testing.T) {
+	t.Setenv("NEBULA_SERVER_DIR", "")
+
+	prevGetwd := currentWorkingDir
+	prevExecutable := executablePath
+	prevGlob := globMatches
+	t.Cleanup(func() {
+		currentWorkingDir = prevGetwd
+		executablePath = prevExecutable
+		globMatches = prevGlob
+	})
+
+	currentWorkingDir = func() (string, error) {
+		return "   ", nil
+	}
+	executablePath = func() (string, error) {
+		return string(filepath.Separator), nil
+	}
+	globMatches = func(string) ([]string, error) {
+		return nil, nil
+	}
+
+	_, err := resolveServerDir()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "could not locate server dir")
+}
+
+func TestResolveServerDirSkipsSeenDuplicateCandidates(t *testing.T) {
+	t.Setenv("NEBULA_SERVER_DIR", "")
+
+	root := t.TempDir()
+
+	prevGetwd := currentWorkingDir
+	prevExecutable := executablePath
+	prevGlob := globMatches
+	t.Cleanup(func() {
+		currentWorkingDir = prevGetwd
+		executablePath = prevExecutable
+		globMatches = prevGlob
+	})
+
+	currentWorkingDir = func() (string, error) {
+		return root, nil
+	}
+	executablePath = func() (string, error) {
+		return filepath.Join(root, "nebula"), nil
+	}
+	globMatches = func(string) ([]string, error) {
+		return nil, nil
+	}
+
+	_, err := resolveServerDir()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "could not locate server dir")
+}
+
 func TestNormalizeServerDirCandidateReturnsFalseWhenAbsFails(t *testing.T) {
 	prevAbs := absPath
 	t.Cleanup(func() {

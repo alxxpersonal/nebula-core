@@ -54,6 +54,9 @@ var marshalRuntimeStateJSON = func(state *apiRuntimeState) ([]byte, error) {
 }
 
 var absPath = filepath.Abs
+var currentWorkingDir = os.Getwd
+var executablePath = os.Executable
+var globMatches = filepath.Glob
 
 type apiRuntimeState struct {
 	PID       int       `json:"pid"`
@@ -631,7 +634,7 @@ func resolveServerDir() (string, error) {
 	}
 
 	roots := []string{}
-	if cwd, err := os.Getwd(); err == nil && cwd != "" {
+	if cwd, err := currentWorkingDir(); err == nil && cwd != "" {
 		roots = append(roots, cwd)
 		dir := cwd
 		for i := 0; i < 6; i++ {
@@ -643,7 +646,7 @@ func resolveServerDir() (string, error) {
 			dir = parent
 		}
 	}
-	if exe, err := os.Executable(); err == nil && exe != "" {
+	if exe, err := executablePath(); err == nil && exe != "" {
 		dir := filepath.Dir(exe)
 		roots = append(roots, dir)
 		for i := 0; i < 4; i++ {
@@ -671,7 +674,7 @@ func resolveServerDir() (string, error) {
 			filepath.Join(root, "*", "nebula-core", "server"),
 			filepath.Join(root, "*", "*", "nebula-core", "server"),
 		} {
-			if matches, err := filepath.Glob(pattern); err == nil {
+			if matches, err := globMatches(pattern); err == nil {
 				candidates = append(candidates, matches...)
 			}
 		}
