@@ -236,6 +236,45 @@ func TestAgentListCmdReturnsListErrorOnAPIFailure(t *testing.T) {
 	assert.Contains(t, err.Error(), "list agents")
 }
 
+func TestAgentRegisterCmdReturnsNotLoggedInWhenConfigMissing(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	cmd := agentRegisterCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"new-agent"})
+
+	err := cmd.Execute()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not logged in")
+}
+
+func TestAgentRegisterCmdReturnsRegisterErrorOnAPIFailure(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	require.NoError(t, (&config.Config{APIKey: "nbl_test", Username: "alxx"}).Save())
+
+	shutdown := startDefaultAPIBaseServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/agents/register" && r.Method == http.MethodPost {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = io.WriteString(w, `{"error":"register failed"}`)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	t.Cleanup(shutdown)
+
+	cmd := agentRegisterCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"new-agent"})
+
+	err := cmd.Execute()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "register agent")
+}
+
 // TestKeysListAllFlagAgainstDefaultAPIBaseURL handles list-all key flows on default base URL.
 func TestKeysListAllFlagAgainstDefaultAPIBaseURL(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())

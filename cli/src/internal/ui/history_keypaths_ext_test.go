@@ -70,6 +70,29 @@ func TestHistoryConfirmRevertSuccessReturnsRevertedMsg(t *testing.T) {
 	assert.Equal(t, "audit-1", gotAuditID)
 }
 
+func TestHistoryConfirmRevertReturnsErrMsgOnAPIError(t *testing.T) {
+	_, client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/entities/ent-1/revert" {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"error":"revert failed"}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	})
+
+	model := NewHistoryModel(client)
+	model.detail = &api.AuditEntry{ID: "audit-1", RecordID: "ent-1"}
+
+	updated, cmd := model.confirmRevert()
+	require.NotNil(t, cmd)
+	assert.False(t, updated.reverting)
+
+	msg := cmd()
+	errRes, ok := msg.(errMsg)
+	require.True(t, ok)
+	assert.Contains(t, errRes.err.Error(), "revert failed")
+}
+
 func TestHistoryHandleFilterKeysBranchMatrix(t *testing.T) {
 	model := NewHistoryModel(nil)
 	model.filtering = true

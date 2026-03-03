@@ -83,6 +83,13 @@ func TestJobsRenderAddAndEditStateBranches(t *testing.T) {
 	assert.Contains(t, addOut, "Error")
 	assert.Contains(t, addOut, "bad add")
 
+	model.addErr = ""
+	model.addFocus = jobFieldPriority
+	model.addPriorityIdx = 0
+	addOut = components.SanitizeText(model.renderAdd())
+	assert.Contains(t, addOut, "Priority:")
+	assert.Contains(t, addOut, "  -")
+
 	model.view = jobsViewEdit
 	model.editFocus = jobEditFieldPriority
 	model.editPriorityIdx = 0
