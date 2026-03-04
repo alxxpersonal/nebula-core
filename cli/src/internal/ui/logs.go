@@ -528,10 +528,7 @@ func (m LogsModel) handleListKeys(msg tea.KeyMsg) (LogsModel, tea.Cmd) {
 		}
 	default:
 		ch := msg.String()
-		if len(ch) == 1 || ch == " " {
-			if ch == " " && m.searchBuf == "" {
-				return m, nil
-			}
+		if len(ch) == 1 {
 			m.searchBuf += ch
 			m.applyLogSearch()
 		}
@@ -768,15 +765,9 @@ func (m LogsModel) renderAdd() string {
 			}
 		case logFieldValue:
 			value := renderMetadataEditorPreview(m.addValue.Buffer, m.addValue.Scopes, m.width, 6)
-			if strings.TrimSpace(value) == "" {
-				value = "-"
-			}
 			b.WriteString(NormalStyle.Render("  " + value))
 		case logFieldMeta:
 			meta := renderMetadataEditorPreview(m.addMeta.Buffer, m.addMeta.Scopes, m.width, 6)
-			if strings.TrimSpace(meta) == "" {
-				meta = "-"
-			}
 			b.WriteString(NormalStyle.Render("  " + meta))
 		}
 

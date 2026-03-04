@@ -515,10 +515,7 @@ func (m FilesModel) handleListKeys(msg tea.KeyMsg) (FilesModel, tea.Cmd) {
 		}
 	default:
 		ch := msg.String()
-		if len(ch) == 1 || ch == " " {
-			if ch == " " && m.searchBuf == "" {
-				return m, nil
-			}
+		if len(ch) == 1 {
 			m.searchBuf += ch
 			m.applyFileSearch()
 		}
