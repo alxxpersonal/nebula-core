@@ -2,6 +2,12 @@
 
 ---
 
+<p align="center">
+  <img src="https://img.shields.io/badge/CLI%20Coverage-100%25-22c55e?style=for-the-badge" alt="CLI Coverage">
+  <img src="https://img.shields.io/badge/Server%20Coverage-100%25-22c55e?style=for-the-badge" alt="Server Coverage">
+  <img src="https://img.shields.io/badge/Tests-3122%20passing-0ea5e9?style=for-the-badge" alt="Tests">
+</p>
+
 ## 🚀 About
 
 Just as developers use GitHub to collaborate on code, agents need Nebula to coordinate context.  
@@ -12,12 +18,12 @@ MCP-first by design, CLI today, **web UI & shared cloud** next.
 
 ## Demo
 
-- [Watch Nebula Demo](https://youtu.be/cR5bnvC3Rd8?si=KlFn6hXRUlDIOzsP)
+[![Demo Video](https://img.shields.io/badge/Demo-Watch%20on%20YouTube-ff0000?style=for-the-badge&logo=youtube&logoColor=white)](https://youtu.be/cR5bnvC3Rd8?si=KlFn6hXRUlDIOzsP)
 
 ## Quickstart
 
 ```bash
-git clone https://github.com/alxxpersonal/nebula-core.git
+git clone https://github.com/gravitrone/nebula-core.git
 cd nebula-core
 docker compose up -d
 cd cli/src
