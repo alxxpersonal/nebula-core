@@ -97,3 +97,59 @@ func TestFormatEntityHeaderAndJoinSegmentsMatrix(t *testing.T) {
 	assert.Equal(t, "one · two", joined)
 	assert.Equal(t, "", joinEntitySegments(nil, 10))
 }
+
+func TestFormatEntityLineWidthNormalizesWidthTypeAndSegments(t *testing.T) {
+	line := stripANSI(formatEntityLineWidth(api.Entity{
+		Name:   "Alpha Entity",
+		Type:   "",
+		Status: "",
+		Tags:   []string{"tag-a", "tag-b", "tag-c"},
+		Metadata: api.JSONMap{
+			"summary": "metadata preview should show",
+		},
+	}, maxEntityLineLen+200))
+
+	assert.Contains(t, line, "Alpha Entity")
+	assert.Contains(t, line, "?")
+	assert.Contains(t, line, "tag-a, tag-b +1")
+	assert.Contains(t, line, "metadata preview should show")
+	assert.LessOrEqual(t, len([]rune(line)), maxEntityLineLen)
+
+	compact := stripANSI(formatEntityLineWidth(api.Entity{Name: "Alpha", Type: "person"}, 0))
+	assert.Contains(t, compact, "Alpha")
+	assert.Contains(t, compact, "person")
+}
+
+func TestRenderFilterPickerFocusedFacetWithoutSelectionCount(t *testing.T) {
+	model := NewEntitiesModel(nil)
+	model.width = 96
+	model.filterFacet = entitiesFilterFacetType
+	model.filterTypeSet = []string{"person", "project"}
+	model.filterCursor[entitiesFilterFacetType] = 99
+	model.filterTypes = map[string]bool{}
+	model.filterStatus = map[string]bool{}
+	model.filterScopes = map[string]bool{}
+
+	out := stripANSI(model.renderFilterPicker())
+	assert.Contains(t, out, "Filter Entities")
+	assert.Contains(t, out, "Type")
+	assert.NotContains(t, out, "Type (")
+	assert.Contains(t, out, "No active filters")
+	assert.Contains(t, out, "person")
+	assert.Contains(t, out, "project")
+}
+
+func TestRenderFilterPickerTinyWidthClampWithActiveScopeSelection(t *testing.T) {
+	model := NewEntitiesModel(nil)
+	model.width = 1
+	model.filterFacet = entitiesFilterFacetScope
+	model.filterScopeSet = []string{"public"}
+	model.filterScopes = map[string]bool{"public": true}
+	model.filterCursor[entitiesFilterFacetScope] = 0
+
+	out := stripANSI(model.renderFilterPicker())
+	assert.Contains(t, out, "Filter Entities")
+	assert.Contains(t, out, "Scope (1)")
+	assert.Contains(t, out, "public")
+	assert.Contains(t, out, "Active: scope=1")
+}
