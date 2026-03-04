@@ -352,6 +352,16 @@ class TestLoadEnums:
         assert section.id_to_name == {}
 
     @pytest.mark.asyncio
+    async def test_load_section_propagates_fetch_error(self):
+        """Database fetch errors should bubble up for caller-level handling."""
+
+        pool = AsyncMock()
+        pool.fetch = AsyncMock(side_effect=RuntimeError("db unavailable"))
+
+        with pytest.raises(RuntimeError, match="db unavailable"):
+            await _load_section(pool, "enums/statuses")
+
+    @pytest.mark.asyncio
     async def test_load_section_rejects_duplicate_enum_names(self):
         """Duplicate enum names should fail fast instead of silently overriding."""
 
