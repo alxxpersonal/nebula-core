@@ -48,6 +48,7 @@ func newRootCommand() *cobra.Command {
 	root.AddCommand(cmd.StartCmd())
 	root.AddCommand(cmd.StopCmd())
 	root.AddCommand(cmd.LogsCmd())
+	root.AddCommand(cmd.APICmd())
 	cmd.ApplyNebulaHelp(root)
 
 	return root
