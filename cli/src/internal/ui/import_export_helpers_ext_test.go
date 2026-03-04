@@ -2,6 +2,7 @@ package ui
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -138,4 +139,44 @@ func TestRunExportUnknownResourceAndWriteError(t *testing.T) {
 	msg = runExport(client, "entities", "csv", t.TempDir())
 	_, ok = msg.(importExportErrorMsg)
 	assert.True(t, ok)
+}
+
+func TestRunExportJSONUsesItemsPayloadAndMarshalErrors(t *testing.T) {
+	_, client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/export/entities" {
+			err := json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"format": "json",
+					"items": []map[string]any{
+						{"id": "ent-1", "name": "Alpha"},
+					},
+					"count": 1,
+				},
+			})
+			require.NoError(t, err)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	})
+
+	outPath := filepath.Join(t.TempDir(), "entities.json")
+	msg := runExport(client, "entities", "json", outPath)
+	done, ok := msg.(importExportDoneMsg)
+	require.True(t, ok)
+	assert.Contains(t, done.summary, "Exported 1 entities")
+
+	written, err := os.ReadFile(outPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(written), "\"ent-1\"")
+
+	prevMarshal := importExportMarshalIndent
+	importExportMarshalIndent = func(v any, prefix, indent string) ([]byte, error) {
+		return nil, errors.New("marshal exploded")
+	}
+	defer func() { importExportMarshalIndent = prevMarshal }()
+
+	msg = runExport(client, "entities", "json", filepath.Join(t.TempDir(), "entities-err.json"))
+	errMsg, ok := msg.(importExportErrorMsg)
+	require.True(t, ok)
+	assert.ErrorContains(t, errMsg.err, "marshal exploded")
 }

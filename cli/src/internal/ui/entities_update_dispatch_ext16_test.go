@@ -31,6 +31,15 @@ func TestEntitiesUpdateDispatchAdditionalBranches(t *testing.T) {
 	require.Len(t, next.detailRels, 1)
 	assert.Equal(t, "rel-existing", next.detailRels[0].ID)
 
+	next.detail = &api.Entity{ID: "ent-1", Name: "Alpha"}
+	next, cmd = next.Update(entityDetailRelationshipsLoadedMsg{
+		id:    "ent-1",
+		items: []api.Relationship{{ID: "rel-new"}},
+	})
+	require.Nil(t, cmd)
+	require.Len(t, next.detailRels, 1)
+	assert.Equal(t, "rel-new", next.detailRels[0].ID)
+
 	next.scopeNames = nil
 	withScopes, cmd := next.Update(entityScopesLoadedMsg{
 		names: map[string]string{"scope-1": "public", "scope-2": "private"},
@@ -61,6 +70,14 @@ func TestEntitiesUpdateDispatchAdditionalBranches(t *testing.T) {
 	assert.Contains(t, withErr.errText, "boom")
 }
 
+func TestEntitiesInitRecreatesNilMetadataList(t *testing.T) {
+	model := NewEntitiesModel(nil)
+	model.metaList = nil
+
+	cmd := model.Init()
+	require.NotNil(t, cmd)
+}
+
 func TestEntitiesUpdateKeyDispatchWithMetadataEditorsAndEditView(t *testing.T) {
 	model := NewEntitiesModel(nil)
 	model.addMeta.Active = true
@@ -81,4 +98,3 @@ func TestEntitiesUpdateKeyDispatchWithMetadataEditorsAndEditView(t *testing.T) {
 	require.Nil(t, cmd)
 	assert.Equal(t, entitiesViewDetail, updated.view)
 }
-

@@ -169,3 +169,26 @@ func TestRenderFilterPickerTinyWidthClampWithActiveScopeSelection(t *testing.T) 
 	assert.Contains(t, out, "public")
 	assert.Contains(t, out, "Active: scope=1")
 }
+
+func TestRefreshFilterSetsClampsNegativeCursorForNonEmptyFacet(t *testing.T) {
+	model := NewEntitiesModel(nil)
+	model.scopeNames = map[string]string{"scope-public": "public"}
+	model.allItems = []api.Entity{
+		{
+			ID:              "ent-1",
+			Name:            "Alpha",
+			Type:            "project",
+			Status:          "active",
+			PrivacyScopeIDs: []string{"scope-public"},
+		},
+	}
+	model.filterCursor[entitiesFilterFacetType] = -5
+	model.filterCursor[entitiesFilterFacetStatus] = -1
+	model.filterCursor[entitiesFilterFacetScope] = -2
+
+	model.refreshFilterSets()
+
+	assert.Equal(t, 0, model.filterCursor[entitiesFilterFacetType])
+	assert.Equal(t, 0, model.filterCursor[entitiesFilterFacetStatus])
+	assert.Equal(t, 0, model.filterCursor[entitiesFilterFacetScope])
+}

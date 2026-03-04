@@ -382,9 +382,6 @@ func renderMetadataEditorPreview(buffer string, scopes []string, width int, maxR
 			group = "root"
 		}
 		value := strings.TrimSpace(components.SanitizeText(humanizeGoMapString(row.value)))
-		if value == "" {
-			value = "None"
-		}
 		lines = append(lines, truncateString(fmt.Sprintf("%s | %s | %s", group, field, value), lineWidth))
 	}
 	if remaining > 0 {
@@ -657,9 +654,6 @@ func syncMetadataList(list *components.List, rows []metadataDisplayRow, pageSize
 	}
 	if prevCursor >= prevOffset+list.PageSize {
 		prevOffset = prevCursor - list.PageSize + 1
-		if prevOffset < 0 {
-			prevOffset = 0
-		}
 	}
 	list.Cursor = prevCursor
 	list.Offset = prevOffset
@@ -910,9 +904,6 @@ func metadataGroupAndField(path string) (string, string) {
 
 	field := strings.Join(fieldParts, ".")
 	field = strings.TrimSpace(field)
-	if field == "" {
-		field = "-"
-	}
 	return group, field
 }
 

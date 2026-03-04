@@ -13,6 +13,8 @@ import (
 	"github.com/gravitrone/nebula-core/cli/internal/ui/components"
 )
 
+var importExportMarshalIndent = json.MarshalIndent
+
 type importExportMode int
 
 const (
@@ -341,7 +343,7 @@ func runExport(client *api.Client, resource, format, path string) tea.Msg {
 	}
 	content := result.Content
 	if result.Format == "json" {
-		payload, err := json.MarshalIndent(result.Items, "", "  ")
+		payload, err := importExportMarshalIndent(result.Items, "", "  ")
 		if err != nil {
 			return importExportErrorMsg{err: err}
 		}

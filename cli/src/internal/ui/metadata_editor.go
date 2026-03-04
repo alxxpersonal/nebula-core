@@ -207,8 +207,6 @@ func (m *MetadataEditor) HandleKey(msg tea.KeyMsg) bool {
 		} else if count > 0 {
 			m.notice = fmt.Sprintf("copied %d value(s).", count)
 		}
-	case isSpace(msg):
-		// no-op; handled above
 	case isEnter(msg):
 		if idx := m.selectedRowIndex(); idx >= 0 {
 			m.inspectMode = true
@@ -481,9 +479,6 @@ func (m *MetadataEditor) commitEntry() error {
 		return err
 	}
 	entry := metadataEditorRow{path: strings.TrimSpace(path), value: strings.TrimSpace(value)}
-	if entry.path == "" {
-		return fmt.Errorf("path is required")
-	}
 	if m.entryEditIdx >= 0 && m.entryEditIdx < len(m.rows) {
 		m.rows[m.entryEditIdx] = entry
 	} else {

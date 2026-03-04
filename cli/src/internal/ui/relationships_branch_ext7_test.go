@@ -2,6 +2,7 @@ package ui
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -115,6 +116,21 @@ func TestRelationshipsRenderEditFallbackAndSaveErrorBranch(t *testing.T) {
 	msg := cmd()
 	_, ok := msg.(errMsg)
 	assert.True(t, ok)
+}
+
+func TestRelationshipsRenderEditNormalizesEmptyPreviewToDash(t *testing.T) {
+	model := NewRelationshipsModel(nil)
+	model.width = 92
+	model.detail = &api.Relationship{ID: "rel-1", Status: "active"}
+	model.editFocus = relsEditFieldProperties
+	model.editMeta.Buffer = "\x00"
+
+	preview := renderMetadataEditorPreview(model.editMeta.Buffer, model.editMeta.Scopes, model.width, 6)
+	assert.Equal(t, "", strings.TrimSpace(components.SanitizeText(preview)))
+
+	rendered := components.SanitizeText(model.renderEdit())
+	assert.Contains(t, rendered, "Properties:")
+	assert.Contains(t, rendered, "\n│    -")
 }
 
 func TestRelationshipsCreateKeyAdditionalBranches(t *testing.T) {

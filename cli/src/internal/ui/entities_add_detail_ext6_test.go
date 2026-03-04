@@ -83,6 +83,13 @@ func TestEntitiesHandleAddKeysBranchMatrix(t *testing.T) {
 		assert.Nil(t, cmd)
 		assert.True(t, next.modeFocus)
 
+		// Up from non-first field moves focus to the previous field.
+		next.modeFocus = false
+		next.addFocus = addFieldType
+		next, cmd = next.handleAddKeys(tea.KeyMsg{Type: tea.KeyUp})
+		assert.Nil(t, cmd)
+		assert.Equal(t, addFieldName, next.addFocus)
+
 		// Ctrl+S runs save validation path.
 		next.modeFocus = false
 		next.addFocus = addFieldName

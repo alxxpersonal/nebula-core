@@ -564,10 +564,7 @@ func (m EntitiesModel) handleListKeys(msg tea.KeyMsg) (EntitiesModel, tea.Cmd) {
 		}
 	default:
 		ch := msg.String()
-		if len(ch) == 1 || ch == " " {
-			if ch == " " && m.searchBuf == "" {
-				return m, nil
-			}
+		if len(ch) == 1 {
 			m.searchBuf += ch
 			m.loading = true
 			return m, m.loadEntities(strings.TrimSpace(m.searchBuf))
@@ -1072,8 +1069,6 @@ func (m EntitiesModel) handleAddKeys(msg tea.KeyMsg) (EntitiesModel, tea.Cmd) {
 			if isEnter(msg) {
 				m.addMeta.Active = true
 			}
-		case addFieldStatus:
-			// handled above
 		default:
 			ch := msg.String()
 			if len(ch) == 1 || ch == " " {

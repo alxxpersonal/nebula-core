@@ -179,6 +179,13 @@ func TestEntitiesRelateAndRelEditBranchMatrix(t *testing.T) {
 		assert.True(t, next.relLoading)
 
 		next.view = entitiesViewRelateType
+		next.relateTarget = nil
+		next.relateType = "knows"
+		next, cmd = next.handleRelateKeys(tea.KeyMsg{Type: tea.KeyEnter})
+		assert.Nil(t, cmd)
+		assert.Equal(t, entitiesViewRelateType, next.view)
+
+		next.view = entitiesViewRelateType
 		next, cmd = next.handleRelateKeys(tea.KeyMsg{Type: tea.KeyEsc})
 		assert.Nil(t, cmd)
 		assert.Equal(t, entitiesViewRelateSelect, next.view)
@@ -216,6 +223,9 @@ func TestEntitiesRelateAndRelEditBranchMatrix(t *testing.T) {
 		m.relateType = "knows"
 		out = components.SanitizeText(m.renderRelate())
 		assert.Contains(t, out, "Relationship Type")
+
+		m.view = entitiesViewList
+		assert.Equal(t, "", m.renderRelate())
 
 		assert.Equal(t, "", m.renderRelateEntityPreview(api.Entity{}, 0))
 

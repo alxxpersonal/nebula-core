@@ -56,6 +56,11 @@ func TestRenderMetadataEditorPreviewRootRowAndMaxRowsClamp(t *testing.T) {
 	assert.Contains(t, preview, "root | status | active")
 }
 
+func TestRenderMetadataEditorPreviewEmptyScalarValueUsesNone(t *testing.T) {
+	preview := components.SanitizeText(renderMetadataEditorPreview(`profile | alias | ""`, nil, 96, 6))
+	assert.Contains(t, preview, "profile | alias | None")
+}
+
 func TestSyncMetadataListScrollsCursorIntoViewport(t *testing.T) {
 	list := components.NewList(3)
 	list.Cursor = 4
