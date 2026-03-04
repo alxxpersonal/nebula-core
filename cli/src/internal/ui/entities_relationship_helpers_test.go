@@ -83,7 +83,16 @@ func TestEntitiesRelationshipRenderAndEditHelpers(t *testing.T) {
 
 	model.view = entitiesViewRelateSelect
 	model.relateResults = []api.Entity{
-		{ID: "ent-2", Name: "Beta", Type: "person", Status: "active", Tags: []string{"core"}},
+		{
+			ID:     "ent-2",
+			Name:   "Beta",
+			Type:   "person",
+			Status: "active",
+			Tags:   []string{"core"},
+			Metadata: api.JSONMap{
+				"summary": "linked entity",
+			},
+		},
 	}
 	model.relateList.SetItems([]string{"Beta"})
 	out = components.SanitizeText(model.renderRelate())
@@ -94,6 +103,7 @@ func TestEntitiesRelationshipRenderAndEditHelpers(t *testing.T) {
 	assert.Contains(t, preview, "Selected")
 	assert.Contains(t, preview, "Type")
 	assert.Contains(t, preview, "Status")
+	assert.Contains(t, preview, "Meta")
 
 	model.startRelEdit()
 	model.view = entitiesViewRelEdit

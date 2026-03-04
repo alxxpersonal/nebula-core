@@ -231,6 +231,9 @@ func TestEntitiesStartRelEditAndHandleRelEditKeysBranchMatrix(t *testing.T) {
 	assert.Equal(t, relEditFieldStatus, updated.relEditFocus)
 	updated, _ = updated.handleRelEditKeys(tea.KeyMsg{Type: tea.KeyUp})
 	assert.Equal(t, relEditFieldStatus, updated.relEditFocus)
+	updated.relEditFocus = relEditFieldProperties
+	updated, _ = updated.handleRelEditKeys(tea.KeyMsg{Type: tea.KeyUp})
+	assert.Equal(t, relEditFieldStatus, updated.relEditFocus)
 
 	updated.relEditFocus = relEditFieldProperties
 	updated.relEditBuf = "a"
@@ -458,4 +461,33 @@ func TestEntitiesLoadRelateResultsAndDetailRelationshipsMatrix(t *testing.T) {
 		require.Error(t, em.err)
 		assert.Contains(t, strings.ToLower(em.err.Error()), "query failed")
 	})
+}
+
+func TestEntitiesSaveRelEditReturnsErrMsgOnUpdateFailure(t *testing.T) {
+	_, client := testEntitiesClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api/relationships/") && r.Method == http.MethodPatch {
+			w.WriteHeader(http.StatusInternalServerError)
+			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+				"error": map[string]any{
+					"code":    "INTERNAL_ERROR",
+					"message": "write failed",
+				},
+			}))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	})
+
+	model := NewEntitiesModel(client)
+	model.relEditID = "rel-1"
+	model.relEditStatusIdx = 0
+	model.relEditBuf = `{"note":"ok"}`
+
+	updated, cmd := model.saveRelEdit()
+	require.NotNil(t, cmd)
+	assert.Equal(t, entitiesViewRelationships, updated.view)
+
+	msg := cmd()
+	_, ok := msg.(errMsg)
+	assert.True(t, ok)
 }
