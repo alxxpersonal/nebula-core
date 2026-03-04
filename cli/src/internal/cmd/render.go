@@ -33,18 +33,39 @@ func centerBlockLines(block string, width int) string {
 	return strings.Join(lines, "\n")
 }
 
+// shouldRenderCommandBanner handles whether command banner should render.
+func shouldRenderCommandBanner(out io.Writer) bool {
+	file, ok := out.(*os.File)
+	if !ok || file == nil {
+		return false
+	}
+	info, err := file.Stat()
+	if err != nil {
+		return false
+	}
+	return info.Mode()&os.ModeCharDevice != 0
+}
+
 // renderCommandPanel renders render command panel.
 func renderCommandPanel(out io.Writer, title string, rows []components.TableRow) {
 	width := commandWidth(out)
-	banner := centerBlockLines(ui.RenderBanner(), width)
 	panel := components.Table(title, rows, width)
+	if !shouldRenderCommandBanner(out) {
+		_, _ = fmt.Fprintf(out, "%s\n", panel)
+		return
+	}
+	banner := centerBlockLines(ui.RenderBanner(), width)
 	_, _ = fmt.Fprintf(out, "%s\n\n%s\n", banner, panel)
 }
 
 // renderCommandMessage renders render command message.
 func renderCommandMessage(out io.Writer, title, message string) {
 	width := commandWidth(out)
-	banner := centerBlockLines(ui.RenderBanner(), width)
 	body := components.TitledBox(title, message, width)
+	if !shouldRenderCommandBanner(out) {
+		_, _ = fmt.Fprintf(out, "%s\n", body)
+		return
+	}
+	banner := centerBlockLines(ui.RenderBanner(), width)
 	_, _ = fmt.Fprintf(out, "%s\n\n%s\n", banner, body)
 }

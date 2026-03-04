@@ -44,6 +44,7 @@ func TestRenderCommandPanelClampsNarrowWidth(t *testing.T) {
 	for _, line := range strings.Split(clean, "\n") {
 		assert.LessOrEqual(t, lipgloss.Width(line), 20)
 	}
+	assert.NotContains(t, clean, "Context Infrastructure for Agents")
 }
 
 // TestRenderCommandMessageClampsNarrowWidth verifies command messages also clamp at narrow widths.
@@ -57,4 +58,5 @@ func TestRenderCommandMessageClampsNarrowWidth(t *testing.T) {
 	for _, line := range strings.Split(clean, "\n") {
 		assert.LessOrEqual(t, lipgloss.Width(line), 20)
 	}
+	assert.NotContains(t, clean, "Context Infrastructure for Agents")
 }
