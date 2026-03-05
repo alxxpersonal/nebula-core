@@ -5,7 +5,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/CLI%20Coverage-100%25-22c55e?style=for-the-badge" alt="CLI Coverage">
   <img src="https://img.shields.io/badge/Server%20Coverage-100%25-22c55e?style=for-the-badge" alt="Server Coverage">
-  <img src="https://img.shields.io/badge/Tests-3122%20passing-0ea5e9?style=for-the-badge" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-3153%20passing-0ea5e9?style=for-the-badge" alt="Tests">
 </p>
 
 ## 🚀 About
