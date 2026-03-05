@@ -37,6 +37,13 @@ var gridSelectedMarkStyle = lipgloss.NewStyle().
 	Foreground(lipgloss.Color("#d1606b")).
 	Bold(true)
 
+var gridDiffBeforeStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#ff7188"))
+var gridDiffAfterStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#3f866b"))
+var gridDiffAddedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#34d399")).Bold(true)
+var gridDiffRemovedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#fb7185")).Bold(true)
+var gridDiffUpdatedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#fbbf24")).Bold(true)
+var gridDiffSameStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#9ba0bf"))
+
 var tableGridActiveRowsEnabled = true
 
 // SetTableGridActiveRowsEnabled toggles active-row highlighting globally.
@@ -234,6 +241,7 @@ func renderGridRow(columns []TableColumn, cells []string, sep string, tableWidth
 		}
 		if !header {
 			rendered = highlightSelectionMarkers(rendered)
+			rendered = styleDiffCellByHeader(col.Header, text, rendered)
 		}
 		b.WriteString(rendered)
 	}
@@ -243,6 +251,33 @@ func renderGridRow(columns []TableColumn, cells []string, sep string, tableWidth
 		line = padRight(line, tableWidth)
 	}
 	return line
+}
+
+// styleDiffCellByHeader applies Nebula diff colors when rows use Before/After/Change headers.
+func styleDiffCellByHeader(header string, raw string, rendered string) string {
+	name := strings.ToLower(strings.TrimSpace(header))
+	value := strings.ToLower(strings.TrimSpace(SanitizeOneLine(raw)))
+	switch name {
+	case "before":
+		return gridDiffBeforeStyle.Inline(true).Render(rendered)
+	case "after":
+		return gridDiffAfterStyle.Inline(true).Render(rendered)
+	case "change":
+		switch value {
+		case "added":
+			return gridDiffAddedStyle.Inline(true).Render(rendered)
+		case "removed":
+			return gridDiffRemovedStyle.Inline(true).Render(rendered)
+		case "updated":
+			return gridDiffUpdatedStyle.Inline(true).Render(rendered)
+		case "same":
+			return gridDiffSameStyle.Inline(true).Render(rendered)
+		default:
+			return rendered
+		}
+	default:
+		return rendered
+	}
 }
 
 // renderGridRule renders render grid rule.

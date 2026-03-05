@@ -487,8 +487,22 @@ func renderDiffGrid(rows []DiffRow, width int) string {
 	}
 
 	gridRows := make([][]string, 0, len(rows)*2)
+	lastSection := ""
 	for _, row := range rows {
 		label := SanitizeOneLine(row.Label)
+		section := diffSectionForLabel(label)
+		if section != "" && section != lastSection {
+			gridRows = append(
+				gridRows,
+				[]string{
+					diffLabelStyle.Render("[" + section + "]"),
+					"section",
+					"",
+					"",
+				},
+			)
+			lastSection = section
+		}
 		beforeLines := wrapDiffCellValue(row.From, maxInt(6, valueWidth-2))
 		afterLines := wrapDiffCellValue(row.To, maxInt(6, valueWidth-2))
 		lineCount := maxInt(len(beforeLines), len(afterLines))
@@ -574,6 +588,27 @@ func normalizeDiffRawValue(value string) string {
 		return "None"
 	}
 	return trimmed
+}
+
+// diffSectionForLabel groups common diff labels into scan-friendly sections.
+func diffSectionForLabel(label string) string {
+	key := strings.ToLower(strings.TrimSpace(label))
+	switch {
+	case key == "content":
+		return "Content"
+	case key == "scopes" || strings.Contains(key, "scope"):
+		return "Scopes"
+	case key == "tags" || strings.Contains(key, "tag"):
+		return "Tags"
+	case key == "source type" || strings.Contains(key, "source"):
+		return "Source"
+	case key == "title" || key == "name" || key == "status" || key == "type":
+		return "Core"
+	case strings.Contains(key, "metadata"):
+		return "Metadata"
+	default:
+		return "Other"
+	}
 }
 
 // wrapDiffLine handles wrap diff line.

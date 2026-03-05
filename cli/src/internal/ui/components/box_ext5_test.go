@@ -1,6 +1,7 @@
 package components
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -73,4 +74,42 @@ func TestRenderMetadataValueLinesScopeBadgeSkipsInvalidScopeEntries(t *testing.T
 	)
 
 	assert.Equal(t, []string{"  - [public, admin] hello"}, lines)
+}
+
+func TestDiffSectionForLabelMatrix(t *testing.T) {
+	assert.Equal(t, "Content", diffSectionForLabel("Content"))
+	assert.Equal(t, "Scopes", diffSectionForLabel("privacy_scope_ids"))
+	assert.Equal(t, "Tags", diffSectionForLabel("tags"))
+	assert.Equal(t, "Source", diffSectionForLabel("Source Type"))
+	assert.Equal(t, "Core", diffSectionForLabel("title"))
+	assert.Equal(t, "Metadata", diffSectionForLabel("metadata.preview"))
+	assert.Equal(t, "Other", diffSectionForLabel("custom_field"))
+}
+
+func TestWrapDiffCellValueCollapsesLongOutputByDefault(t *testing.T) {
+	t.Setenv("NEBULA_DIFF_FULL", "")
+	lines := []string{"1", "2", "3", "4", "5", "6", "7", "8"}
+	out := wrapDiffCellValue(strings.Join(lines, "\n"), 40)
+	assert.Len(t, out, 7)
+	assert.Contains(t, out[6], "+2 more lines")
+}
+
+func TestWrapDiffCellValueFullModeKeepsAllLines(t *testing.T) {
+	t.Setenv("NEBULA_DIFF_FULL", "1")
+	lines := []string{"1", "2", "3", "4", "5", "6", "7", "8"}
+	out := wrapDiffCellValue(strings.Join(lines, "\n"), 40)
+	assert.Len(t, out, 8)
+}
+
+func TestDiffFullModeEnabledMatrix(t *testing.T) {
+	prev := os.Getenv("NEBULA_DIFF_FULL")
+	t.Cleanup(func() {
+		_ = os.Setenv("NEBULA_DIFF_FULL", prev)
+	})
+	_ = os.Setenv("NEBULA_DIFF_FULL", "true")
+	assert.True(t, diffFullModeEnabled())
+	_ = os.Setenv("NEBULA_DIFF_FULL", "yes")
+	assert.True(t, diffFullModeEnabled())
+	_ = os.Setenv("NEBULA_DIFF_FULL", "0")
+	assert.False(t, diffFullModeEnabled())
 }

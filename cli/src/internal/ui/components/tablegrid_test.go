@@ -95,6 +95,17 @@ func TestHighlightSelectionMarkersStylesKnownTokens(t *testing.T) {
 	assert.Contains(t, clean, "[x]")
 }
 
+func TestStyleDiffCellByHeaderMatrix(t *testing.T) {
+	assert.Equal(t, "plain", SanitizeText(styleDiffCellByHeader("before", "x", "plain")))
+	assert.Equal(t, "plain", SanitizeText(styleDiffCellByHeader("after", "x", "plain")))
+	assert.Equal(t, "plain", SanitizeText(styleDiffCellByHeader("change", "added", "plain")))
+	assert.Equal(t, "plain", SanitizeText(styleDiffCellByHeader("change", "removed", "plain")))
+	assert.Equal(t, "plain", SanitizeText(styleDiffCellByHeader("change", "updated", "plain")))
+	assert.Equal(t, "plain", SanitizeText(styleDiffCellByHeader("change", "same", "plain")))
+	assert.Equal(t, "plain", SanitizeText(styleDiffCellByHeader("change", "unknown", "plain")))
+	assert.Equal(t, "plain", SanitizeText(styleDiffCellByHeader("field", "x", "plain")))
+}
+
 // TestTableGridWrapperRendersSameContract handles test table grid wrapper renders same contract.
 func TestTableGridWrapperRendersSameContract(t *testing.T) {
 	columns := []TableColumn{
