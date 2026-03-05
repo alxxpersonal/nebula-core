@@ -62,6 +62,7 @@ func TestNormalizeServerDirCandidateRejectsInvalidAbsolutePath(t *testing.T) {
 }
 
 func TestResolveServerDirStopsParentWalkAtFilesystemRoot(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	t.Setenv("NEBULA_SERVER_DIR", "")
 	cwd, err := os.Getwd()
 	require.NoError(t, err)
@@ -381,6 +382,7 @@ func TestRunStopCmdEscalatesToKillForTermIgnoredProcess(t *testing.T) {
 }
 
 func TestResolveServerDirSkipsDuplicateCandidatesWhenRootsOverlap(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	t.Setenv("NEBULA_SERVER_DIR", "")
 
 	exePath, err := os.Executable()
@@ -400,6 +402,7 @@ func TestResolveServerDirSkipsDuplicateCandidatesWhenRootsOverlap(t *testing.T) 
 }
 
 func TestResolveServerDirSkipsTrimmedEmptyRootAndStopsAtExecutableRoot(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	t.Setenv("NEBULA_SERVER_DIR", "")
 
 	prevGetwd := currentWorkingDir
@@ -427,6 +430,7 @@ func TestResolveServerDirSkipsTrimmedEmptyRootAndStopsAtExecutableRoot(t *testin
 }
 
 func TestResolveServerDirSkipsSeenDuplicateCandidates(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	t.Setenv("NEBULA_SERVER_DIR", "")
 
 	root := t.TempDir()

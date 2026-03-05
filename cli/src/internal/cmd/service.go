@@ -57,6 +57,7 @@ var marshalRuntimeStateJSON = func(state *apiRuntimeState) ([]byte, error) {
 var absPath = filepath.Abs
 var currentWorkingDir = os.Getwd
 var executablePath = os.Executable
+var userHomeDir = os.UserHomeDir
 var globMatches = filepath.Glob
 
 type apiRuntimeState struct {
@@ -632,6 +633,11 @@ func resolveServerDir() (string, error) {
 		return "", fmt.Errorf("NEBULA_SERVER_DIR does not point to a Nebula server dir: %s", env)
 	}
 
+	homeDir := ""
+	if home, err := userHomeDir(); err == nil {
+		homeDir = filepath.Clean(strings.TrimSpace(home))
+	}
+
 	roots := []string{}
 	if cwd, err := currentWorkingDir(); err == nil && cwd != "" {
 		roots = append(roots, cwd)
@@ -669,10 +675,23 @@ func resolveServerDir() (string, error) {
 			filepath.Join(root, "server"),
 			filepath.Join(root, "nebula-core", "server"),
 		}
-		for _, pattern := range []string{
+		globPatterns := []string{
 			filepath.Join(root, "*", "nebula-core", "server"),
 			filepath.Join(root, "*", "*", "nebula-core", "server"),
-		} {
+		}
+		// Global installs can be launched from outside the repo; probe deeper from $HOME only.
+		if homeDir != "" && sameFilesystemPath(root, homeDir) {
+			for depth := 3; depth <= 9; depth++ {
+				parts := make([]string, 0, depth+3)
+				parts = append(parts, root)
+				for i := 0; i < depth; i++ {
+					parts = append(parts, "*")
+				}
+				parts = append(parts, "nebula-core", "server")
+				globPatterns = append(globPatterns, filepath.Join(parts...))
+			}
+		}
+		for _, pattern := range globPatterns {
 			if matches, err := globMatches(pattern); err == nil {
 				candidates = append(candidates, matches...)
 			}
@@ -707,6 +726,17 @@ func normalizeServerDirCandidate(candidate string) (string, bool) {
 		return "", false
 	}
 	return abs, true
+}
+
+// sameFilesystemPath handles macOS /private aliases while comparing roots.
+func sameFilesystemPath(a, b string) bool {
+	a = filepath.Clean(strings.TrimSpace(a))
+	b = filepath.Clean(strings.TrimSpace(b))
+	if runtime.GOOS == "darwin" {
+		a = strings.TrimPrefix(a, "/private")
+		b = strings.TrimPrefix(b, "/private")
+	}
+	return a == b
 }
 
 // tailLines handles tail lines.

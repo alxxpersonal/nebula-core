@@ -245,6 +245,7 @@ func TestDetectStartupFailureUsesDefaultTimeoutWhenNonPositive(t *testing.T) {
 }
 
 func TestResolveServerDirReturnsErrorWhenNoCandidates(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	t.Setenv("NEBULA_SERVER_DIR", "")
 	cwd, err := os.Getwd()
 	require.NoError(t, err)

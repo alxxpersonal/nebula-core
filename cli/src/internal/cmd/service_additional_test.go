@@ -131,6 +131,45 @@ func TestResolveServerDirFindsNestedNebulaCoreServer(t *testing.T) {
 	assert.Equal(t, normalizePathPrefix(expected), normalizePathPrefix(got))
 }
 
+// TestResolveServerDirFindsDeepNebulaCoreServerUnderHome handles global-install launches outside repo root.
+func TestResolveServerDirFindsDeepNebulaCoreServerUnderHome(t *testing.T) {
+	home := t.TempDir()
+	serverDir := filepath.Join(
+		home,
+		"workspace",
+		"long",
+		"path",
+		"nest",
+		"nebula",
+		"projects",
+		"nebula-core",
+		"server",
+	)
+	require.NoError(t, os.MkdirAll(filepath.Join(serverDir, "src", "nebula_api"), 0o755))
+	require.NoError(
+		t,
+		os.WriteFile(filepath.Join(serverDir, "src", "nebula_api", "app.py"), []byte("app = None\n"), 0o644),
+	)
+
+	desktop := filepath.Join(home, "Desktop")
+	require.NoError(t, os.MkdirAll(desktop, 0o755))
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(desktop))
+	t.Cleanup(func() {
+		_ = os.Chdir(cwd)
+	})
+
+	t.Setenv("HOME", home)
+	t.Setenv("NEBULA_SERVER_DIR", "")
+
+	got, err := resolveServerDir()
+	require.NoError(t, err)
+	expected, err := filepath.Abs(serverDir)
+	require.NoError(t, err)
+	assert.Equal(t, normalizePathPrefix(expected), normalizePathPrefix(got))
+}
+
 // TestRunStartCmdRejectsInvalidServerEnv handles invalid server path failures before process launch.
 func TestRunStartCmdRejectsInvalidServerEnv(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
